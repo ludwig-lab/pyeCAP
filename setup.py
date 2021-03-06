@@ -21,7 +21,7 @@ version_reqs = ['pandas',
                 'openpyxl']
 
 setup(
-    name="eba-toolkit",
+    name="eba_toolkit",
     version="0.0",
     author="James Trevathan & Stephan Blanz",
     author_email="james.trevathan@gmail.com, stephan.l.blanz@gmail.com",
