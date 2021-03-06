@@ -1,11 +1,17 @@
 # standard imports
 import os
 from itertools import compress
+import warnings
+
 # scientific computing library imports
 import numpy as np
 # custom imports
-from pyns.nsfile import NSFile
-from pyns.nsentity import EntityType
+try:
+    from pyns.nsfile import NSFile
+    from pyns.nsentity import EntityType
+except ModuleNotFoundError:
+    warnings.warn("No Neuroshare package found, Ripple files will not work")
+
 # to lock file for thread safe reading
 import threading
 from cached_property import threaded_cached_property # This can be removed in python 3.8 as they are adding cached properties as a built-in decorator

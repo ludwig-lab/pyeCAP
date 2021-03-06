@@ -1,1 +1,4 @@
 /eba_toolkit.egg-info/
+*.pyc
+*.xml
+.idea/eba-toolkit.iml
