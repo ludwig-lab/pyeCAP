@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.abspath('..'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'pyCAP'
+project = 'eba-toolkit'
 copyright = '2020, James Trevathan'
 author = 'James Trevathan'
 

@@ -15,11 +15,11 @@ The data sets are automatically split up by 'blocks' in the recording.
 
 ..    .. testsetup::
 
-        import pyCAP, os
+        import eba_toolkit, os
         path = os.path.join()
-        phys_data = pyCAP.Phys(path)
+        phys_data = eba_toolkit.Phys(path)
 
-.. autoclass:: pyCAP.phys.Phys
+.. autoclass:: eba_toolkit.phys.Phys
     :members: units
     :special-members: __init__
 
@@ -39,7 +39,7 @@ into this format. Software such as LabChart https://www.adinstruments.com/suppor
 files into .mat files. To create the MatLab file, open LabChart and open the raw data file. Click on the 'File'
 dropdown in the upper left corner and select export. Set the file type to be "MATLAB" and select a file name and location.
 A window will pop up with different export options. Choose the desired channels and make sure the 'upsample to same rate'
-option is selected. This will ensure a consistent sample rate by interpolating data points. PyCAP currently does not
+option is selected. This will ensure a consistent sample rate by interpolating data points. eba-toolkit currently does not
 support data with different sampling rates between blocks or channels.
 
 More information about how Labchart exports this data can be found here: https://www.adinstruments.com/support/knowledge-base/how-does-matlab-open-exported-data
@@ -47,7 +47,7 @@ More information about how Labchart exports this data can be found here: https:/
 Warnings
 ........
 
-When reading .mat files, pyCAP can generate warnings that will catch data that is improperly formatted
+When reading .mat files, eba-toolkit can generate warnings that will catch data that is improperly formatted
 or not implemented. To enable these warnings, set the 'check' parameter to True when instantiating a new Phys object.
 This parameter is only intended to generate warnings by reading data directly from files. This will not check data when
 data and metadata are manually inputted into a Phys object. The constructor calls the check_data function documented below.
@@ -70,7 +70,7 @@ The following functions can be used to read in data at a lower level. See
 :ref:`Tutorial 08 - Working with physiological data` for more information on how to use these functions to create a Phys
 object.
 
-.. automodule:: pyCAP.io.adinstruments_io
+.. automodule:: eba_toolkit.io.adinstruments_io
     :members: check_data, to_array, to_meta
 
 Comment reading
@@ -79,7 +79,7 @@ Comment reading
 The following function can be used to read the comments from a file and record the timestamp, channel, and name of each
 comment.
 
-.. automodule:: pyCAP.phys
+.. automodule:: eba_toolkit.phys
     :members: get_comments
 
 

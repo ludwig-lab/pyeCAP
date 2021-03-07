@@ -6,13 +6,13 @@ _EpochData.
 
 .. testsetup::
 
-    import pyCAP, os
-    with pyCAP.pyCAP.hide_print():
-        ephys_data = pyCAP.Ephys(os.path.join('..', 'tests', 'data', 'TDT', 'SmallData'))
-        stim_data = pyCAP.Stim(os.path.join('..', 'tests', 'data', 'TDT', 'SmallData'))
-        ecap_data = pyCAP.ECAP(ephys_data, stim_data)
+    import eba_toolkit, os
+    with eba_toolkit.eba_toolkit.hide_print():
+        ephys_data = eba_toolkit.Ephys(os.path.join('..', 'tests', 'data', 'TDT', 'SmallData'))
+        stim_data = eba_toolkit.Stim(os.path.join('..', 'tests', 'data', 'TDT', 'SmallData'))
+        ecap_data = eba_toolkit.ECAP(ephys_data, stim_data)
 
-.. autoclass:: pyCAP.ecap.ECAP
+.. autoclass:: eba_toolkit.ecap.ECAP
     :members:
     :special-members:
 
@@ -47,7 +47,7 @@ plotting methods.
     These methods help to visualize the relevant Ephys data.
 
 
-.. autoclass:: pyCAP.base.epoch_data._EpochData
+.. autoclass:: eba_toolkit.base.epoch_data._EpochData
 
     .. automethod:: __init__
 

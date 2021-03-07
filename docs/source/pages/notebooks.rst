@@ -13,5 +13,5 @@ Jupyter Notebook Example Code
     ../nbexamples/tutorial_08.ipynb
 
 ..  TODO: figure out how to make this work with examples in examples folder
-    .. include:: ../../../examples/01_Introduction to pyCAP.ipynb
+    .. include:: ../../../examples/01_Introduction to eba-toolkit.ipynb
 

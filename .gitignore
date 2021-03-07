@@ -2,3 +2,11 @@
 *.pyc
 *.xml
 .idea/eba-toolkit.iml
+*.doctree
+*.eot
+*.js
+*.css
+*.html
+*.woff
+*.woff2
+*.ttf

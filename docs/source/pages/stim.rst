@@ -10,11 +10,11 @@ as well as methods for working with channels.
 
 .. testsetup::
 
-    import pyCAP, os
-    with pyCAP.pyCAP.hide_print():
-        stim_data = pyCAP.Stim(os.path.join('..', 'tests', 'data', 'TDT', 'SmallData'))
+    import eba_toolkit, os
+    with eba_toolkit.eba_toolkit.hide_print():
+        stim_data = eba_toolkit.Stim(os.path.join('..', 'tests', 'data', 'TDT', 'SmallData'))
 
-.. automodule:: pyCAP.stim
+.. automodule:: eba_toolkit.stim
     :members:
     :special-members:
 
@@ -27,20 +27,20 @@ for Stim objects is _EventData first, _DioData second, and _ParameterData third.
 Event Data class
 ................
 
-.. automodule:: pyCAP.base.event_data
+.. automodule:: eba_toolkit.base.event_data
     :members:
     :private-members: _EventData
 
 Dio Data class
 ..............
 
-.. automodule:: pyCAP.base.dio_data
+.. automodule:: eba_toolkit.base.dio_data
     :members:
     :private-members: _DioData
 
 Parameter Data class
 ....................
 
-.. automodule:: pyCAP.base.parameter_data
+.. automodule:: eba_toolkit.base.parameter_data
     :members:
     :private-members: _ParameterData

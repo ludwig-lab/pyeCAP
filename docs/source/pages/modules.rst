@@ -1,13 +1,13 @@
-pyCAP Modules
+eba-toolkit Modules
 =============
 .. TODO: write docstrings for each class and method to include in the documentation
 .. TODO: create more automodules if necessary
 
-This page documents the pyCAP classes and their methods.
+This page documents the eba-toolkit classes and their methods.
 
-*Note that pyCAP objects are never modified in place. Each 'property' method is a getter method that allows properties
-to be accessed as normal attributes but not modified. All other methods will return new pyCAP objects with different
-properties or non-pyCAP objects.*
+*Note that eba-toolkit objects are never modified in place. Each 'property' method is a getter method that allows properties
+to be accessed as normal attributes but not modified. All other methods will return new eba-toolkit objects with different
+properties or non-eba-toolkit objects.*
 
 .. toctree::
     :maxdepth: 2
