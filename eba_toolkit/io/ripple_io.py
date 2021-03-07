@@ -31,6 +31,8 @@ class RippleIO:
                     self.nsfile = NSFile(file_path)
                 except IOError:
                     print(self.file_path + " is not accessible.")
+                except NameError:
+                    warnings.warn("Ripple files not yet implemented")
             else:
                 _, file_extension = os.path.splitext(self.file_path)
                 raise IOError("Expected '.nev' file as the input. Received a '" + file_extension + "' file.")
