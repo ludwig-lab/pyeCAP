@@ -24,7 +24,7 @@ class PhysResponse(_DioEpoch):
             physiological data. A time_difference of 3600 would correct an error where the time of the phys_data leads
             the stim_data by 1 hour.
         search : float
-            Maximum time difference to search for a pulse in the trigger channel in seconds. With a search of 1, pyCAP
+            Maximum time difference to search for a pulse in the trigger channel in seconds. With a search of 1, eba-toolkit
             will search all data points between 1 second before and after the time given by the stimulation data.
         ** kwargs : KeywordArguments
             See :ref:`_DioEpoch` for more information
@@ -32,7 +32,7 @@ class PhysResponse(_DioEpoch):
         Examples
         ________
         >>> # Set up a PhysResponse object with trigger as "Channel 6" and default parameters.
-        >>> response_data = pyCAP.PhysResponse(phys_data, stim_data, "Channel 6")    # doctest: +SKIP
+        >>> response_data = eba_toolkit.PhysResponse(phys_data, stim_data, "Channel 6")    # doctest: +SKIP
         """
         _DioEpoch.__init__(self, phys_data, stim_data, trigger_channel, threshold=threshold,
                            time_difference=time_difference, search=search, **kwargs)

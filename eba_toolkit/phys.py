@@ -12,7 +12,7 @@ from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
 from .base.utils.visualization import _plt_ax_to_pix, _plt_setup_fig_axis, _plt_show_fig, _plt_add_ax_connected_top
 
-# pyCAP io class imports
+# eba_toolkit io class imports
 from .io.adinstruments_io import AdInstrumentsIO, convert_time
 
 # TODO: Comments could be used for event data
@@ -37,7 +37,7 @@ def get_comments(file, comtype=None):
 
     Examples
     ________
-    >>> pyCAP.phys.get_comments(pathname)    # insert pathname to data   # doctest: +SKIP
+    >>> eba_toolkit.phys.get_comments(pathname)    # insert pathname to data   # doctest: +SKIP
 
     """
     # initialize file reader
@@ -118,9 +118,9 @@ class Phys(_TsData):
 
         Examples
         ________
-        >>> pyCAP.Phys(pathname1)   # replace pathnames with paths to data      # doctest: +SKIP
+        >>> eba_toolkit.Phys(pathname1)   # replace pathnames with paths to data      # doctest: +SKIP
 
-        >>> pyCAP.Phys([pathname1, pathname2, pathname3])                       # doctest: +SKIP
+        >>> eba_toolkit.Phys([pathname1, pathname2, pathname3])                       # doctest: +SKIP
 
         """
 
@@ -171,7 +171,7 @@ class Phys(_TsData):
 
         Returns
         -------
-        pyCAP.Phys
+        eba_toolkit.Phys
             New Phys object with desired data sets.
 
         Examples
