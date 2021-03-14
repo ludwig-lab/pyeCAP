@@ -1,5 +1,5 @@
 eba-toolkit Modules
-=============
+===================
 .. TODO: write docstrings for each class and method to include in the documentation
 .. TODO: create more automodules if necessary
 

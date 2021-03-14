@@ -458,16 +458,19 @@ class ECAP(_EpochData):
     #     # change negative amplitudes to positive
 
     def calculate_AUC(self, window_type="standard_neural", analysis_method="RMS", plot_AUC=False, save_path=None):
+        # todo: other parameters
         """
-        #todo: other parameters
-        :param save_path: location to save plotting of AUCs
-        :param window_type:
+        save_path:
+            location to save plotting of AUCs
+        window_type:
             "standard_neural": collects all data within entire range of neural window based on fiber type
             "standard_EMG",
             "dynamic_neural" : detects max peak and leading/lagging minima; up to 25% out of current window for leading.
             "dynamic_EMG" : detects onset and offset
-        :param analysis_method: "RMS" for root mean square. "Integral" for integral
-        :param plot_AUC : Can chose to plot calculation of AUCs
+        analysis_method:
+            "RMS" for root mean square. "Integral" for integral
+        plot_AUC :
+            Can chose to plot calculation of AUCs
         """
 
         params = self.stim.parameters.columns

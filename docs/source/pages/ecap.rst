@@ -40,7 +40,7 @@ plotting methods.
     Visualization of the dask array for one parameter. The ECAP object shown below has 7 channels, 750 pulses in the
     stimulation period, and 977 data points in one pulse.
 
-    .. image:: ../../images/array_example.png
+    .. image:: images/array_example.png
 
 - Plotting Methods:
 

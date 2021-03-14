@@ -65,7 +65,7 @@ The get_trigger_offsets, and set_trigger_offsets methods shown below can be used
 The following diagram shows how eba-toolkit uses system-wide time difference and trigger offsets to determine the start of a
 stimulation parameter:
 
-.. image:: ../../images/Offset_diagram.png
+.. image:: images/Offset_diagram.png
 
 Customizing Trigger offsets
 ...........................

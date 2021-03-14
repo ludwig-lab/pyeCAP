@@ -1,17 +1,8 @@
 Jupyter Notebook Example Code
 =============================
 
-.. toctree::
-    :maxdepth: 1
+Interactive jupyter notebook examples are available at https://github.com/ludwig-lab/eba-toolkit/tree/main/examples. The
+example notebooks can be run after pyCAP is installed, or in a web browser (coming soon).
 
-    ../nbexamples/tutorial_01.ipynb
-    ../nbexamples/tutorial_02.ipynb
-    ../nbexamples/tutorial_03.ipynb
-    ../nbexamples/tutorial_04.ipynb
-    ../nbexamples/tutorial_05.ipynb
-    ../nbexamples/tutorial_06.ipynb
-    ../nbexamples/tutorial_08.ipynb
 
-..  TODO: figure out how to make this work with examples in examples folder
-    .. include:: ../../../examples/01_Introduction to eba-toolkit.ipynb
 

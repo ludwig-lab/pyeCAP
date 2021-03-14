@@ -44,8 +44,8 @@ support data with different sampling rates between blocks or channels.
 
 More information about how Labchart exports this data can be found here: https://www.adinstruments.com/support/knowledge-base/how-does-matlab-open-exported-data
 
-Warnings
-........
+Automatic Warnings
+..................
 
 When reading .mat files, eba-toolkit can generate warnings that will catch data that is improperly formatted
 or not implemented. To enable these warnings, set the 'check' parameter to True when instantiating a new Phys object.
@@ -66,9 +66,7 @@ The current warnings are shown below:
 Functions for reading in data
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The following functions can be used to read in data at a lower level. See
-:ref:`Tutorial 08 - Working with physiological data` for more information on how to use these functions to create a Phys
-object.
+The following functions can be used to read in data at a lower level.
 
 .. automodule:: eba_toolkit.io.adinstruments_io
     :members: check_data, to_array, to_meta

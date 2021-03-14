@@ -16,7 +16,7 @@ eba-toolkit is organized into four major classes that you user will interact wit
 
 Data type support
 ^^^^^^^^^^^^^^^^^
-eba-toolkit currently supports analysis of data collected with systems developed by Tucker Davis Technologies https://www.tdt.com/, Ripple Neuro https://rippleneuro.com/, and ADInstruments https://www.adinstruments.com/.
+eba-toolkit currently supports analysis of data collected with systems developed by Tucker Davis Technologies (https://www.tdt.com/), and ADInstruments (https://www.adinstruments.com/). Ripple Neuro is coming soon (https://rippleneuro.com/).
 
 Interactive data analysis
 ^^^^^^^^^^^^^^^^^^^^^^^^^
