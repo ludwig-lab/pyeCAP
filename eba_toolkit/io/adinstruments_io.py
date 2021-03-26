@@ -190,14 +190,22 @@ class AdInstrumentsIO:
 
     def __init__(self, data, mult_data, check):
         # load in data
-        try:
-            raw = sio.loadmat(data)
-        except Exception as e:
-            print(e)
+        if data.endswith(".mat")
+            try:
+                raw = sio.loadmat(data)
+            except ValueError as e:
+                raise IOError(f"{e} \n \n Unreadable .mat file, file may be too large")
+            except Exception as e:
+                raise IOError(f"Exception {e} occured during file reading")
+        elif data.endswith(".txt"):
+            # TODO: add txt reader for large files
+            pass
+        else:
             raise IOError('Unreadable file. Files must be .mat')
 
         # check data for bad structure, ect
         if check:
+            # TODO: add check for missing data
             check_data(raw)
 
         # map parameters in as numpy arrays
