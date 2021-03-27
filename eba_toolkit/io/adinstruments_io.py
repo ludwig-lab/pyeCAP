@@ -69,6 +69,11 @@ def check_data(raw_data):
         if len(np.unique(raw_data['unittextmap'][channel])) != 1:
             warnings.warn("Inconsistent units in channel {}".format(raw_data["titles"][channel]))
 
+    # check for missing data
+    if True in np.unique(raw_data['datastart'] == -1):
+        warnings.warn("Channel data does not align into a rectangular array."
+                      " Try padding the data with the eba_toolkit.phys.pad_array function")
+
 
 def convert_time(matlab_time):
     """
@@ -190,7 +195,7 @@ class AdInstrumentsIO:
 
     def __init__(self, data, mult_data, check):
         # load in data
-        if data.endswith(".mat")
+        if data.endswith(".mat"):
             try:
                 raw = sio.loadmat(data)
             except ValueError as e:

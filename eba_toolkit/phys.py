@@ -18,6 +18,78 @@ from .io.adinstruments_io import AdInstrumentsIO, convert_time
 # TODO: Comments could be used for event data
 
 
+def pad_array(filename):
+    """
+    Pads a .mat file with NaN values when blocks of data are missing on one or more channels.
+
+    Parameters
+    ----------
+    filename: str
+        Path to the .mat file.
+
+    Returns
+    _______
+    str
+        Path of the new padded .mat file.
+    """
+    # read in data
+    raw_dict = sio.loadmat(filename)
+    datastart = raw_dict['datastart']
+    data = raw_dict['data']
+    dataend = raw_dict['dataend']
+
+    # find block lengths and account for any missing data
+    num_channels, num_blocks = datastart.shape
+    lens = dataend - datastart + 1
+    block_lengths = lens[0]
+    for b in range(len(block_lengths)):
+        if block_lengths[b] <= 1:
+            for c in range(num_channels):
+                if lens[c, b] != -1:
+                    block_lengths[b] = lens[c, b]
+                    break
+
+    # new datastart/dataend vectors
+    new_datastart = np.ones((num_channels, num_blocks))
+    for c in range(num_channels):
+        for b in range(num_blocks):
+            new_datastart[c, b] += num_channels * sum(block_lengths[:b]) + c * block_lengths[b]
+
+    new_dataend = np.zeros((num_channels, num_blocks))
+    for c in range(num_channels):
+        new_dataend[c] += new_datastart[c] + block_lengths - 1
+
+    # pad the data array
+    def datastart_sort(idxs):
+        return new_datastart[idxs[0], idxs[1]]
+
+    missing_blocks = []
+    for c in range(num_channels):
+        for b in range(num_blocks):
+            if datastart[c, b] == -1:
+                missing_blocks.append((c, b))
+
+    missing_blocks.sort(key=datastart_sort)
+
+    for m in missing_blocks:
+        pad_arr = np.zeros((1, int(block_lengths[m[1]])))
+        pad_arr[:] = np.nan
+        data_left = data[:, :int(new_datastart[m[0], m[1]]) - 1]
+        data_right = data[:, int(new_datastart[m[0], m[1]]) - 1:]
+        data = np.concatenate((data_left, pad_arr, data_right), axis=1)
+
+    # replace old values in dictionary with new ones
+    raw_dict['data'] = data
+    raw_dict['datastart'] = new_datastart
+    raw_dict['dataend'] = new_dataend
+    raw_dict['unittext'] = np.append(raw_dict['unittext'], "N/A")
+    raw_dict['unittextmap'] = np.where(raw_dict['unittextmap'] == -1, len(raw_dict['unittext']), raw_dict['unittextmap'])
+
+    # write dictionary to a matlab file
+    sio.savemat(filename.replace(".mat", "_padded.mat"), raw_dict, do_compression=True)
+    return filename.replace(".mat", "_padded.mat")
+
+
 def get_comments(file, comtype=None):
     """
     Reads the comments in the specified file path. Creates a dictionary with keys as channel names. Values are
@@ -96,7 +168,7 @@ def get_comments(file, comtype=None):
 
 class Phys(_TsData):
     """Class for physiological data"""
-    def __init__(self, data, *args, mult_data=True, check=False, order=True, **kwargs):
+    def __init__(self, data, *args, mult_data=True, check=True, order=True, **kwargs):
         """
         Constructor for the Phys class
 
