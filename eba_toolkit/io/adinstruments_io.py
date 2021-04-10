@@ -4,6 +4,7 @@ import dask.array as da
 import scipy.io as sio
 import numpy as np
 
+import struct
 import datetime as dt
 import warnings
 
@@ -191,6 +192,32 @@ def to_meta(start_indices, end_indices, tick, channels, units, units_map, start_
         return [meta_dicts[0]]
 
 
+def read_headers(file_header, channel_headers):
+    # function for reading ADInstruments binary file headers
+    num_samples = file_header[14]
+    data_format = file_header[16]
+    num_channels = len(channel_headers)
+
+    # get time/sample rate metadata
+    start_time = dt.datetime(file_header[6], file_header[7], file_header[8], file_header[9], file_header[10], int(file_header[11]),
+                                   int(np.round((np.round(file_header[11], 6) - int(file_header[11])) * 10 ** 6))).timestamp()
+    end_time = start_time + file_header[5] * num_samples
+    metadata = {'start_time': start_time,
+                'end_time': end_time,
+                'ch_names': [],
+                'sample_rate': 1 / file_header[5],
+                'units': []
+                }
+    # read channel headers to add to metadata
+    for channel_header in channel_headers:
+        channel_text = "".join([c.decode("iso-8859-1") for c in channel_header[:32] if c != b'\x00'])
+        unit_text = "".join([c.decode("iso-8859-1") for c in channel_header[32:64] if c != b'\x00'])
+        metadata['ch_names'].append(channel_text)
+        metadata['units'].append(unit_text)
+
+    return metadata, num_samples, num_channels, data_format
+
+
 class AdInstrumentsIO:
 
     def __init__(self, data, mult_data, check):
@@ -202,9 +229,6 @@ class AdInstrumentsIO:
                 raise IOError(f"{e} \n \n Unreadable .mat file, file may be too large")
             except Exception as e:
                 raise IOError(f"Exception {e} occured during file reading")
-        elif data.endswith(".txt"):
-            # TODO: add txt reader for large files
-            pass
         else:
             raise IOError('Unreadable file. Files must be .mat')
 
@@ -221,3 +245,29 @@ class AdInstrumentsIO:
         self.array = to_array(raw_array, start_indices, end_indices, mult_data)
         self.metadata = to_meta(start_indices, end_indices, tick, channels, units, unit_map, start_times, mult_data)
         self.chunks = [(1, 204800)]*len(self.metadata)
+
+
+class ADInstrumentsBin:
+    # ADInstruments binary file reader class
+    # info on binary files:
+    # http://cdn.adinstruments.com/adi-web/manuals/translatebinary/LabChartBinaryFormat.pdf
+
+    def __init__(self, filename):
+        # TODO: add checks for improperly formatted data
+        # read in binary headers
+        with open(filename, 'rb') as f:
+            file_head = struct.unpack('<4cld5l2d4l', f.read(68))
+            channel_heads = []
+            for i in range(file_head[13]):
+                channel_heads.append(struct.unpack('<64c4d', f.read(96)))
+
+        # get metadata from headers
+        metadata, num_samples, num_channels, data_format = read_headers(file_head, channel_heads)
+        dtype_dict = {1: "double", 2: "float", 3: "short"}
+        # TODO: implement scaling and offset for adinstruments integer files
+
+        # read in the binary array from metadata
+        raw_array = np.fromfile(filename, count=num_samples * num_channels, dtype=dtype_dict[data_format], offset=164)
+        self.array = da.from_array(raw_array.reshape(num_samples, num_channels).T, (1, 204800))
+        self.metadata = metadata
+        self.chunks = [(1, 204800)]*num_channels

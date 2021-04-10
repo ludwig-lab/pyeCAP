@@ -13,7 +13,7 @@ from .base.utils.base import _is_iterable
 from .base.utils.visualization import _plt_ax_to_pix, _plt_setup_fig_axis, _plt_show_fig, _plt_add_ax_connected_top
 
 # eba_toolkit io class imports
-from .io.adinstruments_io import AdInstrumentsIO, convert_time
+from .io.adinstruments_io import AdInstrumentsIO, convert_time, ADInstrumentsBin
 
 # TODO: Comments could be used for event data
 
@@ -197,7 +197,12 @@ class Phys(_TsData):
         """
 
         if isinstance(data, str):
-            self.adinstruments = AdInstrumentsIO(data, mult_data, check)
+            if data.endswith(".mat"):
+                self.adinstruments = AdInstrumentsIO(data, mult_data, check)
+            elif data.endswith(".adibin"):
+                self.adinstruments = ADInstrumentsBin(data)
+            else:
+                raise(ValueError("Files should be .mat or .adibin files"))
             super().__init__(self.adinstruments.array, self.adinstruments.metadata, daskify=False, chunks=self.adinstruments.chunks)
         elif _is_iterable(data, str):
             self.adinstruments = [AdInstrumentsIO(path, mult_data, check) for path in data]
