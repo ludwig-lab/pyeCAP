@@ -197,12 +197,7 @@ class Phys(_TsData):
         """
 
         if isinstance(data, str):
-            if data.endswith(".mat"):
-                self.adinstruments = AdInstrumentsIO(data, mult_data, check)
-            elif data.endswith(".adibin"):
-                self.adinstruments = ADInstrumentsBin(data)
-            else:
-                raise(ValueError("Files should be .mat or .adibin files"))
+            self.adinstruments = AdInstrumentsIO(data, mult_data, check)
             super().__init__(self.adinstruments.array, self.adinstruments.metadata, daskify=False, chunks=self.adinstruments.chunks)
         elif _is_iterable(data, str):
             self.adinstruments = [AdInstrumentsIO(path, mult_data, check) for path in data]

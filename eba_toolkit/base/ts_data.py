@@ -107,7 +107,6 @@ class _TsData:
             # rechunk and rearrange arrays to account for channel offsets if necessary
             self.data = self._introduce_offsets(ch_offsets)
 
-
         # sort all data sets by start time, place in chronological order
         if order:
             unsorted = [(a, m) for a, m in zip(self.data, self.metadata)]

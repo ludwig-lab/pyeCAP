@@ -219,32 +219,46 @@ def read_headers(file_header, channel_headers):
 
 
 class AdInstrumentsIO:
-
+    # class for AD instruments files IO
     def __init__(self, data, mult_data, check):
-        # load in data
+        # create a reader for the file
         if data.endswith(".mat"):
-            try:
-                raw = sio.loadmat(data)
-            except ValueError as e:
-                raise IOError(f"{e} \n \n Unreadable .mat file, file may be too large")
-            except Exception as e:
-                raise IOError(f"Exception {e} occured during file reading")
+            self.reader = ADInstrumentsMAT(data, mult_data, check)
+        elif data.endswith(".adibin"):
+            self.reader = ADInstrumentsBin(data)
         else:
-            raise IOError('Unreadable file. Files must be .mat')
+            raise IOError('Unreadable file. Files must be .mat or .adibin')
+
+        # get data from the reader
+        self.array = self.reader.array
+        self.metadata = self.reader.metadata
+        self.chunks = self.reader.chunks
+
+
+class ADInstrumentsMAT:
+    # class for AD Instruments .mat files
+    def __init__(self, data, mult_data, check):
+        try:
+            raw = sio.loadmat(data)
+        except ValueError as e:
+            raise IOError(f"{e} \n \n Unreadable .mat file, file may be too large")
+        except Exception as e:
+            raise IOError(f"Exception {e} occured during file reading")
 
         # check data for bad structure, ect
         if check:
             # TODO: add check for missing data
             check_data(raw)
 
-        # map parameters in as numpy arrays
-        mapping = [raw['data'], raw['datastart'], raw['dataend'], raw['tickrate'], raw['titles'], raw['blocktimes'], raw['unittext'], raw['unittextmap']]
-        raw_array, start_indices, end_indices, tick, channels, start_times, units, unit_map = mapping
+            # map parameters in as numpy arrays
+            mapping = [raw['data'], raw['datastart'], raw['dataend'], raw['tickrate'], raw['titles'], raw['blocktimes'],
+                       raw['unittext'], raw['unittextmap']]
+            raw_array, start_indices, end_indices, tick, channels, start_times, units, unit_map = mapping
 
-        # define properties by calling array and metadata functions
-        self.array = to_array(raw_array, start_indices, end_indices, mult_data)
-        self.metadata = to_meta(start_indices, end_indices, tick, channels, units, unit_map, start_times, mult_data)
-        self.chunks = [(1, 204800)]*len(self.metadata)
+            # define properties by calling array and metadata functions
+            self.array = to_array(raw_array, start_indices, end_indices, mult_data)
+            self.metadata = to_meta(start_indices, end_indices, tick, channels, units, unit_map, start_times, mult_data)
+            self.chunks = [(1, 204800)] * len(self.metadata)
 
 
 class ADInstrumentsBin:
@@ -263,11 +277,11 @@ class ADInstrumentsBin:
 
         # get metadata from headers
         metadata, num_samples, num_channels, data_format = read_headers(file_head, channel_heads)
-        dtype_dict = {1: "double", 2: "float", 3: "short"}
+        dtype_dict = {1: "double", 2: "float32", 3: "short"}
         # TODO: implement scaling and offset for adinstruments integer files
 
         # read in the binary array from metadata
-        raw_array = np.fromfile(filename, count=num_samples * (num_channels + 1), dtype=dtype_dict[data_format], offset=68+96*num_channels)
-        self.array = da.from_array(raw_array.reshape(num_samples, num_channels+1).T[1:, :], (1, 204800))
-        self.metadata = metadata
+        raw_array = np.memmap(filename, mode='r', dtype=dtype_dict[data_format], offset=68+96*num_channels)
+        self.array = [da.from_array(raw_array.reshape(num_samples, num_channels+1).T[1:, :], (1, 204800))]
+        self.metadata = [metadata]
         self.chunks = [(1, 204800)]*num_channels
