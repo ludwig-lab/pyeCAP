@@ -282,6 +282,6 @@ class ADInstrumentsBin:
 
         # read in the binary array from metadata
         raw_array = np.memmap(filename, mode='r', dtype=dtype_dict[data_format], offset=68+96*num_channels)
-        self.array = [da.from_array(raw_array.reshape(num_samples, num_channels+1).T[1:, :], (1, 204800))]
+        self.array = [da.from_array(raw_array.reshape(num_samples, num_channels).T, (1, 204800))]
         self.metadata = [metadata]
         self.chunks = [(1, 204800)]*num_channels
