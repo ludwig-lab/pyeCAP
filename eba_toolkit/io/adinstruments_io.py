@@ -267,10 +267,13 @@ class ADInstrumentsBin:
     # http://cdn.adinstruments.com/adi-web/manuals/translatebinary/LabChartBinaryFormat.pdf
 
     def __init__(self, filename):
-        # TODO: add checks for improperly formatted data
         # read in binary headers
         with open(filename, 'rb') as f:
             file_head = struct.unpack('<4cld5l2d4l', f.read(68))
+
+            if file_head[0].decode("iso-8859-1") != 'C':    # file header always begins with "CWFB"
+                raise ValueError("File is missing header")
+
             channel_heads = []
             for i in range(file_head[13]):
                 channel_heads.append(struct.unpack('<64c4d', f.read(96)))
@@ -278,10 +281,16 @@ class ADInstrumentsBin:
         # get metadata from headers
         metadata, num_samples, num_channels, data_format = read_headers(file_head, channel_heads)
         dtype_dict = {1: "double", 2: "float32", 3: "short"}
-        # TODO: implement scaling and offset for adinstruments integer files
 
         # read in the binary array from metadata
+        if data_format == 1:
+            # TODO: implement scaling and offset for adinstruments integer files
+            raise NotImplementedError("Reading of integer binary files is not yet implemented")
+
         raw_array = np.memmap(filename, mode='r', dtype=dtype_dict[data_format], offset=68+96*num_channels)
+        if not raw_array.size == num_samples*num_channels:  # check for improperly formatted data
+            raise ValueError("Improper array size. Ensure that arrays are exported without time data"
+                             "and there is no missing data in the channels")
         self.array = [da.from_array(raw_array.reshape(num_samples, num_channels).T, (1, 204800))]
         self.metadata = [metadata]
         self.chunks = [(1, 204800)]*num_channels
