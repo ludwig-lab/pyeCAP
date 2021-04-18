@@ -34,13 +34,19 @@ from this class.
 Reading data with the Phys class
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The Phys class reads data from non-hdf5 MatLab (.mat) files. Pre-processing of raw data is necessary to transform files
-into this format. Software such as LabChart https://www.adinstruments.com/support/software will transform raw .adicht
-files into .mat files. To create the MatLab file, open LabChart and open the raw data file. Click on the 'File'
-dropdown in the upper left corner and select export. Set the file type to be "MATLAB" and select a file name and location.
-A window will pop up with different export options. Choose the desired channels and make sure the 'upsample to same rate'
-option is selected. This will ensure a consistent sample rate by interpolating data points. eba-toolkit currently does not
-support data with different sampling rates between blocks or channels.
+The primary method of reading data with the Phys class is through ADInstruments binary files (.adibin). This method is
+preferred because the Phys class does not load the binary data into memory until a computation is performed. Pre-processing
+of raw data is necessary to transform files into this format. Software such as LabChart
+https://www.adinstruments.com/support/software will export raw .adicht files into a variety of formats. To create an
+ADInstruments binary file, open LabChart and open the raw data file. Click on the 'File' dropdown in the upper left
+corner and select export. Select ADInstruments binary file. A menu will pop up with options of how to export the file.
+Ensure that the data type is a 32 of 64 bit floating point, the "time" box is not selected, and the "header" box is
+selected. If these options are not chosen, the Phys class will not be able to read the resulting binary file properly.
+
+The Phys class also reads data from non-hdf5 MatLab (.mat) files that are under 4GB. To create the MatLab file, use LabChart to export the
+data similarly to a binary file. Select the "MATLAB" option when choosing the file type. Choose the desired channels and
+make sure the 'upsample to same rate' option is selected. This will ensure a consistent sample rate by interpolating
+data points. eba-toolkit currently does not support data with different sampling rates between blocks or channels.
 
 More information about how Labchart exports this data can be found here: https://www.adinstruments.com/support/knowledge-base/how-does-matlab-open-exported-data
 
@@ -63,10 +69,16 @@ The current warnings are shown below:
 
 - Offset in data blocks: Warns about offsets in the start time of each channel. See the 'firstsampleoffset' array at https://www.adinstruments.com/support/knowledge-base/how-does-matlab-open-exported-data for more information.
 
+- Channel data does not align into a rectangular array: Some or all data for a channel may be missing. This will cause eba toolkit to crash when performing computations on the data. To avoid this error, avoid exporting channels with missing data. If this is not possible, see the pad_array function in the Phys class.
+
+For binary files, the Phys class will not generate warnings because the data is not loaded into memory when it is read in. Instead,
+the Phys class will generate errors for improperly formatted binary files. Errors may occur from exporting the file with integer
+data instead of float data, including the time array in exporting, or not including file headers.
+
 Functions for reading in data
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The following functions can be used to read in data at a lower level.
+The following functions can be used to read in MATLAB data at a lower level.
 
 .. automodule:: eba_toolkit.io.adinstruments_io
     :members: check_data, to_array, to_meta
