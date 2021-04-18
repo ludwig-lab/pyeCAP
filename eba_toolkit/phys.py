@@ -232,7 +232,7 @@ class Phys(_TsData):
     def select(self, datasets, select=True):
         """
         Select or remove data sets from a Phys object. Creates a new object with the desired data sets. Warning: indices
-        and time from the time array may be inconsistent with the origninal object.
+        and time from the time array may be inconsistent with the original object.
 
         Parameters
         ----------

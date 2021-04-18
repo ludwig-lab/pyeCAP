@@ -289,8 +289,7 @@ class ADInstrumentsBin:
 
         raw_array = np.memmap(filename, mode='r', dtype=dtype_dict[data_format], offset=68+96*num_channels)
         if not raw_array.size == num_samples*num_channels:  # check for improperly formatted data
-            raise ValueError("Improper array size. Ensure that arrays are exported without time data"
-                             "and there is no missing data in the channels")
+            raise ValueError("Improper array size. Ensure that arrays are exported without time data")
         self.array = [da.from_array(raw_array.reshape(num_samples, num_channels).T, (1, 204800))]
         self.metadata = [metadata]
         self.chunks = [(1, 204800)]*num_channels
