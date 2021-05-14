@@ -31,8 +31,7 @@ release = '0.0.1'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ['sphinx.ext.autodoc','sphinx.ext.coverage','sphinx.ext.napoleon','sphinx_rtd_theme',
-              'sphinx.ext.doctest', 'sphinx.ext.autosectionlabel'
-]
+              'sphinx.ext.doctest', 'sphinx.ext.autosectionlabel']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -44,7 +43,7 @@ exclude_patterns = []
 
 autodoc_member_order = 'bysource'
 
-autodoc_mock_imports = ['django']
+autodoc_mock_imports = ['numpy', 'dask', 'matplotlib', 'scipy', 'pandas', 'openxyl', 'seaborn', 'numba']
 
 # -- Options for HTML output -------------------------------------------------
 
