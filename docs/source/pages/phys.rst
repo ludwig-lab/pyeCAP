@@ -13,13 +13,13 @@ The data sets are automatically split up by 'blocks' in the recording.
 
 .. TODO: Add a physiological data sample to github, uncomment the test setup
 
-..    .. testsetup::
+.. .. testsetup::
 
-        import eba_toolkit, os
+    ..    import eba_toolkit, os
         path = os.path.join()
         phys_data = eba_toolkit.Phys(path)
 
-.. autoclass:: eba_toolkit.phys.Phys
+.. .. autoclass:: eba_toolkit.phys.Phys
     :members: units
     :special-members: __init__
 
@@ -68,7 +68,7 @@ Functions for reading in data
 
 The following functions can be used to read in data at a lower level.
 
-.. automodule:: eba_toolkit.io.adinstruments_io
+.. .. automodule:: eba_toolkit.io.adinstruments_io
     :members: check_data, to_array, to_meta
 
 Comment reading
@@ -77,7 +77,7 @@ Comment reading
 The following function can be used to read the comments from a file and record the timestamp, channel, and name of each
 comment.
 
-.. automodule:: eba_toolkit.phys
+.. .. automodule:: eba_toolkit.phys
     :members: get_comments
 
 

@@ -26,5 +26,5 @@ setup(
     author="James Trevathan & Stephan Blanz",
     author_email="james.trevathan@gmail.com, stephan.l.blanz@gmail.com",
     packages=find_packages(),
-    install_requires=version_reqs
+    # install_requires=version_reqs
 )
