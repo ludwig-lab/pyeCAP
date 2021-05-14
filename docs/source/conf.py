@@ -43,7 +43,7 @@ exclude_patterns = []
 
 autodoc_member_order = 'bysource'
 
-autodoc_mock_imports = ['numpy', 'dask', 'matplotlib', 'scipy', 'pandas', 'openxyl', 'seaborn', 'numba']
+autodoc_mock_imports = ['numpy', 'dask', 'matplotlib', 'scipy', 'pandas', 'openxyl', 'seaborn', 'numba', 'eba_toolkit']
 
 # -- Options for HTML output -------------------------------------------------
 
