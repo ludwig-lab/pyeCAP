@@ -87,71 +87,136 @@ class TdtStim:
         metadata['ch_names'] = ['Stim ' + str(ch) for ch in metadata['channels']]
         return metadata
 
+    # @threaded_cached_property
+    # def parameters(self):
+    #     stores = self.tdt_io.tdt_block.stores
+    #     stim_stores = {}
+    #
+    #     for k in self.metadata['stores']:
+    #         stim_data = []
+    #         for onset in self.metadata['stimulation_onsets']:
+    #             # This has nothing to do with the stimulation channel but tdt refers to each stim parameter as a channel
+    #             # in their storage format
+    #             ch_idx = stores[k].ts == onset
+    #             ch_sorted = np.argsort(stores[k].chan[ch_idx])
+    #             # only first 6 parameters are used append to onset time to match order of stim_data DataFrame.
+    #             parameters = [onset] + list(stores[k].data[ch_idx][ch_sorted])
+    #             stim_data.append(parameters)
+    #         stim_data = np.array(stim_data)
+    #         print(stim_data)
+    #         # If the 'electrical stim' gizmo in tdt was used to aquire data then the first parameter should be 0
+    #         zero_columns = np.all(stim_data == 0.0, axis=0)
+    #         if zero_columns[1]:
+    #             parameter_names = ['onset time (s)', 'channel', 'stimulation gain', 'pulse count', 'period (ms)',
+    #                                'pulse amplitude (μA)', 'pulse duration (ms)']
+    #             # Pulse with segment A only (Monophasic)
+    #             if np.all(zero_columns[7:11]):
+    #                 channels = [0] + list(range(1, 7))
+    #             # Pulse with segments A, B (Biphasic)
+    #             elif np.all(zero_columns[9:11]):
+    #                 channels = [0] + list(range(1, 9))
+    #                 # Add additional parameter names for channel 2
+    #                 parameter_names += ['pulse amplitude 2 (μA)',
+    #                                     'pulse duration 2 (ms)']
+    #             # Pulse with segments A, B, C (Biphasic + Interphase delay)
+    #             else:
+    #                 raise NotImplementedError("Stim format with biphasic pulse and interphase delay using the TDT "
+    #                                           "'Electrical Stimulation' gizmo is not yet implemented.")
+    #                 channels = [0] + list(range(1, 11))
+    #             stim_data = stim_data[:, channels]
+    #         # If the 'electrical stim driver' gizmo is used then the first parameter is never zero, since it
+    #         # represents the period of the waveform
+    #         else:
+    #             stim_data = stim_data[:, 0:7]
+    #             parameter_names = ['onset time (s)', 'period (ms)', 'pulse count', 'pulse amplitude (μA)',
+    #                                'pulse duration (ms)', 'interphase delay (ms)', 'channel']
+    #         parameter_dataframe = pd.DataFrame(stim_data, index=range(len(stim_data)), columns=parameter_names)
+    #         parameter_dataframe = parameter_dataframe.astype({'pulse count': int, 'channel': int})
+    #         parameter_dataframe.insert(2, "frequency (Hz)", 1000/parameter_dataframe['period (ms)'])
+    #         parameter_dataframe.insert(5, "duration (ms)",
+    #                                    parameter_dataframe['period (ms)']*parameter_dataframe['pulse count'])
+    #         parameter_dataframe.insert(1, "offset time (s)",
+    #                                    parameter_dataframe['onset time (s)']+parameter_dataframe['duration (ms)']/1000)
+    #         stim_stores[k] = parameter_dataframe
+    #         self._parameters = stim_stores
+    #         if len(self.metadata['stores']) == 1:
+    #             return self._parameters[self.metadata['stores'][0]]
+    #         else:
+    #             return self._parameters
+
     @threaded_cached_property
     def parameters(self):
         stores = self.tdt_io.tdt_block.stores
-        stim_stores = {}
 
-        for k in self.metadata['stores']:
-            stim_data = []
-            for onset in self.metadata['stimulation_onsets']:
-                # This has nothing to do with the stimulation channel but tdt refers to each stim parameter as a channel
-                # in their storage format
-                ch_idx = stores[k].ts == onset
-                ch_sorted = np.argsort(stores[k].chan[ch_idx])
-                # only first 6 parameters are used append to onset time to match order of stim_data DataFrame.
-                parameters = [onset] + list(stores[k].data[ch_idx][ch_sorted])
-                stim_data.append(parameters)
-            stim_data = np.array(stim_data)
-            # If the 'electrical stim' gizmo in tdt was used to aquire data then the first parameter should be 0
-            zero_columns = np.all(stim_data == 0.0, axis=0)
-            if zero_columns[1]:
-                parameter_names = ['onset time (s)',
-                                   'channel',
-                                   'stimulation gain',
-                                   'pulse count',
-                                   'period (ms)',
-                                   'pulse amplitude (μA)',
-                                   'pulse duration (ms)']
-                # Pulse with segment A only (Monophasic)
-                if np.all(zero_columns[7:11]):
-                    channels = [0] + list(range(1, 7))
-                # Pulse with segments A, B (Biphasic)
-                elif np.all(zero_columns[9:11]):
-                    channels = [0] + list(range(1, 9))
-                    # Add additional parameter names for channel 2
-                    parameter_names += ['pulse amplitude 2 (μA)',
-                                        'pulse duration 2 (ms)']
-                # Pulse with segments A, B, C (Biphasic + Interphase delay)
-                else:
-                    raise NotImplementedError("Stim format with biphasic pulse and interphase delay using the TDT "
-                                              "'Electrical Stimulation' gizmo is not yet implemented.")
-                    channels = [0] + list(range(1, 11))
-                stim_data = stim_data[:, channels]
-            # If the 'electrical stim driver' gizmo is used then the first parameter is never zero, since it
-            # represents the period of the waveform
+        # TODO: generate error messages for missing eS1p
+        # TODO: check for 'eS1p/' or 'eS1e/'
+        # TODO: generate proper channel names with the 'Electrical Stimulation' gizmo
+        # convert data in stores to eS1p format
+        stim_data = []
+        for onset in self.metadata['stimulation_onsets']:
+            ch_idx = stores['eS1p'].ts == onset
+            ch_sorted = np.argsort(stores['eS1p'].chan[ch_idx])
+            parameters = list(stores['eS1p'].data[ch_idx][ch_sorted])
+            stim_data.append(parameters)
+
+        stim_parameters = np.array(stim_data)
+        onsets = np.reshape(self.metadata['stimulation_onsets'], (-1, 1))
+        zero_cols = np.all(stim_parameters == 0.0, axis=0)
+        voices = []
+
+        if zero_cols[0]:
+            # 'Electrical Stimulation' Gizmo was used
+            col_names = ['onset time (s)', 'channel', 'stimulation gain', 'pulse count', 'period (ms)',
+                         'pulse amplitude A (μA)', 'pulse duration A (ms)']
+            channels = np.zeros((stim_parameters.shape[0], 1))
+            voices.append("")
+            if np.all(zero_cols[6:10]):
+                # A segment only
+                stim_data = np.concatenate((onsets, channels, stim_parameters[:, 1:6]), axis=1)
+            elif np.all(zero_cols[8:10]):
+                col_names += ['pulse amplitude B (μA)', 'pulse duration B (ms)']
+                stim_data = np.concatenate((onsets, channels, stim_parameters[:, 1:8]), axis=1)
             else:
-                stim_data = stim_data[:, 0:7]
-                parameter_names = ['onset time (s)',
-                                   'period (ms)',
-                                   'pulse count',
-                                   'pulse amplitude (μA)',
-                                   'pulse duration (ms)',
-                                   'interphase delay (ms)',
-                                   'channel']
-            parameter_dataframe = pd.DataFrame(stim_data, index=range(len(stim_data)), columns=parameter_names)
-            parameter_dataframe = parameter_dataframe.astype({'pulse count': int, 'channel': int})
-            parameter_dataframe.insert(2, "frequency (Hz)", 1000/parameter_dataframe['period (ms)'])
-            parameter_dataframe.insert(5, "duration (ms)",
-                                       parameter_dataframe['period (ms)']*parameter_dataframe['pulse count'])
-            parameter_dataframe.insert(1, "offset time (s)",
-                                       parameter_dataframe['onset time (s)']+parameter_dataframe['duration (ms)']/1000)
-            stim_stores[k] = parameter_dataframe
-            self._parameters = stim_stores
-            if len(self.metadata['stores']) == 1:
-                return self._parameters[self.metadata['stores'][0]]
+                # A, B, and C segments
+                col_names += ['pulse amplitude B (μA)', 'pulse duration B (ms)', 'pulse amplitude C (μA)',
+                              'pulse duration C (ms)']
+                stim_data = np.concatenate((onsets, channels, stim_parameters[:, 1:10]), axis=1)
+        else:
+            # 'Electrical Stim Driver was used'
+            col_names = ['onset time (s)']
+            stim_data = onsets
+            if np.all(zero_cols[6:11]) and not (zero_cols[11]):
+                # Bipolar up to 2 voices
+                possible_voices = [" A", " C"]
+                bipolar = True
             else:
-                return self._parameters
+                # Monopolar up to 4 voices
+                possible_voices = [" A", " B", " C", " D"]
+                bipolar = False
+
+            # for each possible voice, get appropriate data and column names
+            for i, voice in enumerate(possible_voices):
+                if not np.all(zero_cols[i * 24 // len(possible_voices):(i + 1) * 24 // len(possible_voices)]):
+                    voices.append(voice)
+                    col_names += [f'period{voice} (ms)', f'pulse count{voice}', f'pulse amplitude{voice} (μA)',
+                                  f'pulse duration{voice} (ms)', f'interphase delay{voice} (ms)', f'channel{voice}']
+                    if bipolar:
+                        stim_data = np.concatenate((stim_data, stim_parameters[:, i * 12:i * 12 + 6],
+                                                    stim_parameters[:, (i + 1) * 12 - 1:(i + 1) * 12]), axis=1)
+                        col_names += [f'bipolar channel{voice}']
+                    else:
+                        stim_data = np.concatenate((stim_data, stim_parameters[:, i * 6:(i + 1) * 6]), axis=1)
+
+        # add in new calculated columns for each vocie
+        parameter_dataframe = pd.DataFrame(stim_data, columns=col_names)
+        for i, voice in enumerate(voices):
+            parameter_dataframe = parameter_dataframe.astype({f'pulse count{voice}': int, f'channel{voice}': int})
+            parameter_dataframe.insert(2 + i * 6, f"frequency{voice} (Hz)", 1000 / parameter_dataframe[f'period{voice} (ms)'])
+            parameter_dataframe.insert(5 + i * 6, f"duration{voice} (ms)", parameter_dataframe[f'period{voice} (ms)'] *
+                                       parameter_dataframe[f'pulse count{voice}'])
+            parameter_dataframe.insert(1, f"offset time{voice} (s)", parameter_dataframe['onset time (s)'] +
+                                       parameter_dataframe[f'duration{voice} (ms)'] / 1000)
+        return parameter_dataframe
 
     def dio(self, indicators=False):
         dio = {}
