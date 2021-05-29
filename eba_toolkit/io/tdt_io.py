@@ -62,6 +62,7 @@ class TdtStim:
             raise TypeError("input expected to be of type TdtIO")
         self.type = type
         # check for stimulation stores
+        # TODO: add access to MonA raw monitoring channel
         stores = self.tdt_io.tdt_block.stores
         self.raw_stores = []
         self.parameter_stores = []
@@ -70,7 +71,7 @@ class TdtStim:
                 if key[0] == "e":
                     if "p" in key:
                         self.parameter_stores.append(key)
-                    elif "r" in key:
+                    elif "r" in key or key == 'MonA':
                         self.raw_stores.append(key)
                 else:
                     warnings.warn("Non Electrical Stimulation Detected, reading is not yet implemented.")
@@ -84,11 +85,14 @@ class TdtStim:
 
         # get parameter data into recognizable format
         stim_data = []
-        for onset in np.unique(stores[self.parameter_stores[0]].ts):
-            ch_idx = stores[self.parameter_stores[0]].ts == onset
-            ch_sorted = np.argsort(stores[self.parameter_stores[0]].chan[ch_idx])
-            parameters = list(stores[self.parameter_stores[0]].data[ch_idx][ch_sorted])
-            stim_data.append(parameters)
+        if len(self.parameter_stores) > 0:
+            for onset in np.unique(stores[self.parameter_stores[0]].ts):
+                ch_idx = stores[self.parameter_stores[0]].ts == onset
+                ch_sorted = np.argsort(stores[self.parameter_stores[0]].chan[ch_idx])
+                parameters = list(stores[self.parameter_stores[0]].data[ch_idx][ch_sorted])
+                stim_data.append(parameters)
+        else:
+            warnings.warn("No eS1p store detected")
         self.stim_parameters = np.array(stim_data)
         self.voices = []
         self.polarity = None
@@ -99,12 +103,13 @@ class TdtStim:
                     'stop_time': self.tdt_io.tdt_block['stop_time'][0]}
 
         stores = self.tdt_io.tdt_block.stores
-        metadata['stores'] = []
-        for idx, k in enumerate(stores.keys()):
-            if stores[k]['type_str'] == 'scalars' and (k[-1] == 'p' and k[:-1] + 'r' in stores.keys()):
-                metadata['stores'].append(k)
-                metadata['num_simulations'] = stores[k].size
-                metadata['stimulation_onsets'] = np.sort(np.unique(stores[k].ts))
+        metadata['raw_stores'] = self.raw_stores
+        metadata['parameter_stores'] = self.parameter_stores
+
+        for k in self.parameter_stores:
+            metadata['num_simulations'] = stores[k].size
+            metadata['stimulation_onsets'] = np.sort(np.unique(stores[k].ts))
+
         channels = []
         for voice in self.voices:
             channels.append(self.parameters[f'channel{voice}'])
@@ -114,6 +119,8 @@ class TdtStim:
 
     @threaded_cached_property
     def parameters(self):
+        if len(self.parameter_stores) == 0:
+            return None
         stim_parameters = self.stim_parameters
         onsets = np.reshape(np.unique(self.tdt_io.tdt_block.stores[self.parameter_stores[0]].ts), (-1, 1))
         zero_cols = np.all(stim_parameters == 0.0, axis=0)
@@ -219,13 +226,6 @@ class TdtStim:
                         idx_pointer += num_stim_events
                 events[name] = ch_events    # TODO: this will overwrite data
         return events
-
-    def __getitem__(self, items):
-        if len(self.metadata['stores']) == 1:
-            if isinstance(items, (int, list, slice)):
-                return self.parameters.loc[items, :]
-        else:
-            raise ValueError('expected 1 stim store, received ' + str(len(self.metadata['stores'])))
 
 
 # class TdtEvents:
