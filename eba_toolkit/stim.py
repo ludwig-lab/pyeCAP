@@ -18,8 +18,6 @@ from .base.utils.numeric import _to_numeric_array
 from .io.ripple_io import RippleIO, RippleEvents
 from .io.tdt_io import TdtIO, TdtStim
 
-#TODO: create and edit the docstrings
-
 
 class Stim(_EventData, _DioData, _ParameterData):
     """
@@ -91,12 +89,12 @@ class Stim(_EventData, _DioData, _ParameterData):
                     self.file_path = [file_path]
                     self.io = [TdtIO(file_path)]
                     tdt_stim = TdtStim(self.io[0])
+                    parameters = tdt_stim.parameters
                     metadata = tdt_stim.metadata
                     events = tdt_stim.events()
                     event_indicators = tdt_stim.events(indicators=True)
                     dio = tdt_stim.dio()
                     dio_indicators = tdt_stim.dio(indicators=True)
-                    parameters = tdt_stim.parameters
             # File type not found
             else:
                 print(file_path)
@@ -119,6 +117,7 @@ class Stim(_EventData, _DioData, _ParameterData):
         else:
             raise ValueError("Input expected to be string or list of strings")
 
+    # TODO: add method for raw data access
     def plot_dio(self, *args, **kwargs):
         """
         Creates a plot of stimulation data showing the time periods with and without stimulation in raster format. See the

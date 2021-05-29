@@ -61,7 +61,37 @@ class TdtStim:
         else:
             raise TypeError("input expected to be of type TdtIO")
         self.type = type
+        # check for stimulation stores
+        stores = self.tdt_io.tdt_block.stores
+        self.raw_stores = []
+        self.parameter_stores = []
+        for key in stores.keys():
+            if key[1] == "S" and key[2].isdigit():
+                if key[0] == "e":
+                    if "p" in key:
+                        self.parameter_stores.append(key)
+                    elif "r" in key:
+                        self.raw_stores.append(key)
+                else:
+                    warnings.warn("Non Electrical Stimulation Detected, reading is not yet implemented.")
+
+        # raise errors for certain data
+        if len(self.parameter_stores) == 0 and len(self.raw_stores) == 0:
+            raise(ValueError("No electrical stimulation detected"))
+        elif len(self.parameter_stores) > 1:
+            # TODO: add this
+            raise(NotImplementedError("Reading of more than one electrical stimulation gizmo not implemented"))
+
+        # get parameter data into recognizable format
+        stim_data = []
+        for onset in np.unique(stores[self.parameter_stores[0]].ts):
+            ch_idx = stores[self.parameter_stores[0]].ts == onset
+            ch_sorted = np.argsort(stores[self.parameter_stores[0]].chan[ch_idx])
+            parameters = list(stores[self.parameter_stores[0]].data[ch_idx][ch_sorted])
+            stim_data.append(parameters)
+        self.stim_parameters = np.array(stim_data)
         self.voices = []
+        self.polarity = None
 
     @threaded_cached_property
     def metadata(self):
@@ -71,104 +101,28 @@ class TdtStim:
         stores = self.tdt_io.tdt_block.stores
         metadata['stores'] = []
         for idx, k in enumerate(stores.keys()):
-            # Stimulation data is by default recorded in a pair of stores withe the same first 4 characters followed
-            # by a p or r. Store ending with 'p' is for stimulation parameters and is 'scalar' data, 'r' is a raw
-            # recording of stimulation waveform and is a 'stream'
             if stores[k]['type_str'] == 'scalars' and (k[-1] == 'p' and k[:-1] + 'r' in stores.keys()):
                 metadata['stores'].append(k)
                 metadata['num_simulations'] = stores[k].size
                 metadata['stimulation_onsets'] = np.sort(np.unique(stores[k].ts))
         channels = []
-        for k in metadata['stores']:
-            for onset in metadata['stimulation_onsets']:
-                ch_idx = stores[k].ts == onset
-                ch_sorted = np.argsort(stores[k].chan[ch_idx])
-                channels.append(stores[k].data[ch_idx][ch_sorted][5])
+        for voice in self.voices:
+            channels.append(self.parameters[f'channel{voice}'])
         metadata['channels'] = list(np.unique(np.array(channels).astype(int)))
         metadata['ch_names'] = ['Stim ' + str(ch) for ch in metadata['channels']]
         return metadata
 
-    # @threaded_cached_property
-    # def parameters(self):
-    #     stores = self.tdt_io.tdt_block.stores
-    #     stim_stores = {}
-    #
-    #     for k in self.metadata['stores']:
-    #         stim_data = []
-    #         for onset in self.metadata['stimulation_onsets']:
-    #             # This has nothing to do with the stimulation channel but tdt refers to each stim parameter as a channel
-    #             # in their storage format
-    #             ch_idx = stores[k].ts == onset
-    #             ch_sorted = np.argsort(stores[k].chan[ch_idx])
-    #             # only first 6 parameters are used append to onset time to match order of stim_data DataFrame.
-    #             parameters = [onset] + list(stores[k].data[ch_idx][ch_sorted])
-    #             stim_data.append(parameters)
-    #         stim_data = np.array(stim_data)
-    #         print(stim_data)
-    #         # If the 'electrical stim' gizmo in tdt was used to aquire data then the first parameter should be 0
-    #         zero_columns = np.all(stim_data == 0.0, axis=0)
-    #         if zero_columns[1]:
-    #             parameter_names = ['onset time (s)', 'channel', 'stimulation gain', 'pulse count', 'period (ms)',
-    #                                'pulse amplitude (μA)', 'pulse duration (ms)']
-    #             # Pulse with segment A only (Monophasic)
-    #             if np.all(zero_columns[7:11]):
-    #                 channels = [0] + list(range(1, 7))
-    #             # Pulse with segments A, B (Biphasic)
-    #             elif np.all(zero_columns[9:11]):
-    #                 channels = [0] + list(range(1, 9))
-    #                 # Add additional parameter names for channel 2
-    #                 parameter_names += ['pulse amplitude 2 (μA)',
-    #                                     'pulse duration 2 (ms)']
-    #             # Pulse with segments A, B, C (Biphasic + Interphase delay)
-    #             else:
-    #                 raise NotImplementedError("Stim format with biphasic pulse and interphase delay using the TDT "
-    #                                           "'Electrical Stimulation' gizmo is not yet implemented.")
-    #                 channels = [0] + list(range(1, 11))
-    #             stim_data = stim_data[:, channels]
-    #         # If the 'electrical stim driver' gizmo is used then the first parameter is never zero, since it
-    #         # represents the period of the waveform
-    #         else:
-    #             stim_data = stim_data[:, 0:7]
-    #             parameter_names = ['onset time (s)', 'period (ms)', 'pulse count', 'pulse amplitude (μA)',
-    #                                'pulse duration (ms)', 'interphase delay (ms)', 'channel']
-    #         parameter_dataframe = pd.DataFrame(stim_data, index=range(len(stim_data)), columns=parameter_names)
-    #         parameter_dataframe = parameter_dataframe.astype({'pulse count': int, 'channel': int})
-    #         parameter_dataframe.insert(2, "frequency (Hz)", 1000/parameter_dataframe['period (ms)'])
-    #         parameter_dataframe.insert(5, "duration (ms)",
-    #                                    parameter_dataframe['period (ms)']*parameter_dataframe['pulse count'])
-    #         parameter_dataframe.insert(1, "offset time (s)",
-    #                                    parameter_dataframe['onset time (s)']+parameter_dataframe['duration (ms)']/1000)
-    #         stim_stores[k] = parameter_dataframe
-    #         self._parameters = stim_stores
-    #         if len(self.metadata['stores']) == 1:
-    #             return self._parameters[self.metadata['stores'][0]]
-    #         else:
-    #             return self._parameters
-
     @threaded_cached_property
     def parameters(self):
-        stores = self.tdt_io.tdt_block.stores
-
-        # TODO: generate error messages for missing eS1p
-        # TODO: check for 'eS1p/' or 'eS1e/'
-        # TODO: generate proper channel names with the 'Electrical Stimulation' gizmo
-        # convert data in stores to eS1p format
-        stim_data = []
-        for onset in self.metadata['stimulation_onsets']:
-            ch_idx = stores['eS1p'].ts == onset
-            ch_sorted = np.argsort(stores['eS1p'].chan[ch_idx])
-            parameters = list(stores['eS1p'].data[ch_idx][ch_sorted])
-            stim_data.append(parameters)
-
-        stim_parameters = np.array(stim_data)
-        onsets = np.reshape(self.metadata['stimulation_onsets'], (-1, 1))
+        stim_parameters = self.stim_parameters
+        onsets = np.reshape(np.unique(self.tdt_io.tdt_block.stores[self.parameter_stores[0]].ts), (-1, 1))
         zero_cols = np.all(stim_parameters == 0.0, axis=0)
 
         if zero_cols[0]:
             # 'Electrical Stimulation' Gizmo was used
             col_names = ['onset time (s)', 'channel', 'stimulation gain', 'pulse count', 'period (ms)',
                          'pulse amplitude A (μA)', 'pulse duration A (ms)']
-            channels = np.zeros((stim_parameters.shape[0], 1))
+            channels = np.zeros((stim_parameters.shape[0], 1))  # TODO: find a way to avoid hardcoding the zeros
             self.voices.append("")
             if np.all(zero_cols[6:10]):
                 # A segment only
@@ -188,11 +142,11 @@ class TdtStim:
             if np.all(zero_cols[6:11]) and not (zero_cols[11]):
                 # Bipolar up to 2 voices
                 possible_voices = [" A", " C"]
-                bipolar = True
+                self.polarity = "Bipolar"
             else:
                 # Monopolar up to 4 voices
                 possible_voices = [" A", " B", " C", " D"]
-                bipolar = False
+                self.polarity = "Monopolar"
 
             # for each possible voice, get appropriate data and column names
             for i, voice in enumerate(possible_voices):
@@ -200,14 +154,14 @@ class TdtStim:
                     self.voices.append(voice)
                     col_names += [f'period{voice} (ms)', f'pulse count{voice}', f'pulse amplitude{voice} (μA)',
                                   f'pulse duration{voice} (ms)', f'interphase delay{voice} (ms)', f'channel{voice}']
-                    if bipolar:
+                    if self.polarity == "bipolar":
                         stim_data = np.concatenate((stim_data, stim_parameters[:, i * 12:i * 12 + 6],
                                                     stim_parameters[:, (i + 1) * 12 - 1:(i + 1) * 12]), axis=1)
                         col_names += [f'bipolar channel{voice}']
                     else:
                         stim_data = np.concatenate((stim_data, stim_parameters[:, i * 6:(i + 1) * 6]), axis=1)
 
-        # add in new calculated columns for each vocie
+        # add in new calculated columns for each voice
         parameter_dataframe = pd.DataFrame(stim_data, columns=col_names)
         for i, voice in enumerate(self.voices):
             parameter_dataframe = parameter_dataframe.astype({f'pulse count{voice}': int, f'channel{voice}': int})
@@ -217,10 +171,10 @@ class TdtStim:
             parameter_dataframe.insert(1, f"offset time{voice} (s)", parameter_dataframe['onset time (s)'] +
                                        parameter_dataframe[f'duration{voice} (ms)'] / 1000)
         stim_stores = {}
-        stim_stores['eS1p'] = parameter_dataframe
+        stim_stores['eS1p'] = parameter_dataframe   # TODO: remove this hardcoding
         self._parameters = stim_stores
-        if len(self.metadata['stores']) == 1:
-            return self._parameters[self.metadata['stores'][0]]
+        if len(self.parameter_stores) == 1:
+            return self._parameters[self.parameter_stores[0]]
         else:
             return self._parameters
 
@@ -232,14 +186,14 @@ class TdtStim:
                 ch_params = params[params[f'channel{voice}'] == ch]
                 if indicators:
                     indicator_data = np.repeat(ch_params.index, 2)
-                    dio[name] = indicator_data
+                    dio[name] = indicator_data  # TODO: this will overwrite data
                 else:
                     dio_data = np.zeros((len(ch_params)*2,), dtype=float)
                     onsets = np.array(ch_params['onset time (s)'])
                     offsets = np.array(ch_params[f'offset time{voice} (s)'])
                     dio_data[0::2] = onsets
                     dio_data[1::2] = offsets
-                    dio[name] = dio_data
+                    dio[name] = dio_data    # TODO: this will overwrite data
         return dio
 
     def events(self, indicators=False):
@@ -248,7 +202,7 @@ class TdtStim:
         for voice in self.voices:
             for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
                 ch_params = params[params[f'channel{voice}'] == ch]
-                num_events = np.sum(ch_params[f'pulse count{voice}'])
+                num_events = np.sum(ch_params[f'pulse count{voice}'])*len(self.metadata['channels'])
                 ch_events = np.zeros((num_events,), dtype=float)
                 idx_pointer = 0
                 if indicators:
@@ -263,7 +217,7 @@ class TdtStim:
                         num_stim_events = int(row[f'pulse count{voice}'])
                         ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_events
                         idx_pointer += num_stim_events
-                events[name] = ch_events
+                events[name] = ch_events    # TODO: this will overwrite data
         return events
 
     def __getitem__(self, items):
