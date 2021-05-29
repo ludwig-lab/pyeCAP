@@ -117,7 +117,22 @@ class Stim(_EventData, _DioData, _ParameterData):
         else:
             raise ValueError("Input expected to be string or list of strings")
 
-    # TODO: add method for raw data access
+    @property
+    def raw_stores(self):
+        """
+        Returns data for raw stimulation waveforms ('eS1r' stores) and raw voltage monitoring data ('MonA' stores) if
+        they exist.
+
+        Returns
+        -------
+        list
+            list of dictionaries that contain the raw data structs.
+        """
+        raw_data = []
+        for i in range(len(self.metadata)):
+            raw_data.append({key: getattr(self.io[i].tdt_block.stores, key) for key in self.metadata[i]['raw_stores']})
+        return raw_data
+
     def plot_dio(self, *args, **kwargs):
         """
         Creates a plot of stimulation data showing the time periods with and without stimulation in raster format. See the
