@@ -61,6 +61,7 @@ class TdtStim:
         else:
             raise TypeError("input expected to be of type TdtIO")
         self.type = type
+        self.voices = []
 
     @threaded_cached_property
     def metadata(self):
@@ -162,14 +163,13 @@ class TdtStim:
         stim_parameters = np.array(stim_data)
         onsets = np.reshape(self.metadata['stimulation_onsets'], (-1, 1))
         zero_cols = np.all(stim_parameters == 0.0, axis=0)
-        voices = []
 
         if zero_cols[0]:
             # 'Electrical Stimulation' Gizmo was used
             col_names = ['onset time (s)', 'channel', 'stimulation gain', 'pulse count', 'period (ms)',
                          'pulse amplitude A (μA)', 'pulse duration A (ms)']
             channels = np.zeros((stim_parameters.shape[0], 1))
-            voices.append("")
+            self.voices.append("")
             if np.all(zero_cols[6:10]):
                 # A segment only
                 stim_data = np.concatenate((onsets, channels, stim_parameters[:, 1:6]), axis=1)
@@ -197,7 +197,7 @@ class TdtStim:
             # for each possible voice, get appropriate data and column names
             for i, voice in enumerate(possible_voices):
                 if not np.all(zero_cols[i * 24 // len(possible_voices):(i + 1) * 24 // len(possible_voices)]):
-                    voices.append(voice)
+                    self.voices.append(voice)
                     col_names += [f'period{voice} (ms)', f'pulse count{voice}', f'pulse amplitude{voice} (μA)',
                                   f'pulse duration{voice} (ms)', f'interphase delay{voice} (ms)', f'channel{voice}']
                     if bipolar:
@@ -209,53 +209,61 @@ class TdtStim:
 
         # add in new calculated columns for each vocie
         parameter_dataframe = pd.DataFrame(stim_data, columns=col_names)
-        for i, voice in enumerate(voices):
+        for i, voice in enumerate(self.voices):
             parameter_dataframe = parameter_dataframe.astype({f'pulse count{voice}': int, f'channel{voice}': int})
             parameter_dataframe.insert(2 + i * 6, f"frequency{voice} (Hz)", 1000 / parameter_dataframe[f'period{voice} (ms)'])
             parameter_dataframe.insert(5 + i * 6, f"duration{voice} (ms)", parameter_dataframe[f'period{voice} (ms)'] *
                                        parameter_dataframe[f'pulse count{voice}'])
             parameter_dataframe.insert(1, f"offset time{voice} (s)", parameter_dataframe['onset time (s)'] +
                                        parameter_dataframe[f'duration{voice} (ms)'] / 1000)
-        return parameter_dataframe
+        stim_stores = {}
+        stim_stores['eS1p'] = parameter_dataframe
+        self._parameters = stim_stores
+        if len(self.metadata['stores']) == 1:
+            return self._parameters[self.metadata['stores'][0]]
+        else:
+            return self._parameters
 
     def dio(self, indicators=False):
         dio = {}
         params = self.parameters
-        for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
-            ch_params = params[params['channel'] == ch]
-            if indicators:
-                indicator_data = np.repeat(ch_params.index, 2)
-                dio[name] = indicator_data
-            else:
-                dio_data = np.zeros((len(ch_params)*2,), dtype=float)
-                onsets = np.array(ch_params['onset time (s)'])
-                offsets = np.array(ch_params['offset time (s)'])
-                dio_data[0::2] = onsets
-                dio_data[1::2] = offsets
-                dio[name] = dio_data
+        for voice in self.voices:
+            for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
+                ch_params = params[params[f'channel{voice}'] == ch]
+                if indicators:
+                    indicator_data = np.repeat(ch_params.index, 2)
+                    dio[name] = indicator_data
+                else:
+                    dio_data = np.zeros((len(ch_params)*2,), dtype=float)
+                    onsets = np.array(ch_params['onset time (s)'])
+                    offsets = np.array(ch_params[f'offset time{voice} (s)'])
+                    dio_data[0::2] = onsets
+                    dio_data[1::2] = offsets
+                    dio[name] = dio_data
         return dio
 
     def events(self, indicators=False):
         events = {}
         params = self.parameters
-        for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
-            ch_params = params[params['channel'] == ch]
-            num_events = np.sum(ch_params['pulse count'])
-            ch_events = np.zeros((num_events,), dtype=float)
-            idx_pointer = 0
-            if indicators:
-                for index, row in params.iterrows():
-                    num_stim_events = int(row['pulse count'])
-                    stim_indicators = np.ones((num_stim_events,))*index
-                    ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_indicators
-                    idx_pointer += num_stim_events
-            else:
-                for index, row in params.iterrows():
-                    stim_events = row['onset time (s)'] + np.arange(0, row['pulse count'])*row['period (ms)']/1000
-                    num_stim_events = int(row['pulse count'])
-                    ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_events
-                    idx_pointer += num_stim_events
-            events[name] = ch_events
+        for voice in self.voices:
+            for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
+                ch_params = params[params[f'channel{voice}'] == ch]
+                num_events = np.sum(ch_params[f'pulse count{voice}'])
+                ch_events = np.zeros((num_events,), dtype=float)
+                idx_pointer = 0
+                if indicators:
+                    for index, row in params.iterrows():
+                        num_stim_events = int(row[f'pulse count{voice}'])
+                        stim_indicators = np.ones((num_stim_events,))*index
+                        ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_indicators
+                        idx_pointer += num_stim_events
+                else:
+                    for index, row in params.iterrows():
+                        stim_events = row['onset time (s)'] + np.arange(0, row[f'pulse count{voice}'])*row[f'period{voice} (ms)']/1000
+                        num_stim_events = int(row[f'pulse count{voice}'])
+                        ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_events
+                        idx_pointer += num_stim_events
+                events[name] = ch_events
         return events
 
     def __getitem__(self, items):
