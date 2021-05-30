@@ -61,8 +61,8 @@ class TdtStim:
         else:
             raise TypeError("input expected to be of type TdtIO")
         self.type = type
+
         # check for stimulation stores
-        # TODO: add access to MonA raw monitoring channel
         stores = self.tdt_io.tdt_block.stores
         self.raw_stores = []
         self.parameter_stores = []
@@ -71,10 +71,12 @@ class TdtStim:
                 if key[0] == "e":
                     if "p" in key:
                         self.parameter_stores.append(key)
-                    elif "r" in key or key == 'MonA':
+                    elif "r" in key:
                         self.raw_stores.append(key)
                 else:
                     warnings.warn("Non Electrical Stimulation Detected, reading is not yet implemented.")
+            elif key == 'MonA':
+                self.raw_stores.append(key)
 
         # raise errors for certain data
         if len(self.parameter_stores) == 0 and len(self.raw_stores) == 0:
@@ -192,15 +194,17 @@ class TdtStim:
             for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
                 ch_params = params[params[f'channel{voice}'] == ch]
                 if indicators:
-                    indicator_data = np.repeat(ch_params.index, 2)
-                    dio[name] = indicator_data  # TODO: this will overwrite data
+                    dio_data = np.repeat(ch_params.index, 2)
                 else:
                     dio_data = np.zeros((len(ch_params)*2,), dtype=float)
                     onsets = np.array(ch_params['onset time (s)'])
                     offsets = np.array(ch_params[f'offset time{voice} (s)'])
                     dio_data[0::2] = onsets
                     dio_data[1::2] = offsets
-                    dio[name] = dio_data    # TODO: this will overwrite data
+                if name not in dio:
+                    dio[name] = dio_data
+                else:
+                    dio[name] = np.concatenate((dio[name], dio_data))
         return dio
 
     def events(self, indicators=False):
@@ -209,22 +213,20 @@ class TdtStim:
         for voice in self.voices:
             for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
                 ch_params = params[params[f'channel{voice}'] == ch]
-                num_events = np.sum(ch_params[f'pulse count{voice}'])*len(self.metadata['channels'])
-                ch_events = np.zeros((num_events,), dtype=float)
-                idx_pointer = 0
+                ch_events = np.array([])
                 if indicators:
-                    for index, row in params.iterrows():
+                    for index, row in ch_params.iterrows():
                         num_stim_events = int(row[f'pulse count{voice}'])
                         stim_indicators = np.ones((num_stim_events,))*index
-                        ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_indicators
-                        idx_pointer += num_stim_events
+                        ch_events = np.concatenate((ch_events, stim_indicators))
                 else:
-                    for index, row in params.iterrows():
+                    for index, row in ch_params.iterrows():
                         stim_events = row['onset time (s)'] + np.arange(0, row[f'pulse count{voice}'])*row[f'period{voice} (ms)']/1000
-                        num_stim_events = int(row[f'pulse count{voice}'])
-                        ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_events
-                        idx_pointer += num_stim_events
-                events[name] = ch_events    # TODO: this will overwrite data
+                        ch_events = np.concatenate((ch_events, stim_events))
+                if name not in events:
+                    events[name] = ch_events
+                else:
+                    events[name] = np.concatenate((events[name], ch_events))
         return events
 
 
