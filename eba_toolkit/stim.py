@@ -91,10 +91,15 @@ class Stim(_EventData, _DioData, _ParameterData):
                     tdt_stim = TdtStim(self.io[0])
                     parameters = tdt_stim.parameters
                     metadata = tdt_stim.metadata
-                    events = tdt_stim.events()
-                    event_indicators = tdt_stim.events(indicators=True)
-                    dio = tdt_stim.dio()
-                    dio_indicators = tdt_stim.dio(indicators=True)
+                    events = np.array([])
+                    event_indicators = np.array([])
+                    dio = np.array([])
+                    dio_indicators = np.array([])
+                    # TODO: fix bugs in these methods so that they do not crash the code
+                    # events = tdt_stim.events()
+                    # event_indicators = tdt_stim.events(indicators=True)
+                    # dio = tdt_stim.dio()
+                    # dio_indicators = tdt_stim.dio(indicators=True)
             # File type not found
             else:
                 print(file_path)
