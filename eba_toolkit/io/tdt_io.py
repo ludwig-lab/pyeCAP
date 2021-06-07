@@ -194,45 +194,47 @@ class TdtStim:
 
     def dio(self, indicators=False):
         dio = {}
-        params = self.parameters
-        for voice in self.voices:
-            for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
-                ch_params = params[params[f'channel{voice}'] == ch]
-                if indicators:
-                    dio_data = np.repeat(ch_params.index, 2)
-                else:
-                    dio_data = np.zeros((len(ch_params)*2,), dtype=float)
-                    onsets = np.array(ch_params['onset time (s)'])
-                    offsets = np.array(ch_params[f'offset time{voice} (s)'])
-                    dio_data[0::2] = onsets
-                    dio_data[1::2] = offsets
-                if name not in dio:
-                    dio[name] = dio_data
-                else:
-                    dio[name] = np.concatenate((dio[name], dio_data))
+        for i, k in enumerate(self.voices):
+            params = self.parameters[i]
+            for voice in self.voices[k]:
+                for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
+                    ch_params = params[params[f'channel{voice}'] == ch]
+                    if indicators:
+                        dio_data = np.repeat(ch_params.index, 2)
+                    else:
+                        dio_data = np.zeros((len(ch_params)*2,), dtype=float)
+                        onsets = np.array(ch_params['onset time (s)'])
+                        offsets = np.array(ch_params[f'offset time{voice} (s)'])
+                        dio_data[0::2] = onsets
+                        dio_data[1::2] = offsets
+                    if name not in dio:
+                        dio[name] = dio_data
+                    else:
+                        dio[name] = np.concatenate((dio[name], dio_data))
         return dio
 
     def events(self, indicators=False):
         events = {}
-        params = self.parameters
-        for voice in self.voices:
-            for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
-                ch_params = params[params[f'channel{voice}'] == ch]
-                ch_events = np.array([])
-                if indicators:
-                    for index, row in ch_params.iterrows():
-                        num_stim_events = int(row[f'pulse count{voice}'])
-                        stim_indicators = np.ones((num_stim_events,))*index
-                        ch_events = np.concatenate((ch_events, stim_indicators))
-                else:
-                    for index, row in ch_params.iterrows():
-                        stim_events = row['onset time (s)'] + np.arange(0, row[f'pulse count{voice}'])*row[f'period{voice} (ms)']/1000
-                        ch_events = np.concatenate((ch_events, stim_events))
-                if name not in events:
-                    events[name] = ch_events
-                else:
-                    events[name] = np.concatenate((events[name], ch_events))
-        return events
+        for i, k in enumerate(self.voices):
+            params = self.parameters[i]
+            for voice in self.voices[k]:
+                for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
+                    ch_params = params[params[f'channel{voice}'] == ch]
+                    ch_events = np.array([])
+                    if indicators:
+                        for index, row in ch_params.iterrows():
+                            num_stim_events = int(row[f'pulse count{voice}'])
+                            stim_indicators = np.ones((num_stim_events,))*index
+                            ch_events = np.concatenate((ch_events, stim_indicators))
+                    else:
+                        for index, row in ch_params.iterrows():
+                            stim_events = row['onset time (s)'] + np.arange(0, row[f'pulse count{voice}'])*row[f'period{voice} (ms)']/1000
+                            ch_events = np.concatenate((ch_events, stim_events))
+                    if name not in events:
+                        events[name] = ch_events
+                    else:
+                        events[name] = np.concatenate((events[name], ch_events))
+            return events
 
 
 # class TdtEvents:

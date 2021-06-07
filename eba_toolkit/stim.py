@@ -91,15 +91,15 @@ class Stim(_EventData, _DioData, _ParameterData):
                     tdt_stim = TdtStim(self.io[0])
                     parameters = tdt_stim.parameters
                     metadata = tdt_stim.metadata
-                    events = np.array([])
-                    event_indicators = np.array([])
-                    dio = np.array([])
-                    dio_indicators = np.array([])
+                    # events = np.array([])
+                    # event_indicators = np.array([])
+                    # dio = np.array([])
+                    # dio_indicators = np.array([])
                     # TODO: fix bugs in these methods so that they do not crash the code
-                    # events = tdt_stim.events()
-                    # event_indicators = tdt_stim.events(indicators=True)
-                    # dio = tdt_stim.dio()
-                    # dio_indicators = tdt_stim.dio(indicators=True)
+                    events = tdt_stim.events()
+                    event_indicators = tdt_stim.events(indicators=True)
+                    dio = tdt_stim.dio()
+                    dio_indicators = tdt_stim.dio(indicators=True)
             # File type not found
             else:
                 print(file_path)
@@ -126,7 +126,7 @@ class Stim(_EventData, _DioData, _ParameterData):
     def raw_stores(self):
         """
         Returns data for raw stimulation waveforms ('eS1r' stores) and raw voltage monitoring data ('MonA' stores) if
-        they exist.
+        they exist (TDT only).
 
         Returns
         -------
@@ -134,8 +134,11 @@ class Stim(_EventData, _DioData, _ParameterData):
             list of dictionaries that contain the raw data structs.
         """
         raw_data = []
-        for i in range(len(self.metadata)):
-            raw_data.append({key: getattr(self.io[i].tdt_block.stores, key) for key in self.metadata[i]['raw_stores']})
+        try:
+            for i in range(len(self.metadata)):
+                raw_data.append({key: getattr(self.io[i].tdt_block.stores, key) for key in self.metadata[i]['raw_stores']})
+        except KeyError:
+            warnings.warn("Raw stores method is only for tdt objects")
         return raw_data
 
     def plot_dio(self, *args, **kwargs):
