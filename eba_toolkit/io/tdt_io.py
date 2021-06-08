@@ -147,33 +147,36 @@ class TdtStim:
                 # 'Electrical Stim Driver was used'
                 col_names = ['onset time (s)', 'period (ms)', 'pulse count', 'pulse amplitude (μA)',
                              'pulse duration (ms)', 'delay (ms)', 'channel']
-
+                voice_data = ["A"] * onsets.shape[0]
                 stim_data = np.concatenate((onsets, stim_parameters[:, 0:6]), axis=1)
                 if np.all(zero_cols[6:11]) and not (zero_cols[11]):
                     # Bipolar up to 2 voices
-                    possible_voices = [" A", " C"]
+                    possible_voices = ["A", "C"]
                     stim_data = np.concatenate((stim_data, stim_parameters[:, 11:12]), axis=1)
                     polarity = "Bipolar"
                     col_names += ["bipolar channel"]
                 else:
                     # Monopolar up to 4 voices
-                    possible_voices = [" A", " B", " C", " D"]
+                    possible_voices = ["A", "B", "C", "D"]
                     polarity = "Monopolar"
 
                 # Add extra data if necessary
                 for i, voice in enumerate(possible_voices[1:]):
                     if not np.all(zero_cols[(i + 1) * 24 // len(possible_voices):(i + 2) * 24 // len(possible_voices)]):
                         self.voices[k].append(voice)
+                        voice_data += [voice] * onsets.shape[0]
                         if polarity == "bipolar":
                             new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 12:(i + 1) * 12 + 6],
                                                        stim_parameters[:, (i + 2) * 12 - 1:(i + 2) * 12]), axis=1)
                         else:
                             new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 6:(i + 2) * 6]), axis=1)
-
                         stim_data = np.concatenate((stim_data, new_data), axis=0)
 
             # add in new calculated columns for each voice
             parameter_dataframe = pd.DataFrame(stim_data, columns=col_names)
+            if not zero_cols[0]:
+                parameter_dataframe['voice'] = voice_data
+            parameter_dataframe['store'] = k
             parameter_dataframe = parameter_dataframe.astype({'pulse count': int, 'channel': int})
             parameter_dataframe.insert(2, "frequency (Hz)", 1000 / parameter_dataframe['period (ms)'])
             parameter_dataframe.insert(5, "duration (ms)", parameter_dataframe['period (ms)'] *
