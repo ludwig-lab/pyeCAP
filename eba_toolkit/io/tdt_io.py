@@ -81,10 +81,6 @@ class TdtStim:
         # raise errors/warnings for certain data
         if len(self.parameter_stores) == 0 and len(self.raw_stores) == 0:
             raise(ValueError("No electrical stimulation detected"))
-        elif len(self.parameter_stores) > 1:
-            # TODO: add this
-            # raise(NotImplementedError("Reading of more than one electrical stimulation gizmo not implemented"))
-            pass
         elif len(self.parameter_stores) == 0:
             warnings.warn("No electrical stimulation parameters detected")
 
@@ -102,7 +98,6 @@ class TdtStim:
         self.voices = {}
         for k in self.parameter_stores:
             self.voices[k] = []
-        self.polarity = {}
 
     @threaded_cached_property
     def metadata(self):
@@ -119,28 +114,23 @@ class TdtStim:
             metadata['num_simulations'][k] = stores[k].size
             metadata['stimulation_onsets'][k] = np.sort(np.unique(stores[k].ts))
 
-        channels = []
-        for i, k in enumerate(self.parameter_stores):
-            for voice in self.voices[k]:
-                channels.append(np.array(self.parameters[i][f'channel{voice}']))
-        metadata['channels'] = list(np.unique(np.concatenate(channels).astype(int)))
+        metadata['channels'] = list(np.unique(self.parameters['channel']))
         metadata['ch_names'] = ['Stim ' + str(ch) for ch in metadata['channels']]
         return metadata
 
     @threaded_cached_property
     def parameters(self):
-        # TODO: differentiate between bipolar and local ground
         stim_stores = []
+
         for k in self.parameter_stores:
             stim_parameters = self.stim_parameters[k]
             onsets = np.reshape(np.unique(self.tdt_io.tdt_block.stores[k].ts), (-1, 1))
             zero_cols = np.all(stim_parameters == 0.0, axis=0)
-
             if zero_cols[0]:
                 # 'Electrical Stimulation' Gizmo was used
                 col_names = ['onset time (s)', 'channel', 'stimulation gain', 'pulse count', 'period (ms)',
                              'pulse amplitude A (μA)', 'pulse duration A (ms)']
-                channels = np.zeros((stim_parameters.shape[0], 1))  # TODO: find a way to avoid hardcoding the zeros
+                channels = np.ones((stim_parameters.shape[0], 1))
                 self.voices[k].append("")
                 if np.all(zero_cols[6:10]):
                     # A segment only
@@ -155,86 +145,86 @@ class TdtStim:
                     stim_data = np.concatenate((onsets, channels, stim_parameters[:, 1:10]), axis=1)
             else:
                 # 'Electrical Stim Driver was used'
-                col_names = ['onset time (s)']
-                stim_data = onsets
+                col_names = ['onset time (s)', 'period (ms)', 'pulse count', 'pulse amplitude (μA)',
+                             'pulse duration (ms)', 'delay (ms)', 'channel']
+
+                stim_data = np.concatenate((onsets, stim_parameters[:, 0:6]), axis=1)
                 if np.all(zero_cols[6:11]) and not (zero_cols[11]):
                     # Bipolar up to 2 voices
                     possible_voices = [" A", " C"]
-                    self.polarity[k] = "Bipolar"
+                    stim_data = np.concatenate((stim_data, stim_parameters[:, 11:12]), axis=1)
+                    polarity = "Bipolar"
+                    col_names += ["bipolar channel"]
                 else:
                     # Monopolar up to 4 voices
                     possible_voices = [" A", " B", " C", " D"]
-                    self.polarity[k] = "Monopolar"
+                    polarity = "Monopolar"
 
-                # for each possible voice, get appropriate data and column names
-                for i, voice in enumerate(possible_voices):
-                    if not np.all(zero_cols[i * 24 // len(possible_voices):(i + 1) * 24 // len(possible_voices)]):
+                # Add extra data if necessary
+                for i, voice in enumerate(possible_voices[1:]):
+                    if not np.all(zero_cols[(i + 1) * 24 // len(possible_voices):(i + 2) * 24 // len(possible_voices)]):
                         self.voices[k].append(voice)
-                        col_names += [f'period{voice} (ms)', f'pulse count{voice}', f'pulse amplitude{voice} (μA)',
-                                      f'pulse duration{voice} (ms)', f'interphase delay{voice} (ms)', f'channel{voice}']
-                        if self.polarity[k] == "bipolar":
-                            stim_data = np.concatenate((stim_data, stim_parameters[:, i * 12:i * 12 + 6],
-                                                        stim_parameters[:, (i + 1) * 12 - 1:(i + 1) * 12]), axis=1)
-                            col_names += [f'bipolar channel{voice}']
+                        if polarity == "bipolar":
+                            new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 12:(i + 1) * 12 + 6],
+                                                       stim_parameters[:, (i + 2) * 12 - 1:(i + 2) * 12]), axis=1)
                         else:
-                            stim_data = np.concatenate((stim_data, stim_parameters[:, i * 6:(i + 1) * 6]), axis=1)
+                            new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 6:(i + 2) * 6]), axis=1)
+
+                        stim_data = np.concatenate((stim_data, new_data), axis=0)
 
             # add in new calculated columns for each voice
             parameter_dataframe = pd.DataFrame(stim_data, columns=col_names)
-            for i, voice in enumerate(self.voices[k]):
-                parameter_dataframe = parameter_dataframe.astype({f'pulse count{voice}': int, f'channel{voice}': int})
-                parameter_dataframe.insert(2 + i * 6, f"frequency{voice} (Hz)", 1000 / parameter_dataframe[f'period{voice} (ms)'])
-                parameter_dataframe.insert(5 + i * 6, f"duration{voice} (ms)", parameter_dataframe[f'period{voice} (ms)'] *
-                                           parameter_dataframe[f'pulse count{voice}'])
-                parameter_dataframe.insert(1, f"offset time{voice} (s)", parameter_dataframe['onset time (s)'] +
-                                           parameter_dataframe[f'duration{voice} (ms)'] / 1000)
+            parameter_dataframe = parameter_dataframe.astype({'pulse count': int, 'channel': int})
+            parameter_dataframe.insert(2, "frequency (Hz)", 1000 / parameter_dataframe['period (ms)'])
+            parameter_dataframe.insert(5, "duration (ms)", parameter_dataframe['period (ms)'] *
+                                       parameter_dataframe['pulse count'])
+            parameter_dataframe.insert(1, "offset time (s)", parameter_dataframe['onset time (s)'] +
+                                       parameter_dataframe['duration (ms)'] / 1000)
             stim_stores.append(parameter_dataframe)
 
-        return stim_stores
+        return pd.concat(stim_stores).reset_index(drop=True)
 
     def dio(self, indicators=False):
         dio = {}
-        for i, k in enumerate(self.voices):
-            params = self.parameters[i]
-            for voice in self.voices[k]:
-                for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
-                    ch_params = params[params[f'channel{voice}'] == ch]
-                    if indicators:
-                        dio_data = np.repeat(ch_params.index, 2)
-                    else:
-                        dio_data = np.zeros((len(ch_params)*2,), dtype=float)
-                        onsets = np.array(ch_params['onset time (s)'])
-                        offsets = np.array(ch_params[f'offset time{voice} (s)'])
-                        dio_data[0::2] = onsets
-                        dio_data[1::2] = offsets
-                    if name not in dio:
-                        dio[name] = dio_data
-                    else:
-                        dio[name] = np.concatenate((dio[name], dio_data))
+        params = self.parameters
+        for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
+            ch_params = params[params['channel'] == ch]
+            if indicators:
+                dio_data = np.repeat(ch_params.index, 2)
+            else:
+                dio_data = np.zeros((len(ch_params)*2,), dtype=float)
+                onsets = np.array(ch_params['onset time (s)'])
+                offsets = np.array(ch_params['offset time (s)'])
+                dio_data[0::2] = onsets
+                dio_data[1::2] = offsets
+
+            if name not in dio:
+                dio[name] = dio_data
+            else:
+                dio[name] = np.concatenate((dio[name], dio_data))
         return dio
 
     def events(self, indicators=False):
         events = {}
-        for i, k in enumerate(self.voices):
-            params = self.parameters[i]
-            for voice in self.voices[k]:
-                for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
-                    ch_params = params[params[f'channel{voice}'] == ch]
-                    ch_events = np.array([])
-                    if indicators:
-                        for index, row in ch_params.iterrows():
-                            num_stim_events = int(row[f'pulse count{voice}'])
-                            stim_indicators = np.ones((num_stim_events,))*index
-                            ch_events = np.concatenate((ch_events, stim_indicators))
-                    else:
-                        for index, row in ch_params.iterrows():
-                            stim_events = row['onset time (s)'] + np.arange(0, row[f'pulse count{voice}'])*row[f'period{voice} (ms)']/1000
-                            ch_events = np.concatenate((ch_events, stim_events))
-                    if name not in events:
-                        events[name] = ch_events
-                    else:
-                        events[name] = np.concatenate((events[name], ch_events))
-            return events
+        params = self.parameters
+        for ch, name in zip(self.metadata['channels'], self.metadata['ch_names']):
+            ch_params = params[params['channel'] == ch]
+            ch_events = np.array([])
+            if indicators:
+                for index, row in ch_params.iterrows():
+                    num_stim_events = int(row['pulse count'])
+                    stim_indicators = np.ones((num_stim_events,))*index
+                    ch_events = np.concatenate((ch_events, stim_indicators))
+            else:
+                for index, row in ch_params.iterrows():
+                    stim_events = row['onset time (s)'] + np.arange(0, row['pulse count'])*row['period (ms)']/1000
+                    stim_events += row['delay (ms)']/1000
+                    ch_events = np.concatenate((ch_events, stim_events))
+            if name not in events:
+                events[name] = ch_events
+            else:
+                events[name] = np.concatenate((events[name], ch_events))
+        return events
 
 
 # class TdtEvents:
