@@ -26,5 +26,7 @@ setup(
     author="James Trevathan & Stephan Blanz & Matthew Laluzerne",
     author_email="james.trevathan@gmail.com, stephan.l.blanz@gmail.com",
     packages=find_packages(),
-    install_requires=version_reqs
+    install_requires=version_reqs,
+    url="https://github.com/ludwig-lab/eba-toolkit",
+    download_url=""
 )
