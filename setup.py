@@ -23,8 +23,8 @@ version_reqs = ['pandas',
 setup(
     name="eba_toolkit",
     version="0.0",
-    author="James Trevathan & Stephan Blanz",
+    author="James Trevathan & Stephan Blanz & Matthew Laluzerne",
     author_email="james.trevathan@gmail.com, stephan.l.blanz@gmail.com",
     packages=find_packages(),
-    # install_requires=version_reqs
+    install_requires=version_reqs
 )
