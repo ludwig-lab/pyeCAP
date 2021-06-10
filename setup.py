@@ -28,5 +28,5 @@ setup(
     packages=find_packages(),
     install_requires=version_reqs,
     url="https://github.com/ludwig-lab/eba-toolkit",
-    download_url=""
+    # download_url="https://github.com/ludwig-lab/eba-toolkit/archive/refs/tags/v_0.0.tar.gz"   # v_0.0 is not stable
 )

@@ -1,7 +1,7 @@
 
 # Introduction to eba-toolkit
 
-## Disclaimer : version 0.0 of eba-toolkit is an alpha version and many of the methods have not been validated. This program is currently under development and all classes and methods may be subject to change.
+## Disclaimer : version 0.0 of eba-toolkit is not a stable version and many of the methods have not been validated. This program is currently under development and all classes and methods may be subject to change.
 
 Python is a python package for the analysis of evoked compound action potentials (CAPs) in elecytrophysiology data sets.
 
@@ -39,8 +39,9 @@ For those interested. eba-toolkit mainly takes advantage of a python project cal
 
 ## Installation
 
-eba-toolkit is currently installable by downloading the repository, navigating to the repository with a command window, and running the command "python3 setup.py".
-PyPI installation coming soon.
+Installation is currently available through pyPI with the command 'pip install eba-toolkit'. Note that when importing the package, the command 'import eba_toolkit' is used instead of the hyphen.
+
+eba-toolkit is also installable by downloading the repository, navigating to the repository with a command window, and running the command "python setup.py" or "python3 setup.py".
 
 ## Documentation
 Coming soon to readthedocs.
