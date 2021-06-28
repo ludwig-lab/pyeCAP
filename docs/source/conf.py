@@ -12,9 +12,22 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('..'))
+from unittest.mock import MagicMock
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent / '..'))
+
+# mock modules that cause errors
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+        return MagicMock()
 
 
+MOCK_MODULES = ['numpy', 'dask', 'dask.array', 'dask.bag', 'dask.diagnostics', 'dask.cache', 'dask.multiprocessing',
+                'matplotlib', 'matplotlib.pyplot', 'matplotlib.axes', 'matplotlib.collections', 'matplotlib.gridspec',
+                'matplotlib.transforms', 'matplotlib.ticker', 'matplotlib.artist', 'matplotlib.axis', 'scipy',
+                'scipy.signal', 'scipy.io', 'pandas', 'openxyl', 'seaborn', 'numba', 'mne', 'mpl_toolkits.axes_grid1']
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 # -- Project information -----------------------------------------------------
 
 project = 'eba-toolkit'
@@ -42,8 +55,6 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 autodoc_member_order = 'bysource'
-
-autodoc_mock_imports = ['numpy', 'dask', 'matplotlib', 'scipy', 'pandas', 'openxyl', 'seaborn', 'numba', 'eba_toolkit']
 
 # -- Options for HTML output -------------------------------------------------
 

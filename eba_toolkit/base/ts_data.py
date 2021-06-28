@@ -1014,9 +1014,7 @@ class _TsData:
         x_lim = self._time_lim_validate(x_lim, remove_gaps=remove_gaps)
 
         x_index = (self._time_to_index(x_lim[0], remove_gaps=remove_gaps), self._time_to_index(x_lim[1], remove_gaps=remove_gaps)+1)
-        print('test1')
         plot_array = self.array[channels, x_index[0]:x_index[1]].compute()
-        print('test2')
 
         # get plot data
         ax.set_xlim(x_lim)

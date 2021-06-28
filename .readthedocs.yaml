@@ -1,0 +1,14 @@
+version: 2
+
+sphinx:
+   configuration: docs/source/conf.py
+
+formats:
+   - pdf
+
+python:
+  version: 3.7
+  install:
+    - path: .
+      method: pip
+  system_packages: true
