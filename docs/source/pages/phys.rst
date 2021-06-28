@@ -80,7 +80,7 @@ Functions for reading in data
 
 The following functions can be used to read in MATLAB data at a lower level.
 
-.. .. automodule:: eba_toolkit.io.adinstruments_io
+.. automodule:: eba_toolkit.io.adinstruments_io
     :members: check_data, to_array, to_meta
 
 Comment reading

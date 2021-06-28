@@ -45,9 +45,8 @@ eba-toolkit is also installable by downloading the repository, navigating to the
 
 ## Documentation
 
-Coming soon to readthedocs.
-
-Documentation can be built locally by downloading the repository. After downloading, open a command window and ensure that sphinx readthedocs theme is installed with the command "pip install sphinx-rtd-theme". Navigate to the docs folder of the repository with the terminal window and run the command "make html". The built documentation should be available as an html page in the docs/build directory. 
+Documentation is available on readthedocs:
+https://eba-toolkit.readthedocs.io/en/latest/
 
 ## Example Code
 eba-toolkit currently has several example jupyter notebooks in the "examples" folder of the repository. Coming soon to Binder [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ludwig-lab/eba-toolkit/new_dependencies)
