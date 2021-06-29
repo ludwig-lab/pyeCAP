@@ -414,7 +414,7 @@ class _TsData:
         # TODO: make this accept a dictionary with channel mask which is more convenient for large ch counts
         metadata = copy.deepcopy(self.metadata)
         if len(ch_types) != len(self.ch_names):
-            raise ValueError("Number of channels in input 'ch_types' does not match number of channels in data array.")
+            raise ValueError("Number of channels in input 'ch_types'", len(ch_types), "does not match number of channels in data array", len(self.ch_names), ".")
         for m in metadata:
             m['ch_types'] = ch_types
         return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
