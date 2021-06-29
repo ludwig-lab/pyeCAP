@@ -41,7 +41,7 @@ For those interested. eba-toolkit mainly takes advantage of a python project cal
 
 Installation is currently available through pyPI with the command 'pip install eba-toolkit'. Note that when importing the package, the command 'import eba_toolkit' is used instead of the hyphen.
 
-eba-toolkit is also installable by downloading the repository, navigating to the repository with a command window, and running the command "python setup.py" or "python3 setup.py".
+eba-toolkit is also installable by downloading the repository, navigating to the repository with a command window, and running the command "python setup.py install" or "python3 setup.py install".
 
 ## Documentation
 
