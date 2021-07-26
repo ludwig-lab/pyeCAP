@@ -70,7 +70,7 @@ class ECAP(_EpochData):
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log is "Experimental Log.xlsx":
+        if distance_log == "Experimental Log.xlsx":
             self.log_path = ephys_data.base_path + distance_log
         else:
             self.log_path = distance_log
