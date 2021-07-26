@@ -7,27 +7,26 @@ Class is intended to help user conduct preliminary data analysis
 4. Different visualization options based on unique stimulation parameters
 """
 
-import plotly.express as px
-import plotly.plotly as py
-import plotly.graph_objs as go
-
-import pandas as pd
-import numpy as np
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
-import plotly.express as px
+
+import plotly
+
+import pandas as pd
+import numpy as np
+
+
 
 from eba_toolkit import Ephys, Stim
-from eba_toolkit import base._Epoch_Data
 
 
 class EDA:
     def __init__(self, ephys_data, stim_data):
         self.ephys = ephys_data
         self.stim = stim_data
-        self.epoch = _Epoch_Data(ephys, stim_data, stim_data)
+
         def create_non_unique_dict(max_amp):
             sub_df = self.stim.parameters[self.stim.parameters['pulse amplitude (μA)'] == max_amp]
             sub_df_cols = sub_df.columns
@@ -80,12 +79,28 @@ class EDA:
         """
         Initiate plotting
         """
+        app = dash.Dash()
+
+        app.layout = html.Div([
+            html.H6("Change the value in the text box to see callbacks in action!"),
+            html.Div(["Input: ",
+                      dcc.Input(id='my-input', value='initial value', type='text')]),
+            html.Br(),
+            html.Div(id='my-output'),
+
+        ])
+
+        @app.callback(
+            Output(component_id='my-output', component_property='children'),
+            Input(component_id='my-input', component_property='value')
+        )
+        def update_output_div(input_value):
+            return 'Output: {}'.format(input_value)
         all_dims = [*self.unique_dict]
 
-        trace = go.Scatter(
-            x=,
-            y=
-        )
+        return app
+
+
 
 
 
