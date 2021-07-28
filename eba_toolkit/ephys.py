@@ -31,7 +31,7 @@ class Ephys(_TsData):
         * args : Arguments
             Arguments to be passed to :ref:`_TsData (parent class)` constructor.
         stores : None, list, tuple
-            Sequence of ??? or None to ????.
+            Sequence of tdt store names to include in the object, or None to include all stores.
         order : bool
             Set to True to order data sets by start time. Since data from the same file is read in chronological order,
             this will only have an effect when reading in data from multiple files.
