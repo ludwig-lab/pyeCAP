@@ -1,7 +1,7 @@
-/eba_toolkit.egg-info/
+/pyeCAP.egg-info/
+/build/
 *.pyc
 *.xml
-.idea/eba-toolkit.iml
 *.doctree
 *.eot
 *.js
@@ -11,3 +11,4 @@
 *.woff2
 *.ttf
 .idea/pyeCAP.iml
+*.egg

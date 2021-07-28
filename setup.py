@@ -26,11 +26,11 @@ version_reqs = ['pandas',
 
 setup(
     name="pyeCAP",
-    version="0.0",
+    version="0.0.1",
     author="James Trevathan & Stephan Blanz & Matthew Laluzerne",
     author_email="james.trevathan@gmail.com, stephan.l.blanz@gmail.com",
     packages=find_packages(),
     install_requires=version_reqs,
     url="https://github.com/ludwig-lab/pyeCAP",
-    # download_url="https://github.com/ludwig-lab/eba-toolkit/archive/refs/tags/v_0.0.tar.gz"   # v_0.0 is not stable
+    download_url="https://github.com/ludwig-lab/pyeCAP/archive/refs/tags/v_0.0.1.tar.gz"   # v_0.0 is not stable
 )
