@@ -3,6 +3,7 @@ from setuptools import setup, find_packages
 # TODO: find a way to include the neuroshare package from github
 # TODO: update requirements.txt
 version_reqs = ['pandas',
+                'numpy<1.21,>=1.17',
                 'scipy',
                 'matplotlib',
                 'seaborn',
@@ -18,7 +19,10 @@ version_reqs = ['pandas',
                 'sphinx-rtd-theme',
                 'h5py',
                 'xlrd',
-                'openpyxl']
+                'openpyxl',
+                'pillow>=7.1.0',
+                'cycler>=0.10',
+                ]
 
 setup(
     name="pyeCAP",
