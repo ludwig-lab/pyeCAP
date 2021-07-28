@@ -46,7 +46,7 @@ pyeCAP is also installable by downloading the repository, navigating to the repo
 ## Documentation
 
 Documentation is available on readthedocs:
-https://pyeCAP.readthedocs.io/en/latest/
+https://eba-toolkit.readthedocs.io/en/latest/
 
 ## Example Code
 pyeCAP currently has several example jupyter notebooks in the "examples" folder of the repository. Coming soon to Binder [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ludwig-lab/pyeCAP/new_dependencies)
