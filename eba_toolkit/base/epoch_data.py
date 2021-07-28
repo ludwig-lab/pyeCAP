@@ -205,11 +205,9 @@ class _EpochData:
 
         event_data = self.ts_data.array[:, first_onset_idx:last_onset_idx + 1]
 
-
         if len(removal_idx[0]) > 0:
             removal_idx = [idx[0] for idx in removal_idx]
             event_data.delete(removal_idx, axis=1)
-            warnings.warn("This is my first time being here. I'm new and afraid. You should check to make sure I did what you want")
 
         event_data_reshaped = da.reshape(event_data, (self.ts_data.shape[0], len(event_times), int(sample_len)))
         return da.moveaxis(event_data_reshaped, 1, 0)
