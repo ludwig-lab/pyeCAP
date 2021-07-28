@@ -19,7 +19,7 @@ version_reqs = ["pandas==1.2.2",
                 "openpyxl==3.0.6"]
 
 setup(
-    name="eba_toolkit",
+    name="pyeCAP",
     version="0.0",
     author="James Trevathan & Stephan Blanz",
     author_email="james.trevathan@gmail.com, stephan.l.blanz@gmail.com",

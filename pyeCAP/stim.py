@@ -14,7 +14,7 @@ from .base.dio_data import _DioData
 from .base.parameter_data import _ParameterData
 from .base.utils.base import _is_iterable
 from .base.utils.numeric import _to_numeric_array
-# eba_toolkit io class imports
+# pyeCAP io class imports
 from .io.ripple_io import RippleIO, RippleEvents
 from .io.tdt_io import TdtIO, TdtStim
 
@@ -35,7 +35,7 @@ class Stim(_EventData, _DioData, _ParameterData):
         file_path : str, list
             Directory or list of directories containing TDT data sets.
         io : None, list
-            List of eba_toolkit io objects to read ripple/tdt data for each experiment.
+            List of pyeCAP io objects to read ripple/tdt data for each experiment.
         events : None, list
             List of dictionaries containing  name and an array with stimulation event times.
         event_indicators : None, list
@@ -53,9 +53,9 @@ class Stim(_EventData, _DioData, _ParameterData):
 
         Examples
         ________
-        >>> eba_toolkit.Stim(pathname1)   # replace pathnames with paths to data      # doctest: +SKIP
+        >>> pyeCAP.Stim(pathname1)   # replace pathnames with paths to data      # doctest: +SKIP
 
-        >>> eba_toolkit.Stim([pathname1, pathname2, pathname3])                       # doctest: +SKIP
+        >>> pyeCAP.Stim([pathname1, pathname2, pathname3])                       # doctest: +SKIP
         """
 
         if isinstance(file_path, list) \

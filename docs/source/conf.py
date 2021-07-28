@@ -30,7 +30,7 @@ MOCK_MODULES = ['numpy', 'dask', 'dask.array', 'dask.bag', 'dask.diagnostics', '
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 # -- Project information -----------------------------------------------------
 
-project = 'eba-toolkit'
+project = 'pyeCAP'
 copyright = '2020, James Trevathan'
 author = 'James Trevathan'
 

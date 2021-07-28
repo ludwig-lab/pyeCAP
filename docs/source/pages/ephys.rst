@@ -4,7 +4,7 @@ Ephys
 The Ephys class provides several ways to work with electrophysiology data. An Ephys object is usually instantiated with
 only a path name to a ripple file or TDT tank or a list of path names.
 
-.. automodule:: eba_toolkit.ephys
+.. automodule:: pyeCAP.ephys
     :members:
     :special-members:
 
@@ -59,12 +59,12 @@ The Ephys and Phys classes inherit the majority of methods from the _TsData clas
 
 .. testsetup::
 
-    import eba_toolkit, os
+    import pyeCAP, os
     ephys_path = os.path.join('..', 'tests', 'data', 'TDT', 'SmallData')
-    with eba_toolkit.eba_toolkit.hide_print():
-        ephys_data = eba_toolkit.Ephys(ephys_path)
+    with pyeCAP.pyeCAP.hide_print():
+        ephys_data = pyeCAP.Ephys(ephys_path)
 
-.. autoclass:: eba_toolkit.base.ts_data._TsData
+.. autoclass:: pyeCAP.base.ts_data._TsData
     :members: array, shape, ndim, dtype, size, itemsize, shapes, start_indices, time, ch_names, ch_types, start_times, end_times, sample_rate, ndata,
 
     .. automethod:: __init__

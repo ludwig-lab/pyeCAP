@@ -1,4 +1,4 @@
-from .eba_toolkit import *
+from .pyeCAP import *
 from .ephys import Ephys
 from .stim import Stim
 from .ecap import ECAP

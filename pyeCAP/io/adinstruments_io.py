@@ -73,7 +73,7 @@ def check_data(raw_data):
     # check for missing data
     if True in np.unique(raw_data['datastart'] == -1):
         warnings.warn("Channel data does not align into a rectangular array."
-                      " Try padding the data with the eba_toolkit.phys.pad_array function")
+                      " Try padding the data with the pyeCAP.phys.pad_array function")
 
 
 def convert_time(matlab_time):

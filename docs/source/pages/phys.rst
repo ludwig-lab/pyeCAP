@@ -15,11 +15,11 @@ The data sets are automatically split up by 'blocks' in the recording.
 
 .. .. testsetup::
 
-    ..    import eba_toolkit, os
+    ..    import pyeCAP, os
         path = os.path.join()
-        phys_data = eba_toolkit.Phys(path)
+        phys_data = pyeCAP.Phys(path)
 
-.. autoclass:: eba_toolkit.phys.Phys
+.. autoclass:: pyeCAP.phys.Phys
     :members: units
     :special-members: __init__
 
@@ -46,14 +46,14 @@ selected. If these options are not chosen, the Phys class will not be able to re
 The Phys class also reads data from non-hdf5 MatLab (.mat) files that are under 4GB. To create the MatLab file, use LabChart to export the
 data similarly to a binary file. Select the "MATLAB" option when choosing the file type. Choose the desired channels and
 make sure the 'upsample to same rate' option is selected. This will ensure a consistent sample rate by interpolating
-data points. eba-toolkit currently does not support data with different sampling rates between blocks or channels.
+data points. pyeCAP currently does not support data with different sampling rates between blocks or channels.
 
 More information about how Labchart exports this data can be found here: https://www.adinstruments.com/support/knowledge-base/how-does-matlab-open-exported-data
 
 Automatic Warnings
 ..................
 
-When reading .mat files, eba-toolkit can generate warnings that will catch data that is improperly formatted
+When reading .mat files, pyeCAP can generate warnings that will catch data that is improperly formatted
 or not implemented. To enable these warnings, set the 'check' parameter to True when instantiating a new Phys object.
 This parameter is only intended to generate warnings by reading data directly from files. This will not check data when
 data and metadata are manually inputted into a Phys object. The constructor calls the check_data function documented below.
@@ -80,7 +80,7 @@ Functions for reading in data
 
 The following functions can be used to read in MATLAB data at a lower level.
 
-.. automodule:: eba_toolkit.io.adinstruments_io
+.. automodule:: pyeCAP.io.adinstruments_io
     :members: check_data, to_array, to_meta
 
 Comment reading
@@ -89,7 +89,7 @@ Comment reading
 The following function can be used to read the comments from a file and record the timestamp, channel, and name of each
 comment.
 
-.. automodule:: eba_toolkit.phys
+.. automodule:: pyeCAP.phys
     :members: get_comments
 
 
