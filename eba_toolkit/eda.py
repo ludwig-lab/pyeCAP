@@ -169,7 +169,7 @@ class EDA(_EpochData):
                     fig = make_subplots(rows=num_rows, cols=num_cols,
                                         subplot_titles=title_str,
                                         shared_xaxes='all', shared_yaxes='all',
-                                        vertical_spacing=0.02)
+                                        vertical_spacing=0.06)
 
                     for r_idx, r in enumerate(range(num_rows)):
                         for c_idx, c in enumerate(range(num_cols)):

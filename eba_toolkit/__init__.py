@@ -4,4 +4,5 @@ from .stim import Stim
 from .ecap import ECAP
 from .phys import Phys
 from .eda import EDA
+from .da import DA
 from .phys_response import PhysResponse
