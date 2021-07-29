@@ -733,7 +733,7 @@ class _TsData:
         width : None, float
             Width of the transition region in Hz.
         filter_length : str
-            ??
+            [Not yet implemented].
         window : str, tuple
             Window type. See scipy.signal.get_window documentation for more information.
             for more information.
@@ -744,6 +744,8 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
+        # TODO: implement the 'filter_length' parameter
+
         def convfft(x):
             conv1 = np.flip(
                 signal.fftconvolve(np.flip(signal.fftconvolve(x[0, :], filter_weights, mode='same')), filter_weights,

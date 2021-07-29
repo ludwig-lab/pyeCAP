@@ -2,7 +2,7 @@ Ephys
 =====
 
 The Ephys class provides several ways to work with electrophysiology data. An Ephys object is usually instantiated with
-only a path name to a ripple file or TDT tank or a list of path names.
+only a path name to a ripple file or TDT tank or a list of path names (currently, only TDT data is supported).
 
 .. automodule:: pyeCAP.ephys
     :members:

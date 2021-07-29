@@ -21,8 +21,10 @@ as well as methods for working with channels.
 
 Stim parent classes
 ^^^^^^^^^^^^^^^^^^^
-The Stim class has three parent classes to handle stimulation events, parameters, and dio data. The inheritance order
-for Stim objects is _EventData first, _DioData second, and _ParameterData third.
+The Stim class has three parent classes to handle stimulation: events, parameters, and Dio data. The inheritance order
+for Stim objects is _EventData first, _DioData second, and _ParameterData third. The event data class keeps track of the
+time of each individual stimulation pulse. The Digital I/O (Dio) class keeps track of the start and stop time of a group
+of pulses. The parameter data class keeps track of stimulation parameters such as pulse amplitude and pulse count.
 
 Event Data class
 ................

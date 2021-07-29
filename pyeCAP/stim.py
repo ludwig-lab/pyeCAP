@@ -173,7 +173,7 @@ class Stim(_EventData, _DioData, _ParameterData):
     def set_parameters(self, parameter, values):
         """
         Resets the values of the 'channel' and 'polarity' parameters in the stimulation parameters DataFrame.
-        ?? object is modified in place??
+        Warning: Object is modified in place.
 
         Parameters
         ----------
@@ -207,7 +207,7 @@ class Stim(_EventData, _DioData, _ParameterData):
         """
         Resets values in the stimulation parameters DataFrame. Updates 'channel', 'polarity', 'anode' and 'cathode'
         columns.
-        ?? Object is modified in place ??
+        Warning: Object is modified in place.
 
         Parameters
         ----------
@@ -260,7 +260,7 @@ class Stim(_EventData, _DioData, _ParameterData):
     def append(self, new_data):
         """
         Adds new data to a Stim class instance.
-        ?? object is modified in place??
+        Warning: Object is modified in place.
 
         Parameters
         ----------
