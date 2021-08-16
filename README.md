@@ -54,9 +54,8 @@ Examples 1-4 are updated and examples 5-7 need updating.
 
 Example notebooks can be accessed on binder:
 (Warning: example data must be downloaded and unzipped which will take around 5 minutes. binder will time out after 10 minutes of inactivity and the notebooks will have to be restarted and the examples must be re-downloaded. Ensure that the notebook is being actively used to avoid having to re-download and re-create the virtual environment.)
-[![Binder](https://mybinder.org/badge_logo.svg)]
 
-(https://mybinder.org/v2/gh/ludwig-lab/pyeCAP/main)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ludwig-lab/pyeCAP/main)
 
 or google colab:
 https://colab.research.google.com/drive/1Y8j4L4T-_kpFrinS3OQhDpuxHW7VK9cO?usp=sharing (notebook 1)
