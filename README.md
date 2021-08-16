@@ -49,4 +49,15 @@ Documentation is available on readthedocs:
 https://pyecap.readthedocs.io/en/latest/
 
 ## Example Code
-pyeCAP currently has several example jupyter notebooks in the "examples" folder of the repository. Coming soon to Binder [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ludwig-lab/pyeCAP/new_dependencies)
+pyeCAP currently has several example jupyter notebooks in the "examples" folder of the repository.
+Examples 1-4 are updated and examples 5-7 need updating.
+
+Example notebooks can be accessed on binder:
+(Warning: example data must be downloaded and unzipped which will take around 5 minutes. binder will time out after 10 minutes of inactivity and the notebooks will have to be restarted and the examples must be re-downloaded. Ensure that the notebook is being actively used to avoid having to re-download and re-create the virtual environment.)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ludwig-lab/pyeCAP/new_dependencies)
+
+or google colab:
+https://colab.research.google.com/drive/1Y8j4L4T-_kpFrinS3OQhDpuxHW7VK9cO?usp=sharing (notebook 1)
+https://colab.research.google.com/drive/1mZsibfkB_KoDlEeC2P0XIOZfCzqoTJ5v?usp=sharing (notebook 2)
+https://colab.research.google.com/drive/16kwh1xFga7xYQWy2kuInwzE4qWjSNxzJ?usp=sharing (notebook 3)
+https://colab.research.google.com/drive/1OhFqSQ8rvKrrdA_M83baACsxXuoWCRJk?usp=sharing (notebook 4)
