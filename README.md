@@ -39,7 +39,7 @@ For those interested. pyeCAP mainly takes advantage of a python project called D
 
 ## Installation
 
-Installation is currently available through pyPI with the command 'pip install pyeCAP'. Note that when importing the package, the command 'import eba_toolkit' is used instead of the hyphen.
+Installation is currently available through pyPI with the command 'pip install pyeCAP'.
 
 pyeCAP is also installable by downloading the repository, navigating to the repository with a command window, and running the command "python setup.py install" or "python3 setup.py install".
 
@@ -58,7 +58,11 @@ Example notebooks can be accessed on binder:
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ludwig-lab/pyeCAP/main)
 
 or google colab:
+
 https://colab.research.google.com/drive/1Y8j4L4T-_kpFrinS3OQhDpuxHW7VK9cO?usp=sharing (notebook 1)
+
 https://colab.research.google.com/drive/1mZsibfkB_KoDlEeC2P0XIOZfCzqoTJ5v?usp=sharing (notebook 2)
+
 https://colab.research.google.com/drive/16kwh1xFga7xYQWy2kuInwzE4qWjSNxzJ?usp=sharing (notebook 3)
+
 https://colab.research.google.com/drive/1OhFqSQ8rvKrrdA_M83baACsxXuoWCRJk?usp=sharing (notebook 4)
