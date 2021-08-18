@@ -18,10 +18,11 @@ version_reqs = ['pandas',
                 'ipympl',
                 'sphinx-rtd-theme',
                 'h5py',
-                'xlrd',
+                'xlrd', # Neeed to remove this excel dependency
                 'openpyxl',
                 'pillow>=7.1.0',
                 'cycler>=0.10',
+                'tqdm', # Only used in example notebooks at this point
                 ]
 
 setup(
