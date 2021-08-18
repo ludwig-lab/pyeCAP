@@ -12,3 +12,4 @@
 *.ttf
 .idea/pyeCAP.iml
 *.egg
+examples/.ipynb_checkpoints/*
