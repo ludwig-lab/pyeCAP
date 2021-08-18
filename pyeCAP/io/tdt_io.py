@@ -50,6 +50,37 @@ class TdtIO:
             raise IOError("Path was not formatted as a string.")
 
     @property
+    def metadata(self):
+        # read in StoresListing file to get more metadata
+        metadata = {}
+        gizmo_dict = {}
+        obj_id = {}
+        txt_path = os.path.join(self.file_path, "StoresListing.txt")
+        try:
+            with open(txt_path, "r") as f:
+                txt = f.read()
+        except FileNotFoundError:
+            warnings.warn("No StoresListing file found, pyeCAP will assume default store names")
+
+        # parse StoresListing file
+        for txtblock in txt.split("\n\n"):
+            # read in experiment metadata text block
+            if "Experiment" in txtblock:
+                metadata.update({line.split(":")[0]: line.split(":")[1].strip() for line in txtblock.split("\n")})
+                metadata.pop("Time")
+            # read in storage data from each tdtgizmo
+            elif "ObjectID" in txtblock:
+                object_id = txtblock.split("\n")[0].split("-")[0].split(":")[1].strip()
+                gizmo_name = txtblock.split("\n")[0].split("-")[1].strip()
+                store_ids = [line.split(":")[1].strip() for line in txtblock.split("\n")[1:]]
+                gizmo_dict.update({store_id: gizmo_name for store_id in store_ids})
+                obj_id.update({store_id: object_id for store_id in store_ids})
+
+        metadata["Gizmo Name"] = gizmo_dict
+        metadata["Gizmo ID"] = obj_id
+        return metadata
+
+    @property
     def stores(self):
         return list(self.tdt_block.stores.keys())
 
@@ -64,8 +95,9 @@ class TdtStim:
 
     @threaded_cached_property
     def metadata(self):
-        metadata = {'start_time': self.tdt_io.tdt_block['start_time'][0],
-                    'stop_time': self.tdt_io.tdt_block['stop_time'][0]}
+        metadata = self.tdt_io.metadata
+        metadata.update({'start_time': self.tdt_io.tdt_block['start_time'][0],
+                         'stop_time': self.tdt_io.tdt_block['stop_time'][0]})
 
         stores = self.tdt_io.tdt_block.stores
         metadata['stores'] = []
@@ -343,8 +375,9 @@ class TdtArray:
 
     @threaded_cached_property
     def metadata(self):
-        metadata = {'start_time': self.tdt_io.tdt_block['start_time'][0],
-                    'stop_time': self.tdt_io.tdt_block['stop_time'][0]}
+        metadata = self.tdt_io.metadata
+        metadata.update({'start_time': self.tdt_io.tdt_block['start_time'][0],
+                         'stop_time': self.tdt_io.tdt_block['stop_time'][0]})
 
         stores = self.tdt_io.tdt_block.stores
         metadata['block_size'] = []
