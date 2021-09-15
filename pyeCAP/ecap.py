@@ -70,7 +70,7 @@ class ECAP(_EpochData):
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log is "Experimental Log.xlsx":
+        if distance_log == "Experimental Log.xlsx":
             self.log_path = ephys_data.base_path + distance_log
         else:
             self.log_path = distance_log
@@ -168,7 +168,8 @@ class ECAP(_EpochData):
                 if plot_AUCs:
                     fig, ax = plt.subplots(1, dpi=300)
                     ax.plot(signal)
-                    ax.vlines([specific_onset, specific_offset], np.max(signal[specific_onset:specific_offset]), np.min(signal[specific_onset:specific_offset]))
+                    ax.vlines([specific_onset, specific_offset], np.max(signal[specific_onset:specific_offset]),
+                              np.min(signal[specific_onset:specific_offset]))
                     plt.show()
             return current_list
 
@@ -442,16 +443,29 @@ class ECAP(_EpochData):
                 # iterate through each fiber type
                 # plotting_metadata = [condition_list[signal_idx], channel_list[signal_idx], amplitude_list[signal_idx],
                 #                      rec_idx]
-                plotting_metadata = [*[p[signal_idx] for p in info_list], recording_channel_names[rec_idx]]
+                ch_types = []
+                for m in self.ephys.metadata:
+                    if 'ch_types' in m:
+                        if len(m['ch_types']) > 1:
+                            ch_types.append(m['ch_types'])
+                    else:
+                        ch_types.append([''] * len(signal_chain[recording_channels]))
+
+                plotting_metadata = [*[p[signal_idx] for p in info_list], recording_channel_names[rec_idx], ch_types[rec_idx]]
                 calc_values = self.calc_AUC_method(rec_chain, rec_idx, window_type, analysis_method, plotting_metadata,
                                                    plot_AUCs=plot_AUC, save_path=save_path)
                 for specific_window_idx, vals in enumerate(calc_values):
                     # master_list.append(
                     #     [vals, analysis_method, window_nomenclature[specific_window_idx], amplitude_list[signal_idx],
                     #
-                    master_list.append([vals, analysis_method, window_nomenclature[specific_window_idx], *plotting_metadata])
+                    master_list.append(
+                        [vals, analysis_method, window_nomenclature[specific_window_idx], *plotting_metadata])
 
-        new_df = pd.DataFrame(master_list, columns=['AUC (Vs)', 'Calculation Type', "Calculation Window", *params, 'Recording Electrode'])
+        new_df = pd.DataFrame(master_list, columns=['AUC (Vs)', 'Calculation Type', "Calculation Window", *params,
+                                                    'Recording Electrode', 'Recording Type'])
+
+        if new_df['Recording Type'][0] == '':
+            new_df.drop(columns='Recording Type', inplace=True)
         # if new_df.loc[0]["Stimulation Amplitude"] < 0:
         #     new_df['Stimulation Amplitude'] = new_df['Stimulation Amplitude'].apply(lambda x: x * -1)
 
@@ -636,7 +650,7 @@ class ECAP(_EpochData):
                 plt.show()
 
     def plot_average_recordings(self, amplitude, condition=None, relative_time_frame=None, display=False,
-                                 save=False):
+                                save=False):
         df = self.stim.parameters
 
         if condition is None:
