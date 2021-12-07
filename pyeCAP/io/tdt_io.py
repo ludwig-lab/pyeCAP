@@ -211,13 +211,13 @@ class TdtStim:
             ch_events = np.zeros((num_events,), dtype=float)
             idx_pointer = 0
             if indicators:
-                for index, row in params.iterrows():
+                for index, row in params[params["channel"] == ch].iterrows():
                     num_stim_events = int(row['pulse count'])
                     stim_indicators = np.ones((num_stim_events,))*index
                     ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_indicators
                     idx_pointer += num_stim_events
             else:
-                for index, row in params.iterrows():
+                for index, row in params[params["channel"] == ch].iterrows():
                     stim_events = row['onset time (s)'] + np.arange(0, row['pulse count'])*row['period (ms)']/1000
                     num_stim_events = int(row['pulse count'])
                     ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_events
