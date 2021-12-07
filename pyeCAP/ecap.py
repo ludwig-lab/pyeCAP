@@ -483,15 +483,24 @@ class ECAP(_EpochData):
         if parameter_index is None:
             parameter_index = self.df_epoc_idx.index
 
-        # delayed = [dask.delayed(self.dask_array(i)) for i in parameter_index]
-        # bag_delayed = db.from_delayed(delayed)
-        # print("Begin Averaging Data")
-        # self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
-        # print("Finished Averaging Data")
+        # import time
+        #
+        #
+        # tic = time.perf_counter()
+        # reshaped_traces = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x))).compute()
+        # mean_traces_dasked = [np.mean(x, axis=0) for x in reshaped_traces]
+        # bagged_traces = db.from_sequence(mean_traces_dasked)
+        # self.mean_traces = dask.compute(bagged_traces.compute())
+        # toc = time.perf_counter()
+        #
+        # print(toc-tic, "elapsed")
+
+
         bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
         print("Begin Averaging Data")
         self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
         print("Finished Averaging Data")
+
 
     def filter_averages(self, filter_channels=None, filter_median_highpass=False, filter_median_lowpass=False,
                         filter_gaussian_highpass=False, filter_powerline=False):
