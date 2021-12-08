@@ -288,8 +288,10 @@ class TdtArray:
         s_freqs = self.metadata['sample_rate']
         s_lengths = self.metadata['stream_lengths']
         if isinstance(s_freqs, list):
-            raise IOError("Selected stores contain arrays with different sampling rates. Use input 'stores' to select "
-                          "a subset of TDT stores with compatible sampling rates.")
+            raise IOError("Selected stores contain arrays with different sampling rates. Use input 'stores=' to select "
+                          "a subset of TDT stores with compatible sampling rates.\n"
+                          "Available stores are: " + str(self.stores)
+                          )
 
         if isinstance(s_lengths, list):
             # ToDo: yell at TDT for having incorrect block size.
