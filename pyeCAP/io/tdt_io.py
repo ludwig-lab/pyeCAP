@@ -341,11 +341,7 @@ class TdtArray:
                 n_offsets = np.copy(offsets)
                 n_offsets[1:] = np.diff(offsets) - block_bits
                 # print((f, np_dtype, block_size, offsets))
-                # block = [np.fromfile(f, dtype=np_dtype, count=block_size, offset=offset) for offset in n_offsets]
-                block = []
-                for offset in n_offsets:
-                    block.append(np.fromfile(f, dtype=np_dtype, count=block_size, offset=offset))
-
+                block = [np.fromfile(f, dtype=np_dtype, count=block_size, offset=offset) for offset in n_offsets]
                 block = np.concatenate(block)
                 return block
 
@@ -353,7 +349,7 @@ class TdtArray:
             for key in np.asarray(self.metadata['streams']).flatten():
                 channel_list = np.sort(np.unique(self.tdt_io.tdt_block.stores[key].chan))
                 for channel in channel_list:
-                    data_offsets = np.array(self.tdt_io.tdt_block.stores[key].data[self.tdt_io.tdt_block.stores[key].chan == channel], dtype=np.int64)
+                    data_offsets = np.array(self.tdt_io.tdt_block.stores[key].data[self.tdt_io.tdt_block.stores[key].chan == channel], dtype=np.int64) # needs to by an int64 for datasets greater than >4GB
                     # Check for sev file that will exist if files saved seperately
                     sev_file = os.path.splitext(tev_file)[0] + '_' + key + '_Ch' + str(channel) + '.sev'
                     if os.path.isfile(sev_file):
