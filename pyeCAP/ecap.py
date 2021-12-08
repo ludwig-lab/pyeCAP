@@ -63,14 +63,18 @@ class ECAP(_EpochData):
 
         self.neural_window_indicies = self.calculate_neural_window_lengths()
 
-        if len(self.neural_window_indicies) != len(self.distance_log) and self.distance_log != [0]:
+        if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
+            if self.neural_window_indicies.shape[0] != len(self.distance_log) and self.distance_log is not [0]:
+                raise ValueError("Recording lengths don't match recording channel lengths")
+
+        elif len(self.neural_window_indicies) != len(self.distance_log) and self.distance_log is not [0]:
             raise ValueError("Recording lengths don't match recording channel lengths")
 
         self.mean_traces = []
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log == "Experimental Log.xlsx":
+        if distance_log is "Experimental Log.xlsx":
             self.log_path = ephys_data.base_path + distance_log
         else:
             self.log_path = distance_log
