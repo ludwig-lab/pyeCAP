@@ -207,7 +207,7 @@ class _EpochData:
         idx_mask = np.repeat(indices[first_onset_idx:last_onset_idx + 1][np.newaxis,:], self.ts_data.shape[0], axis=0)
 
         if len(removal_idx[0]) > 0:
-            event_data = event_data[idx_mask]
+            event_data = event_data[idx_mask].compute_chunk_sizes()
 
         event_data_reshaped = da.reshape(event_data, (self.ts_data.shape[0], len(event_times), int(sample_len)))
         return da.moveaxis(event_data_reshaped, 1, 0)
