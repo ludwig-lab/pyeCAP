@@ -9,7 +9,7 @@ import numpy as np
 from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
 
-# eba_toolkit io class imports
+# pyeCAP io class imports
 from .io.ripple_io import RippleIO, RippleArray
 from .io.tdt_io import TdtIO, TdtArray, gather_sample_delay
 
@@ -31,7 +31,7 @@ class Ephys(_TsData):
         * args : Arguments
             Arguments to be passed to :ref:`_TsData (parent class)` constructor.
         stores : None, list, tuple
-            Sequence of ??? or None to ????.
+            Sequence of tdt store names to include in the object, or None to include all stores.
         order : bool
             Set to True to order data sets by start time. Since data from the same file is read in chronological order,
             this will only have an effect when reading in data from multiple files.
@@ -49,9 +49,9 @@ class Ephys(_TsData):
 
         Examples
         ________
-        >>> eba_toolkit.Ephys(pathname1)   # replace pathnames with paths to data      # doctest: +SKIP
+        >>> pyeCAP.Ephys(pathname1)   # replace pathnames with paths to data      # doctest: +SKIP
 
-        >>> eba_toolkit.Ephys([pathname1, pathname2, pathname3])                       # doctest: +SKIP
+        >>> pyeCAP.Ephys([pathname1, pathname2, pathname3])                       # doctest: +SKIP
         """
         self.exp_path = data
         # Work with file path

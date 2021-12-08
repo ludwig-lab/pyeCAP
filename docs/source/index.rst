@@ -1,16 +1,16 @@
-.. eba-toolkit documentation master file, created by
+.. pyeCAP documentation master file, created by
    sphinx-quickstart on Sun May 10 21:06:59 2020.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to eba-toolkit's documentation!
+Welcome to pyeCAP's documentation!
 =======================================
 
 Description
 ^^^^^^^^^^^
-eba-toolkit is a python package for the analysis of evoked compound action potentials (CAPs) in elecytrophysiology data sets. This program is currently under development and all classes and methods may be subject to change.
+pyeCAP is a python package for the analysis of evoked compound action potentials (CAPs) in elecytrophysiology data sets. This program is currently under development and all classes and methods may be subject to change.
 
-eba-toolkit was built with the goal of simplifying the collection and analysis of CAP data. As such this toolkit abstract the technicalities of loading, saving, and working with ephys data into an efficient class structure that forms the basis for fast and interactive analysis of CAPs. This enables real-time visualization of data during an ephys recording session to allow for optimizing experimental time and resources. The pCAP package also contains many visualization tools for fast and interactive visualization and analysis of data after an experiment.
+pyeCAP was built with the goal of simplifying the collection and analysis of CAP data. As such this toolkit abstract the technicalities of loading, saving, and working with ephys data into an efficient class structure that forms the basis for fast and interactive analysis of CAPs. This enables real-time visualization of data during an ephys recording session to allow for optimizing experimental time and resources. The pCAP package also contains many visualization tools for fast and interactive visualization and analysis of data after an experiment.
 
 Table of contents
 ^^^^^^^^^^^^^^^^^

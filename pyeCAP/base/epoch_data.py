@@ -365,9 +365,9 @@ class _EpochData:
             None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
             end times for data to plot.
         c_lim : str
-            ?? Limits for color map??
+            Range of values for the color map to cover. By default, it covers data within +/- 6 standard deviations.
         c_map : str, matplotlib.color.Colormap
-            Color map.
+            Color map. See https://matplotlib.org/stable/tutorials/colors/colormaps.html.
         fig_size : list, tuple, np.ndarray
             The size of the matplotlib figure to plot axis on if axis=None.
         show : bool

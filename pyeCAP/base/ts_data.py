@@ -107,7 +107,6 @@ class _TsData:
             # rechunk and rearrange arrays to account for channel offsets if necessary
             self.data = self._introduce_offsets(ch_offsets)
 
-
         # sort all data sets by start time, place in chronological order
         if order:
             unsorted = [(a, m) for a, m in zip(self.data, self.metadata)]
@@ -415,7 +414,7 @@ class _TsData:
         # TODO: make this accept a dictionary with channel mask which is more convenient for large ch counts
         metadata = copy.deepcopy(self.metadata)
         if len(ch_types) != len(self.ch_names):
-            raise ValueError("Number of channels in input 'ch_types' does not match number of channels in data array.")
+            raise ValueError("Number of channels in input 'ch_types'", len(ch_types), "does not match number of channels in data array", len(self.ch_names), ".")
         for m in metadata:
             m['ch_types'] = ch_types
         return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
@@ -734,7 +733,7 @@ class _TsData:
         width : None, float
             Width of the transition region in Hz.
         filter_length : str
-            ??
+            [Not yet implemented].
         window : str, tuple
             Window type. See scipy.signal.get_window documentation for more information.
             for more information.
@@ -745,6 +744,8 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
+        # TODO: implement the 'filter_length' parameter
+
         def convfft(x):
             conv1 = np.flip(
                 signal.fftconvolve(np.flip(signal.fftconvolve(x[0, :], filter_weights, mode='same')), filter_weights,
@@ -1015,9 +1016,7 @@ class _TsData:
         x_lim = self._time_lim_validate(x_lim, remove_gaps=remove_gaps)
 
         x_index = (self._time_to_index(x_lim[0], remove_gaps=remove_gaps), self._time_to_index(x_lim[1], remove_gaps=remove_gaps)+1)
-        print('test1')
         plot_array = self.array[channels, x_index[0]:x_index[1]].compute()
-        print('test2')
 
         # get plot data
         ax.set_xlim(x_lim)

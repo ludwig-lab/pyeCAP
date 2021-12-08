@@ -11,7 +11,7 @@ Instantiating a PhysResponse object can be done with a Phys object, a Stim objec
 
 .. TODO: find an example data set to use and write a .. testsetup:: directive for doctests
 
-.. autoclass:: eba_toolkit.phys_response.PhysResponse
+.. autoclass:: pyeCAP.phys_response.PhysResponse
     :members:
     :special-members:
 
@@ -19,29 +19,29 @@ Timing Synchronization
 ^^^^^^^^^^^^^^^^^^^^^^
 
 The purpose of timing synchronization is to take stimulation parameter start/stop times and convert them to times that
-can be used to access the physiological data. The basic approach of eba-toolkit is to take start times from stimulation data,
+can be used to access the physiological data. The basic approach of pyeCAP is to take start times from stimulation data,
 convert them to a unix timestamp, match them with the closest trigger pulse in the physiological data, then convert the
 timestamp of the trigger pulse into an elapsed time since the start of the physiological data.
 Physiological data from ADInstruments and stimulation data from TDT or Ripple are often collected on different
 machines. The internal timing of these machines is separate, so synchronizing the timing is extremely important in order
-to ensure accurate results from data analysis. eba-toolkit provides several methods of time synchronization. The following are
+to ensure accurate results from data analysis. pyeCAP provides several methods of time synchronization. The following are
 parameters of the PhysResponse constructor and their roles in time synchronization:
 
 - trigger_channel :
     A trigger channel is used to register changes in stimulation amplitude which indicate the start of
     a stimulation parameter. The TDT or Ripple machine can be set up to send a pulse to the ADInstruments machine whenever this occurs.
-    By setting up a channel to register these pulses, small errors in timing between the two machines can be eliminated. eba-toolkit
+    By setting up a channel to register these pulses, small errors in timing between the two machines can be eliminated. pyeCAP
     is built to find these trigger pulses in the physiological data and use them as start times for a stimulation parameter as opposed
     to using the times from the stimulation data. The stimulation data provides an approximate time to search for a pulse but not
-    the exact time. If the trigger channel is passed in as None, eba-toolkit will use the timing of the stimulation data and
+    the exact time. If the trigger channel is passed in as None, pyeCAP will use the timing of the stimulation data and
     neglect trigger pulses when determining stimulation start/end times.
 
 - threshold :
-    This is the value used to detect changes in stimulation amplitude. eba-toolkit iterates over values in the
+    This is the value used to detect changes in stimulation amplitude. pyeCAP iterates over values in the
     trigger channel and any values greater than the threshold are registered as possible stimulation parameters.
 
 - search :
-    This parameter is used to specify the time period to search for a pulse on the trigger channel. eba-toolkit pulls an
+    This parameter is used to specify the time period to search for a pulse on the trigger channel. pyeCAP pulls an
     approximate parameter start time from the stimulation data. Setting search to 1 would search the time from 1 second before
     to 1 second after the start time of the stimulation data. The pulse which is closest to the start time from the
     stimulation data is used. NOTE: search treats gap times between data sets as non-existent.
@@ -52,7 +52,7 @@ parameters of the PhysResponse constructor and their roles in time synchronizati
     daylight savings but the other computer had not. A time difference of 3600 would correct an error where the physiology data
     leads the stimulation data by 3600 seconds.
 
-When instantiating a PhysResponse object, eba-toolkit will automatically search for stimulation pulses for every parameter and
+When instantiating a PhysResponse object, pyeCAP will automatically search for stimulation pulses for every parameter and
 generate warnings when no stimulation pulse is found. Since it can be time consuming to search for pulses in data with a
 high sample rate or wide search window, all of the results are stored as trigger offsets. A trigger offset is the time
 difference between the pulse found in the physiological data and the pulse time recorded in the stimulation data
@@ -62,7 +62,7 @@ offset will become NaN. When the parameter is used, a warning will be generated 
 The get_trigger_offsets, and set_trigger_offsets methods shown below can be used to view and customize the trigger offsets.
 
 
-The following diagram shows how eba-toolkit uses system-wide time difference and trigger offsets to determine the start of a
+The following diagram shows how pyeCAP uses system-wide time difference and trigger offsets to determine the start of a
 stimulation parameter:
 
 .. image:: images/Offset_diagram.png
@@ -70,7 +70,7 @@ stimulation parameter:
 Customizing Trigger offsets
 ...........................
 
-It is possible to analyze data with eba-toolkit with custom trigger offsets or without using trigger offsets at all. If ignoring
+It is possible to analyze data with pyeCAP with custom trigger offsets or without using trigger offsets at all. If ignoring
 trigger offsets, set the trigger_channel parameter to None when instantiating an object or pass the compute=False
 argument to the PhysResponse constructor. All trigger offsets will be initialized as 0, meaning that the only variables
 used to calculate the stimulation stop and start times are stimulation data and the time_difference parameter. Warnings
@@ -82,7 +82,7 @@ based on other parameters.
 Warnings
 ^^^^^^^^
 
-eba-toolkit will warn users of data that may not be properly synchronized or is interrupted by other stimulation parameters or
+pyeCAP will warn users of data that may not be properly synchronized or is interrupted by other stimulation parameters or
 block starting and ending times. The following are PhysResponse warnings:
 
 - "No trigger pulse found for stimulation parameter {}"
@@ -104,7 +104,7 @@ The _DioEpoch class is the parent class of PhysResponse. All methods for the Phy
 _DioEpoch. The class contains getter/setter methods for each of the parameters relating to time synchronization. The
 class also contains methods to access, plot, and determine change from baseline over a stimulation parameter.
 
-.. autoclass:: eba_toolkit.base.dio_epoch._DioEpoch
+.. autoclass:: pyeCAP.base.dio_epoch._DioEpoch
     :members:
     :special-members: __init__
 

@@ -55,8 +55,8 @@ class ECAP(_EpochData):
 
         if 'EMG' in self.ephys.ch_types:
             self.emg_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['EMG']]
-        if 'LIFE' in self.ephys.ch_types:
-            self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['LIFE']]
+        if 'ENG' in self.ephys.ch_types:
+            self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['ENG']]
         else:
             warnings.warn("Neural channels not implicitly stated. Assuming all channels are neural recordings")
             self.neural_channels = np.arange(0, self.ephys.shape[0])
@@ -65,8 +65,6 @@ class ECAP(_EpochData):
 
         if len(self.neural_window_indicies) != len(self.distance_log) and self.distance_log != [0]:
             raise ValueError("Recording lengths don't match recording channel lengths")
-
-        # self.TDT_SAMPLE_DELAY = gather_sample_delay(rz_sample_rate, si_sample_rate) + additional_sample_delay
 
         self.mean_traces = []
         self.master_df = pd.DataFrame()
@@ -170,7 +168,8 @@ class ECAP(_EpochData):
                 if plot_AUCs:
                     fig, ax = plt.subplots(1, dpi=300)
                     ax.plot(signal)
-                    ax.vlines([specific_onset, specific_offset], np.max(signal[specific_onset:specific_offset]), np.min(signal[specific_onset:specific_offset]))
+                    ax.vlines([specific_onset, specific_offset], np.max(signal[specific_onset:specific_offset]),
+                              np.min(signal[specific_onset:specific_offset]))
                     plt.show()
             return current_list
 
@@ -349,7 +348,7 @@ class ECAP(_EpochData):
 
                     fig, ax = plt.subplots(1, figsize=(15, 15))
 
-                    title = "{} {}, Amp {}, LIFE {}".format(*metadata)
+                    title = "{} {}, Amp {}, ENG {}".format(*metadata)
                     fig.suptitle(title)
                     # some cases have such close min and max, that it's best not windowed
                     if abs(max_y - min_y) > 1e-9:
@@ -397,66 +396,6 @@ class ECAP(_EpochData):
             current_list = relevant_AUC(signal, recording_idx, plot_AUCs, save_path)
             return current_list
 
-    # def calculate_AUC(self, window_type="standard_neural", analysis_method="RMS", plot_AUC=False, save_path=None):
-    #     """
-    #     #todo: other parameters
-    #     :param save_path: location to save plotting of AUCs
-    #     :param window_type:
-    #         "standard_neural": collects all data within entire range of neural window based on fiber type
-    #         "standard_EMG",
-    #         "dynamic_neural" : detects max peak and leading/lagging minima; up to 25% out of current window for leading.
-    #         "dynamic_EMG" : detects onset and offset
-    #     :param analysis_method: "RMS" for root mean square. "Integral" for integral
-    #     :param plot_AUC : Can chose to plot calculation of AUCs
-    #     """
-    #
-    #     # Get pertinent info from dataframe
-    #     channel_list = self.stim.parameters["channel"].to_numpy()
-    #     condition_list = self.stim.parameters["condition"].to_numpy()
-    #     amplitude_list = self.stim.parameters["pulse amplitude (μA)"].to_numpy()
-    #     stim_type_list = self.stim.parameters["stimulation type"].to_numpy()
-    #
-    #     # create empty array to store calculated values in
-    #     master_list = []
-    #
-    #     if len(self.neural_window_indicies) != len(self.neural_channels):
-    #         sys.exit("amounts of neural channels don't add up")
-    #
-    #     if window_type.endswith("EMG"):
-    #         window_nomenclature = self.emg_window
-    #         recording_channels = self.emg_channels
-    #     elif window_type.endswith("neural"):
-    #         window_nomenclature = self.neural_fiber_names
-    #         recording_channels = self.neural_channels
-    #
-    #     # will iterate through each condition
-    #     for signal_idx, signal_chain in enumerate(self.mean_traces):
-    #         # will iterate through recording electrode
-    #         for rec_idx, rec_chain in enumerate(signal_chain[recording_channels]):
-    #             # iterate through each fiber type
-    #             plotting_metadata = [condition_list[signal_idx], channel_list[signal_idx], amplitude_list[signal_idx],
-    #                                  rec_idx]
-    #             calc_values = self.calc_AUC_method(rec_chain, rec_idx, window_type, analysis_method, plotting_metadata,
-    #                                                plot_AUCs=plot_AUC, save_path=save_path)
-    #             for specific_window_idx, vals in enumerate(calc_values):
-    #                 master_list.append(
-    #                     [vals, analysis_method, window_nomenclature[specific_window_idx], amplitude_list[signal_idx],
-    #                      rec_idx, condition_list[signal_idx], stim_type_list[signal_idx], channel_list[signal_idx]])
-    #
-    #     new_df = pd.DataFrame(master_list,
-    #                           columns=['AUC (Vs)', "Calculation Type", "Calculation Window", "Stimulation Amplitude",
-    #                                    "Recording Electrode", "Condition", "Stimulation Configuration",
-    #                                    "Stimulation Channel"])
-    #     if new_df.loc[0]["Stimulation Amplitude"] < 0:
-    #         new_df['Stimulation Amplitude'] = new_df['Stimulation Amplitude'].apply(lambda x: x * -1)
-    #
-    #     if self.master_df.empty:
-    #         self.master_df = new_df
-    #     else:
-    #         self.master_df = pd.concat([self.master_df, new_df], ignore_index=True)
-    #
-    #     # change negative amplitudes to positive
-
     def calculate_AUC(self, window_type="standard_neural", analysis_method="RMS", plot_AUC=False, save_path=None):
         # todo: other parameters
         """
@@ -495,6 +434,7 @@ class ECAP(_EpochData):
         elif window_type.endswith("neural"):
             window_nomenclature = self.neural_fiber_names
             recording_channels = self.neural_channels
+            recording_channel_names = np.array(self.ephys.ch_names)[recording_channels]
 
         # will iterate through each condition
         for signal_idx, signal_chain in enumerate(self.mean_traces):
@@ -503,16 +443,29 @@ class ECAP(_EpochData):
                 # iterate through each fiber type
                 # plotting_metadata = [condition_list[signal_idx], channel_list[signal_idx], amplitude_list[signal_idx],
                 #                      rec_idx]
-                plotting_metadata = [*[p[signal_idx] for p in info_list], rec_idx]
+                ch_types = []
+                for m in self.ephys.metadata:
+                    if 'ch_types' in m:
+                        if len(m['ch_types']) > 1:
+                            ch_types.append(m['ch_types'])
+                    else:
+                        ch_types.append([''] * len(signal_chain[recording_channels]))
+
+                plotting_metadata = [*[p[signal_idx] for p in info_list], recording_channel_names[rec_idx], ch_types[rec_idx]]
                 calc_values = self.calc_AUC_method(rec_chain, rec_idx, window_type, analysis_method, plotting_metadata,
                                                    plot_AUCs=plot_AUC, save_path=save_path)
                 for specific_window_idx, vals in enumerate(calc_values):
                     # master_list.append(
                     #     [vals, analysis_method, window_nomenclature[specific_window_idx], amplitude_list[signal_idx],
                     #
-                    master_list.append([vals, analysis_method, window_nomenclature[specific_window_idx], *plotting_metadata])
+                    master_list.append(
+                        [vals, analysis_method, window_nomenclature[specific_window_idx], *plotting_metadata])
 
-        new_df = pd.DataFrame(master_list, columns=['AUC (Vs)', 'Calculation Type', "Calculation Window", *params, 'Recording Electrode'])
+        new_df = pd.DataFrame(master_list, columns=['AUC (Vs)', 'Calculation Type', "Calculation Window", *params,
+                                                    'Recording Electrode', 'Recording Type'])
+
+        if new_df['Recording Type'][0] == '':
+            new_df.drop(columns='Recording Type', inplace=True)
         # if new_df.loc[0]["Stimulation Amplitude"] < 0:
         #     new_df['Stimulation Amplitude'] = new_df['Stimulation Amplitude'].apply(lambda x: x * -1)
 
@@ -530,15 +483,24 @@ class ECAP(_EpochData):
         if parameter_index is None:
             parameter_index = self.df_epoc_idx.index
 
-        # delayed = [dask.delayed(self.dask_array(i)) for i in parameter_index]
-        # bag_delayed = db.from_delayed(delayed)
-        # print("Begin Averaging Data")
-        # self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
-        # print("Finished Averaging Data")
+        # import time
+        #
+        #
+        # tic = time.perf_counter()
+        # reshaped_traces = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x))).compute()
+        # mean_traces_dasked = [np.mean(x, axis=0) for x in reshaped_traces]
+        # bagged_traces = db.from_sequence(mean_traces_dasked)
+        # self.mean_traces = dask.compute(bagged_traces.compute())
+        # toc = time.perf_counter()
+        #
+        # print(toc-tic, "elapsed")
+
+
         bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
         print("Begin Averaging Data")
         self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
         print("Finished Averaging Data")
+
 
     def filter_averages(self, filter_channels=None, filter_median_highpass=False, filter_median_lowpass=False,
                         filter_gaussian_highpass=False, filter_powerline=False):
@@ -697,7 +659,7 @@ class ECAP(_EpochData):
                 plt.show()
 
     def plot_average_recordings(self, amplitude, condition=None, relative_time_frame=None, display=False,
-                                 save=False):
+                                save=False):
         df = self.stim.parameters
 
         if condition is None:
@@ -723,7 +685,7 @@ class ECAP(_EpochData):
             if len(relative_time_ts) == (relative_time_frame.stop - relative_time_frame.start) + 1:
                 relative_time_ts = relative_time_ts[0:-1]
 
-        fig, ax = plt.subplots(1,2)
+        fig, ax = plt.subplots(1, 2)
         for p in parameter_indicies:
             idx = self.parameters_dictionary[p]
             if self.stim.parameters.loc[p]['pulse amplitude (μA)'] < 0:

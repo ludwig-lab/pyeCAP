@@ -724,14 +724,12 @@ class _DioEpoch:
         master_list = []
         for idx in self.dio_data.parameters.index.to_list():
             for chan in self.ts_data.ch_names:
-                key_vals = self.dio_data.parameters.loc[idx, ['pulse amplitude (μA)',
-                                                              'channel',
-                                                              'condition',
-                                                              'stimulation type']]
-                if key_vals[2] != "Intact":
-                    break
-                if key_vals[0] < 0:
-                    key_vals[0] *= -1
+                columns = self.dio_data.parameters.columns
+                unique_columns = [c for c in columns if len(self.data_phys_response.dio_data.parameters[c].unique()) > 1]
+                key_vals = self.dio_data.parameters.loc[idx, unique_columns]
+
+                if key_vals['pulse amplitude (μA)'] < 0:
+                    key_vals['pulse amplitude (μA)'] *= -1
                 master_list.append([self.delta(parameter=idx, channel=chan, method='maximum')['absolute change'], chan,
                                     *key_vals])
         self.master_df = pd.DataFrame(master_list, columns=['delta', "Recording Channel", "Stimulation Amplitude", "Stimulation Channel", "Condition", "Stimulation Configuration"])
