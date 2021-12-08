@@ -204,11 +204,12 @@ class _EpochData:
         removal_idx = np.logical_not(indices[first_onset_idx:last_onset_idx + 1]).nonzero()
 
         event_data = self.ts_data.array[:, first_onset_idx:last_onset_idx + 1]
+        idx_mask = np.repeat(indices[first_onset_idx:last_onset_idx + 1][np.newaxis,:], self.ts_data.shape[0], axis=0)
 
 
         if len(removal_idx[0]) > 0:
-            removal_idx = [idx[0] for idx in removal_idx]
-            event_data.delete(removal_idx, axis=1)
+            # removal_idx = [idx[0] for idx in removal_idx]
+            event_data = event_data[idx_mask]
             warnings.warn("This is my first time being here. I'm new and afraid. You should check to make sure I did what you want")
 
         event_data_reshaped = da.reshape(event_data, (self.ts_data.shape[0], len(event_times), int(sample_len)))

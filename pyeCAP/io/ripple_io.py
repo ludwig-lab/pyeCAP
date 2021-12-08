@@ -5,12 +5,6 @@ import warnings
 
 # scientific computing library imports
 import numpy as np
-# custom imports
-try:
-    from pyns.nsfile import NSFile
-    from pyns.nsentity import EntityType
-except ModuleNotFoundError:
-    warnings.warn("No Neuroshare package found, Ripple files will not work")
 
 # to lock file for thread safe reading
 import threading
@@ -24,6 +18,13 @@ class RippleIO:
     def __init__(self, file_path):
         self.file_path = file_path
         self.lock = threading.Lock()
+
+        # import statements from th pyneuroshare library from Ripple that mush be obtained directly from them.
+        try:
+            from pyns.nsfile import NSFile
+            from pyns.nsentity import EntityType
+        except ModuleNotFoundError:
+            warnings.warn("No Neuroshare package found, Ripple files will not work")
 
         if isinstance(self.file_path, str):
             if self.file_path.endswith('.nev'):

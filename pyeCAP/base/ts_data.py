@@ -1058,6 +1058,9 @@ class _TsData:
 
         plot_data = self._to_plt_line_collection(x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps)
         for data in plot_data:
+            # TODO: Matplotlib 3.5.0 has changed how offsets work. The easy solution for right now is to exclude
+            #  matplotlib version > 3.5 from the install list, however the best long-term solution is likely to shift
+            #  this to use matplotlibs transforms instead which should be compatible across versions.
             lines = LineCollection(data[0], offsets=offsets, colors=colors, linewidths=np.ones(plot_array.shape[0]), transOffset=None)
             current_lines = ax.add_collection(lines)
 

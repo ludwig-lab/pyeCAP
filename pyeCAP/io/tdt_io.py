@@ -1,6 +1,10 @@
+import sys
+import tdt
 from tdt import read_block, epoc_filter
 import os
 import glob  # for file and directory handling
+import io
+from contextlib import redirect_stdout
 import pprint
 import numpy as np
 import pandas as pd
@@ -31,6 +35,7 @@ def gather_sample_delay(rz_sample_rate, si_sample_rate):
     else:
         raise ValueError('RZ Sample rate invalid')
 
+
 class TdtIO:
     def __init__(self, file_path):
         self.file_path = file_path
@@ -41,15 +46,19 @@ class TdtIO:
                 try:
                     # var, set to 1 to return only the headers for this block, if you need to
                     # make fast consecutive calls to read_block
-                    self.tdt_block = read_block(file_path, headers=1)
+                    with io.StringIO() as buf, redirect_stdout(buf):
+                        self.tdt_block = read_block(self.file_path, headers=1)
+                        output = buf.getvalue()
                 except IOError:
                     print(self.file_path + " is not accessible.")
+                if self.tdt_block is None:
+                    raise IOError("File path does not appear to be a TDT tank.")
             else:
                 raise IOError("File path not found")
         else:
             raise IOError("Path was not formatted as a string.")
 
-    @property
+    @threaded_cached_property
     def metadata(self):
         # read in StoresListing file to get more metadata
         metadata = {}
@@ -63,16 +72,23 @@ class TdtIO:
             warnings.warn("No StoresListing file found, pyeCAP will assume default store names")
 
         # parse StoresListing file
-        for txtblock in txt.split("\n\n"):
+        # TODO: This parsing is not great it is hastily modified from a previous version to account for differences in
+        #  the StoresListing.txt file between versions of TDT's software. It should be generalized and cleaned up to
+        #  better accout for all possible variations
+        for n, txtblock in enumerate(txt.split("\n\n")):
             # read in experiment metadata text block
-            if "Experiment" in txtblock:
+            if n == 0 and "Experiment" in txtblock:  # The first block of text should be the experiment information
                 metadata.update({line.split(":")[0]: line.split(":")[1].strip() for line in txtblock.split("\n")})
                 metadata.pop("Time")
             # read in storage data from each tdtgizmo
-            elif "ObjectID" in txtblock:
-                object_id = txtblock.split("\n")[0].split("-")[0].split(":")[1].strip()
-                gizmo_name = txtblock.split("\n")[0].split("-")[1].strip()
-                store_ids = [line.split(":")[1].strip() for line in txtblock.split("\n")[1:]]
+            elif txtblock.startswith("Object ID") or txtblock.startswith("ObjectID"):
+                store_ids = []
+                for txt_line in txtblock.split("\n"):
+                    if txt_line.startswith("Object ID") or txt_line.startswith("ObjectID"):
+                        object_id = txt_line.split("-")[0].split(":")[1].strip()
+                        gizmo_name = txt_line.split("-")[1].strip()
+                    elif txt_line.startswith(" Store ID") or txt_line.startswith(" StoreID"):
+                        store_ids.append(txt_line.split(":")[1].strip())
                 gizmo_dict.update({store_id: gizmo_name for store_id in store_ids})
                 obj_id.update({store_id: object_id for store_id in store_ids})
 
@@ -97,21 +113,22 @@ class TdtStim:
         stores = self.tdt_io.tdt_block.stores
         self.raw_stores = []
         self.parameter_stores = []
-        for key in stores.keys():
-            if key[1] == "S" and key[2].isdigit():
-                if key[0] == "e":
-                    if "p" in key:
-                        self.parameter_stores.append(key)
-                    elif "r" in key:
-                        self.raw_stores.append(key)
+
+        for key, value in self.tdt_io.metadata['Gizmo Name'].items():
+            if key in self.tdt_io.stores and value in ('Electrical Stim Driver', 'Electrical Stimulation'):
+                # TODO: Use the data types instead of assumptions about defualt naming conventions to check if the keys are stim parameter or stream data.
+                if "p" in key:
+                    self.parameter_stores.append(key)
+                elif "r" in key:
+                    self.raw_stores.append(key)
                 else:
-                    warnings.warn("Non Electrical Stimulation Detected, reading is not yet implemented.")
-            elif key == 'MonA':  # TODO: check if any other monitoring channels exist
+                    warnings.warn("Parameter data stored by the electrical stim driver could not be found.")
+            elif key == 'MonA':  # TODO: check if any other monitoring channels exist and for new data use the IV10 or other stimulator to check if monitoring data is there
                 self.raw_stores.append(key)
 
         # raise errors/warnings for certain data
         if len(self.parameter_stores) == 0 and len(self.raw_stores) == 0:
-            raise(ValueError("No electrical stimulation detected"))
+            raise (ValueError("No electrical stimulation detected"))
         elif len(self.parameter_stores) == 0:
             warnings.warn("No electrical stimulation parameters detected")
 
@@ -150,7 +167,7 @@ class TdtStim:
         metadata['ch_names'] = ['Stim ' + str(ch) for ch in metadata['channels']]
         return metadata
 
-    @threaded_cached_property
+    @property
     def parameters(self):
         stim_stores = []
 
@@ -192,17 +209,18 @@ class TdtStim:
                     possible_voices = ["A", "B", "C", "D"]
                     polarity = "Monopolar"
 
-                # Add extra data if necessary
-                for i, voice in enumerate(possible_voices[1:]):
-                    if not np.all(zero_cols[(i + 1) * 24 // len(possible_voices):(i + 2) * 24 // len(possible_voices)]):
-                        self.voices[k].append(voice)
-                        voice_data += [voice] * onsets.shape[0]
-                        if polarity == "bipolar":
-                            new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 12:(i + 1) * 12 + 6],
-                                                       stim_parameters[:, (i + 2) * 12 - 1:(i + 2) * 12]), axis=1)
-                        else:
-                            new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 6:(i + 2) * 6]), axis=1)
-                        stim_data = np.concatenate((stim_data, new_data), axis=0)
+                # TODO: Figure out what is going on here and finish reading in all possible data from TDT stim driver.
+                # # Add extra data if necessary
+                # for i, voice in enumerate(possible_voices[1:]):
+                #     if not np.all(zero_cols[(i + 1) * 24 // len(possible_voices):(i + 2) * 24 // len(possible_voices)]):
+                #         self.voices[k].append(voice)
+                #         voice_data += [voice] * onsets.shape[0]
+                #         if polarity == "bipolar":
+                #             new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 12:(i + 1) * 12 + 6],
+                #                                        stim_parameters[:, (i + 2) * 12 - 1:(i + 2) * 12]), axis=1)
+                #         else:
+                #             new_data = np.concatenate((onsets, stim_parameters[:, (i + 1) * 6:(i + 2) * 6]), axis=1)
+                #         stim_data = np.concatenate((stim_data, new_data), axis=0)
 
             # add in new calculated columns for each voice
             parameter_dataframe = pd.DataFrame(stim_data, columns=col_names)
@@ -227,7 +245,7 @@ class TdtStim:
             if indicators:
                 dio_data = np.repeat(ch_params.index, 2)
             else:
-                dio_data = np.zeros((len(ch_params)*2,), dtype=float)
+                dio_data = np.zeros((len(ch_params) * 2,), dtype=float)
                 onsets = np.array(ch_params['onset time (s)'])
                 offsets = np.array(ch_params['offset time (s)'])
                 dio_data[0::2] = onsets
@@ -248,12 +266,12 @@ class TdtStim:
             if indicators:
                 for index, row in ch_params.iterrows():
                     num_stim_events = int(row['pulse count'])
-                    stim_indicators = np.ones((num_stim_events,))*index
+                    stim_indicators = np.ones((num_stim_events,)) * index
                     ch_events = np.concatenate((ch_events, stim_indicators))
             else:
                 for index, row in ch_params.iterrows():
-                    stim_events = row['onset time (s)'] + np.arange(0, row['pulse count'])*row['period (ms)']/1000
-                    stim_events += row['delay (ms)']/1000
+                    stim_events = row['onset time (s)'] + np.arange(0, row['pulse count']) * row['period (ms)'] / 1000
+                    stim_events += row['delay (ms)'] / 1000
                     ch_events = np.concatenate((ch_events, stim_events))
             if name not in events:
                 events[name] = ch_events
@@ -331,8 +349,10 @@ class TdtArray:
                         # use numpy to delete last block within TdTStruct of data and channel (removes last block entirely)
                         # TdTStruct were not able to be modified in situ
                         num_channels = int(max(self.tdt_io.tdt_block.stores[current_stream].chan))
-                        self.tdt_io.tdt_block.stores[current_stream].data = self.tdt_io.tdt_block.stores[current_stream].data[:-num_channels]
-                        self.tdt_io.tdt_block.stores[current_stream].chan = self.tdt_io.tdt_block.stores[current_stream].chan[:-num_channels]
+                        self.tdt_io.tdt_block.stores[current_stream].data = self.tdt_io.tdt_block.stores[
+                                                                                current_stream].data[:-num_channels]
+                        self.tdt_io.tdt_block.stores[current_stream].chan = self.tdt_io.tdt_block.stores[
+                                                                                current_stream].chan[:-num_channels]
                         dump = 1
             else:
                 raise IOError("Selected stores contain arrays with different numbers of samples. Use input 'stores' to "
@@ -378,22 +398,27 @@ class TdtArray:
             for key in np.asarray(self.metadata['streams']).flatten():
                 channel_list = np.sort(np.unique(self.tdt_io.tdt_block.stores[key].chan))
                 for channel in channel_list:
-                    data_offsets = np.array(self.tdt_io.tdt_block.stores[key].data[self.tdt_io.tdt_block.stores[key].chan == channel], dtype=np.int64) # needs to by an int64 for datasets greater than >4GB
+                    data_offsets = np.array(
+                        self.tdt_io.tdt_block.stores[key].data[self.tdt_io.tdt_block.stores[key].chan == channel],
+                        dtype=np.int64)  # needs to by an int64 for datasets greater than >4GB
                     # Check for sev file that will exist if files saved seperately
                     sev_file = os.path.splitext(tev_file)[0] + '_' + key + '_Ch' + str(channel) + '.sev'
                     if os.path.isfile(sev_file):
                         # if sev file exists then data is stored sequentially on disk and can be quickly memmaped (this should be faster)
                         f_offset = data_offsets[0]
                         # f = open(tev_file, 'r')
-                        mm_array = np.memmap(sev_file, shape=len(data_offsets)*block_size, dtype=np_dtype, offset=f_offset)
+                        mm_array = np.memmap(sev_file, shape=len(data_offsets) * block_size, dtype=np_dtype,
+                                             offset=f_offset)
                         ch_array = da.from_array(mm_array, chunks=(chunk_size,))
                         data_arrays.append(ch_array)
                     else:
                         # if not then we need to individually map each block
                         data_offsets = [data_offsets[i:i + n] for i in range(0, len(data_offsets), n)]
                         data_len = [len(offsets) for offsets in data_offsets]
-                        data_delayed = [(load_block(np.array(offsets)), l) for offsets, l in zip(data_offsets, data_len)]
-                        dask_arrays = [da.from_delayed(d, (self.block_size * l,), dtype=self.np_dtype) for d, l in data_delayed]
+                        data_delayed = [(load_block(np.array(offsets)), l) for offsets, l in
+                                        zip(data_offsets, data_len)]
+                        dask_arrays = [da.from_delayed(d, (self.block_size * l,), dtype=self.np_dtype) for d, l in
+                                       data_delayed]
                         data_arrays.append(da.concatenate(dask_arrays))
             self.data = da.stack(data_arrays)
             self.chunks = (1, chunk_size)
@@ -421,7 +446,8 @@ class TdtArray:
             # Stores have a 4-5 character string identifier. Stimulation data is by default recorded in a pair of
             # stores withe the same first 4 characters followed by a p or r. Store ending with 'p' is for stimulation
             # parameters and is 'scalar' data, 'r' is a raw recording of stimulation waveform and is a 'stream'
-            if k in self.stores and stores[k]['type_str'] == 'streams' and (k[-1] != 'r' and k[:-1] + 'p' not in stores.keys()):
+            if k in self.stores and stores[k]['type_str'] == 'streams' and (
+                    k[-1] != 'r' and k[:-1] + 'p' not in stores.keys()):
                 metadata['streams'].append(k)
                 metadata['sample_rate'].append(stores[k]['fs'])
                 metadata['block_size'].append(stores[k]['size'])

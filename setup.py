@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 version_reqs = ['pandas',
                 'numpy<1.21,>=1.17',
                 'scipy',
-                'matplotlib',
+                'matplotlib<3.5.0',
                 'seaborn',
                 'numba',
                 'pytest',
