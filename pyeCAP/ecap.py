@@ -63,14 +63,18 @@ class ECAP(_EpochData):
 
         self.neural_window_indicies = self.calculate_neural_window_lengths()
 
-        if len(self.neural_window_indicies) != len(self.distance_log) and self.distance_log != [0]:
+        if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
+            if self.neural_window_indicies.shape[0] != len(self.distance_log) and self.distance_log is not [0]:
+                raise ValueError("Recording lengths don't match recording channel lengths")
+
+        elif len(self.neural_window_indicies) != len(self.distance_log) and self.distance_log is not [0]:
             raise ValueError("Recording lengths don't match recording channel lengths")
 
         self.mean_traces = []
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log == "Experimental Log.xlsx":
+        if distance_log is "Experimental Log.xlsx":
             self.log_path = ephys_data.base_path + distance_log
         else:
             self.log_path = distance_log
@@ -483,15 +487,24 @@ class ECAP(_EpochData):
         if parameter_index is None:
             parameter_index = self.df_epoc_idx.index
 
-        # delayed = [dask.delayed(self.dask_array(i)) for i in parameter_index]
-        # bag_delayed = db.from_delayed(delayed)
-        # print("Begin Averaging Data")
-        # self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
-        # print("Finished Averaging Data")
+        # import time
+        #
+        #
+        # tic = time.perf_counter()
+        # reshaped_traces = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x))).compute()
+        # mean_traces_dasked = [np.mean(x, axis=0) for x in reshaped_traces]
+        # bagged_traces = db.from_sequence(mean_traces_dasked)
+        # self.mean_traces = dask.compute(bagged_traces.compute())
+        # toc = time.perf_counter()
+        #
+        # print(toc-tic, "elapsed")
+
+
         bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
         print("Begin Averaging Data")
         self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
         print("Finished Averaging Data")
+
 
     def filter_averages(self, filter_channels=None, filter_median_highpass=False, filter_median_lowpass=False,
                         filter_gaussian_highpass=False, filter_powerline=False):

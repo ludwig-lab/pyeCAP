@@ -211,13 +211,13 @@ class TdtStim:
             ch_events = np.zeros((num_events,), dtype=float)
             idx_pointer = 0
             if indicators:
-                for index, row in params.iterrows():
+                for index, row in params[params["channel"] == ch].iterrows():
                     num_stim_events = int(row['pulse count'])
                     stim_indicators = np.ones((num_stim_events,))*index
                     ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_indicators
                     idx_pointer += num_stim_events
             else:
-                for index, row in params.iterrows():
+                for index, row in params[params["channel"] == ch].iterrows():
                     stim_events = row['onset time (s)'] + np.arange(0, row['pulse count'])*row['period (ms)']/1000
                     num_stim_events = int(row['pulse count'])
                     ch_events[idx_pointer:idx_pointer+num_stim_events] = stim_events
@@ -288,8 +288,10 @@ class TdtArray:
         s_freqs = self.metadata['sample_rate']
         s_lengths = self.metadata['stream_lengths']
         if isinstance(s_freqs, list):
-            raise IOError("Selected stores contain arrays with different sampling rates. Use input 'stores' to select "
-                          "a subset of TDT stores with compatible sampling rates.")
+            raise IOError("Selected stores contain arrays with different sampling rates. Use input 'stores=' to select "
+                          "a subset of TDT stores with compatible sampling rates.\n"
+                          "Available stores are: " + str(self.stores)
+                          )
 
         if isinstance(s_lengths, list):
             # ToDo: yell at TDT for having incorrect block size.
@@ -349,7 +351,7 @@ class TdtArray:
             for key in np.asarray(self.metadata['streams']).flatten():
                 channel_list = np.sort(np.unique(self.tdt_io.tdt_block.stores[key].chan))
                 for channel in channel_list:
-                    data_offsets = np.array(self.tdt_io.tdt_block.stores[key].data[self.tdt_io.tdt_block.stores[key].chan == channel], dtype=int)
+                    data_offsets = np.array(self.tdt_io.tdt_block.stores[key].data[self.tdt_io.tdt_block.stores[key].chan == channel], dtype=np.int64) # needs to by an int64 for datasets greater than >4GB
                     # Check for sev file that will exist if files saved seperately
                     sev_file = os.path.splitext(tev_file)[0] + '_' + key + '_Ch' + str(channel) + '.sev'
                     if os.path.isfile(sev_file):
