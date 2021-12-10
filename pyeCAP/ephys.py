@@ -72,7 +72,15 @@ class Ephys(_TsData):
                 # Check if directory is for tdt data
                 tev_files = glob.glob(file_path + '/*.tev')  # There should only be one
                 if len(tev_files) == 0:
-                    raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    # Check if this is a folder of tanks, look for tev files one live deep
+                    tev_files = glob.glob(file_path + '/*/*.tev')
+                    if len (tev_files) == 0:
+                        raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    else:
+                        data = [os.path.split(f)[0] for f in tev_files]
+                        self.__init__(data, *args, stores=stores, rz_sample_rate=rz_sample_rate,
+                                            si_sample_rate=si_sample_rate, sample_delay=sample_delay, **kwargs)
+                        return
                 elif len(tev_files) > 1:
                     raise FileExistsError("Multiple '*.tev' files found in tank, 1 expected.")
                 else:

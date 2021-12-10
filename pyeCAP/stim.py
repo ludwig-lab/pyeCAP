@@ -84,7 +84,15 @@ class Stim(_EventData, _DioData, _ParameterData):
                 # Check if directory is for tdt data
                 tev_files = glob.glob(file_path + '/*.tev')  # There should only be one
                 if len(tev_files) == 0:
-                    raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    # Check if this is a folder of tanks, look for tev files one live deep
+                    tev_files = glob.glob(file_path + '/*/*.tev')
+                    if len (tev_files) == 0:
+                        raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    else:
+                        file_path = [os.path.split(f)[0] for f in tev_files]
+                        self.__init__(file_path,  io=io, events=events, event_indicators=event_indicators, dio=dio,
+                                      dio_indicators=dio_indicators, parameters=parameters, metadata=metadata)
+                        return
                 elif len(tev_files) > 1:
                     raise FileExistsError("Multiple '*.tev' files found in tank, 1 expected.")
                 else:
