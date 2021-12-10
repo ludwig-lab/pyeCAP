@@ -40,7 +40,6 @@ cache = Cache(2e9)  # Leverage two gigabytes of memory
 cache.register()  # Turn cache on globally
 
 
-# TODO: create and edit the docstrings
 class _TsData:
     """
     Class for time series data. Contains many of the methods for the pyCAP.Ephys child class.
@@ -388,7 +387,7 @@ class _TsData:
         else:
             raise ValueError("Import data sets do not have consistent channel types.")
 
-    def set_ch_types(self, ch_types):
+    def set_ch_types(self, ch_types, rename=False):
         """
         Method for setting the type of each channel.
 
@@ -396,6 +395,9 @@ class _TsData:
         ----------
         ch_types : list
             List of channel types
+
+        rename : bool
+            Boolean value indicating if the channels should be renamed based on the channel types.
 
         Returns
         -------
@@ -417,7 +419,17 @@ class _TsData:
             raise ValueError("Number of channels in input 'ch_types'", len(ch_types), "does not match number of channels in data array", len(self.ch_names), ".")
         for m in metadata:
             m['ch_types'] = ch_types
-        return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
+        if rename:
+            ch_names = ch_types
+            for t in set(ch_types):
+                t_count = 0
+                for i, ch in enumerate(ch_names):
+                    if ch == t:
+                        ch_names[i] = ch_names[i] + " " + str(int(t_count))
+                        t_count += 1
+            return type(self)(self.data, metadata, chunks=self.chunks, daskify=False).set_ch_types(ch_names)
+        else:
+            return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
 
     @property
     def sample_rate(self):

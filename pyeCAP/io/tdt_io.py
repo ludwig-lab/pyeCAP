@@ -43,10 +43,11 @@ class TdtIO:
 
         if isinstance(self.file_path, str):
             if os.path.isdir(self.file_path):
+                # This catches the print output from read_block that can't be disabled.
                 try:
-                    # var, set to 1 to return only the headers for this block, if you need to
-                    # make fast consecutive calls to read_block
                     with io.StringIO() as buf, redirect_stdout(buf):
+                        # 'headers' var, set to 1 to return only the headers for the block. This enables fast
+                        # consecutive calls to read_block
                         self.tdt_block = read_block(self.file_path, headers=1)
                         output = buf.getvalue()
                 except IOError:
@@ -58,7 +59,7 @@ class TdtIO:
         else:
             raise IOError("Path was not formatted as a string.")
 
-    @threaded_cached_property
+    @threaded_cached_property # We can cache this because none of this metadata will change after being read in.
     def metadata(self):
         # read in StoresListing file to get more metadata
         metadata = {}
@@ -117,6 +118,7 @@ class TdtStim:
         for key, value in self.tdt_io.metadata['Gizmo Name'].items():
             if key in self.tdt_io.stores and value in ('Electrical Stim Driver', 'Electrical Stimulation'):
                 # TODO: Use the data types instead of assumptions about defualt naming conventions to check if the keys are stim parameter or stream data.
+                # TODO: Fallback to searching based on default names and giving warning.
                 if "p" in key:
                     self.parameter_stores.append(key)
                 elif "r" in key:
@@ -157,10 +159,10 @@ class TdtStim:
         metadata['raw_stores'] = self.raw_stores
         metadata['parameter_stores'] = self.parameter_stores
 
-        metadata['num_simulations'] = {}
+        metadata['num_stimulations'] = {}
         metadata['stimulation_onsets'] = {}
         for k in self.parameter_stores:
-            metadata['num_simulations'][k] = stores[k].size
+            metadata['num_stimulations'][k] = stores[k].size
             metadata['stimulation_onsets'][k] = np.sort(np.unique(stores[k].ts))
 
         metadata['channels'] = list(np.unique(self.parameters['channel']))
@@ -335,13 +337,16 @@ class TdtArray:
         s_freqs = self.metadata['sample_rate']
         s_lengths = self.metadata['stream_lengths']
         if isinstance(s_freqs, list):
+            store_options = ""
+            for s, fs in zip(self.metadata['streams'], self.metadata['sample_rate']):
+                store_options = store_options + s + " [sampling rate = " + str(fs) + " Hz]\n"
             raise IOError("Selected stores contain arrays with different sampling rates. Use input 'stores=' to select "
                           "a subset of TDT stores with compatible sampling rates.\n"
-                          "Available stores are: " + str(self.stores)
+                          "Available stores are: \n" + store_options
                           )
 
         if isinstance(s_lengths, list):
-            # ToDo: yell at TDT for having incorrect block size.
+            # ToDo: figure out why block side is 10 bit larger than stroed data
             if max(s_lengths) - min(s_lengths) == self.metadata['block_size'] - 10:
                 warnings.warn("Block size mismatch by one block. Adjusting stream length to shortest length.")
                 self.metadata['stream_lengths'] = min(s_lengths)
@@ -357,10 +362,15 @@ class TdtArray:
                                                                                 current_stream].chan[:-num_channels]
                         dump = 1
             else:
+                store_options = ""
+                for s, sl in zip(self.metadata['streams'], self.metadata['stream_lengths']):
+                    store_options = store_options + s + " [length = " + str(sl) + " samples]\n"
                 raise IOError("Selected stores contain arrays with different numbers of samples. Use input 'stores' to "
-                              "select a subset of TDT stores with compatible sample numbers.")
+                              "select a subset of TDT stores with compatible sample numbers.\n"
+                              "Available stores are: \n" + store_options
+                              )
 
-        # TODO: need to correctly handle tdt types properly
+        # TODO: need to handle tdt types other than floats properly
         # Create aray in dask format
         # Calculate array size
         self.shape = (len(self.metadata['ch_names']), self.metadata['stream_lengths'])
@@ -429,7 +439,7 @@ class TdtArray:
     def load_block(self, offset):
         return np.fromfile(self.tev_file, dtype=self.np_dtype, count=self.block_size, offset=offset)
 
-    @threaded_cached_property
+    @property
     def metadata(self):
         metadata = self.tdt_io.metadata
         metadata.update({'start_time': self.tdt_io.tdt_block['start_time'][0],

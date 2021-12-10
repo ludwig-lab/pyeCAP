@@ -14,7 +14,6 @@ from .io.ripple_io import RippleIO, RippleArray
 from .io.tdt_io import TdtIO, TdtArray, gather_sample_delay
 
 
-# TODO: edit docstrings
 class Ephys(_TsData):
     """
     Class for working with Ephys objects.
@@ -107,7 +106,6 @@ class Ephys(_TsData):
 
             # File type not found
             else:
-                # TODO: check if this is a file vs. and extension and give appropriate error messages
                 if os.path.exists(file_path):
                     if os.path.isdir(file_path):
                         raise IOError('"' + file_path + '"  - is not a tdt tank.')
