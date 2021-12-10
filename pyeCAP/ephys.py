@@ -137,6 +137,5 @@ class Ephys(_TsData):
             chunks = [item for d in ephys_files for item in d.chunks]
             super().__init__(data, metadata, *args, chunks=chunks, daskify=False, order=order, **kwargs)
 
-        # Work with data if being passed directly
         else:
             super().__init__(data, *args, **kwargs)
