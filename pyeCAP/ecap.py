@@ -53,9 +53,9 @@ class ECAP(_EpochData):
         self.stim = stim_data
         self.fs = ephys_data.sample_rate
 
-        if 'EMG' in self.ephys.ch_types:
+        if 'EMG' in self.ephys.types:
             self.emg_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['EMG']]
-        if 'ENG' in self.ephys.ch_types:
+        if 'ENG' in self.ephys.types:
             self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['ENG']]
         else:
             warnings.warn("Neural channels not implicitly stated. Assuming all channels are neural recordings")
@@ -83,7 +83,7 @@ class ECAP(_EpochData):
 
         super().__init__(ephys_data, stim_data, stim_data)
 
-        if 'EMG' in self.ephys.ch_types:
+        if 'EMG' in self.ephys.types:
             self.EMG_window_indicies = self.calculate_emg_window_lengths()  # [[[75, 600]], [[75, 600]], [[75, 600]]]
 
     def gather_num_conditions(self):
@@ -451,7 +451,7 @@ class ECAP(_EpochData):
                 #                      rec_idx]
                 ch_types = []
                 for m in self.ephys.metadata:
-                    if 'ch_types' in m:
+                    if 'types' in m:
                         if len(m['ch_types']) > 1:
                             ch_types.extend(m['ch_types'])
                     else:
