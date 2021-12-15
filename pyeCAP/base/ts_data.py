@@ -1,4 +1,5 @@
 # python standard library imports
+import os.path
 import warnings
 from datetime import datetime
 import copy
@@ -272,6 +273,9 @@ class _TsData:
         """
         return [d.shape for d in self.data]
 
+    def remove_data(self, datasets, invert=False):
+        pass
+
     def remove_ch(self, channels, invert=False):
         """
         Method for removing channels from time series data objects.
@@ -450,7 +454,7 @@ class _TsData:
         if rename:
             ch_names = ch_types.copy()
             for t in set(ch_types):
-                t_count = 0
+                t_count = 1
                 for i, ch in enumerate(ch_names):
                     if ch == t:
                         ch_names[i] = ch_names[i] + " " + str(int(t_count))
@@ -1287,6 +1291,27 @@ class _TsData:
 
         ax.set_title(None)
         return _plt_show_fig(fig, ax, show)
+
+    def save(self, path, *args, scale=1, dtype=None, store='data', compression='gzip', method='hdf5', **kwargs):
+        data = self.array
+        if scale != 1:
+            data = da.multiply(self.array, scale)
+        if dtype is not None:
+            data = data.astype(dtype)
+        if method is 'hdf5':
+            if not (path.endswith(".h5") or path.endswith(".hdf5")):
+                path = os.path.splitext(path)[0] + '.h5'
+            with ProgressBar():
+                data.to_hdf5(path, "\\"+store, compression='gzip')
+        if method is 'mat':
+            if not (path.endswith(".mat")):
+                path = os.path.splitext(path)[0] + '.mat'
+            with ProgressBar():
+                data.transpose().to_hdf5(path, "\\"+store, compression='gzip')
+        else:
+            raise ValueError("Save mehtod '{}' is not recognized. Implemented save methods include 'hdf5'.".format(method))
+
+
 
     def _ch_type_to_index(self, ch_type):
         """
