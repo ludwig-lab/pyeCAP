@@ -923,6 +923,37 @@ class _TsData:
             cutoffs.append(f - (w / 2.0) - (trans_bandwidth / 2.0))
             cutoffs.append(f + (w / 2.0) + (trans_bandwidth / 2.0))
         return self.filter_fir(cutoffs, width=trans_bandwidth)
+    
+    def filter_Spike(self, Wn=[300,5000], rp=0.01, rs=100, btype='bandpass', order=4):
+        """
+        Filters the data with an infinite impulse response (iir) filter with the scipy.signal.iirfilter method.
+        Parameters
+        ----------
+        Wn : list, tuple
+            Sequence with 2 elements containing critical frequencies.
+        rp : None, float
+            Maximum ripple in the passband in decibels for Chebyshev and ellipitic filters.
+        rs : None, float
+             Minimum attenuation in the stop band for Chebyshev and ellipitic filters.
+        btype : str
+            Use 'band', 'bandpass’, ‘lowpass’, ‘highpass’, or ‘bandstop’ to specify type of filter.
+        order : int
+            Order of the filter. Default is 1.
+        ftype : str
+            Use 'butter' for Butterworth filter, 'cheby1' for Chebyshev I filter, 'cheby2' for Chebyshev II filter,
+            'ellip' for elliptic filter, 'bessel' for Bessel filter.
+        Returns
+        -------
+        _TsData or subclass
+            New class instance of the same type as self which contains the filtered data.
+        """
+        lowFreq = Wn[0]
+        highFreq = Wn[1]
+        sos = signal.ellip(order, rp, rs,[2*np.pi*lowFreq,2*np.pi*highFreq], btype, analog=True)
+        b,a = signal.ellip(order, rp, rs,[2*np.pi*lowFreq,2*np.pi*highFreq], btype, analog=True)
+        overlap = max(len(a), len(b))
+        data = [da.map_overlap(d, lambda x: signal.sosfiltfilt(sos, x), (0, overlap), dtype=d.dtype) for d in self.data]
+        return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
     def plot_times(self, *args, axis=None, events=None, x_lim=None, fig_size=(10, 2), show=True, **kwargs):
         """
@@ -1295,18 +1326,96 @@ class _TsData:
             data = da.multiply(self.array, scale)
         if dtype is not None:
             data = data.astype(dtype)
-        if method is 'hdf5':
+        if method == 'hdf5':
             if not (path.endswith(".h5") or path.endswith(".hdf5")):
                 path = os.path.splitext(path)[0] + '.h5'
-            with ProgressBar():
-                data.to_hdf5(path, "\\"+store, compression='gzip')
-        if method is 'mat':
+        elif method == 'mat':
             if not (path.endswith(".mat")):
                 path = os.path.splitext(path)[0] + '.mat'
-            with ProgressBar():
-                data.transpose().to_hdf5(path, "\\"+store, compression='gzip')
+            data = data.transpose()
+
+            import h5py
+            h5py.File(path, mode='x', userblock_size=512)
+
+            ### The follwoing 43 lines of code are reproduced form the hdf5storage library, which can be found here:
+            # https://github.com/frejanordsiek/hdf5storage/blob/main/COPYING.txt
+            # These 43 lines of code are reproduced under the following conditions:
+            # Copyright (c) 2013-2021, Freja Nordsiek
+            # All rights reserved.
+            #
+            # Redistribution and use in source and binary forms, with or without
+            # modification, are permitted provided that the following conditions are met:
+            #
+            # 1. Redistributions of source code must retain the above copyright notice,
+            # this list of conditions and the following disclaimer.
+            #
+            # 2. Redistributions in binary form must reproduce the above copyright
+            # notice, this list of conditions and the following disclaimer in the
+            # documentation and/or other materials provided with the distribution.
+            #
+            # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+            # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+            # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+            # ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+            # LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+            # CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+            # SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+            # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+            # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+            # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+            # POSSIBILITY OF SUCH DAMAGE.
+            ###
+            # Get the time.
+            now = datetime.now()
+            # Construct the leading string. The MATLAB one looks like
+            #
+            # s = 'MATLAB 7.3 MAT-file, Platform: GLNXA64, Created on: ' \
+            #     + now.strftime('%a %b %d %H:%M:%S %Y') \
+            #     + ' HDF5 schema 1.00 .'
+            #
+            # Platform is going to be changed to CPython version. The
+            # version is just gotten from sys.version_info, which is a class
+            # for Python >= 2.7, but a tuple before that.
+            import sys
+            v = sys.version_info
+            if sys.hexversion >= 0x02070000:
+                v = {'major': v.major, 'minor': v.minor, 'micro': v.micro}
+            else:
+                v = {'major': v[0], 'minor': v[1], 'micro': v[1]}
+
+            s = 'MATLAB 7.3 MAT-file, Platform: CPython ' \
+                + '{0}.{1}.{2}'.format(v['major'], v['minor'], v['micro']) \
+                + ', Created on: ' \
+                + now.strftime('%a %b %d %H:%M:%S %Y') \
+                + ' HDF5 schema 1.00 .'
+
+            # Make the bytearray while padding with spaces up to 128-12
+            # (the minus 12 is there since the last 12 bytes are special.
+
+            b = bytearray(s + (128-12-len(s))*' ', encoding='utf-8')
+
+            # Add 8 nulls (0) and the magic number (or something) that
+            # MATLAB uses. Lengths must be gone to to make sure the argument
+            # to fromhex is unicode because Python 2.6 requires it.
+
+            b.extend(bytearray.fromhex(
+                b'00000000 00000000 0002494D'.decode()))
+
+            # Now, write it to the beginning of the file.
+
+            try:
+                fd = open(path, 'r+b')
+                fd.write(b)
+            except:
+                raise
+            finally:
+                fd.close()
+            ### This is the end of the reproduced section of code for modifying hdf5 files to be read as .mat files.
         else:
             raise ValueError("Save mehtod '{}' is not recognized. Implemented save methods include 'hdf5'.".format(method))
+        with ProgressBar():
+            data.to_hdf5(path, "/"+store, *args, compression=compression, **kwargs)
+
 
 
 
