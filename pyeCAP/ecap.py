@@ -53,35 +53,37 @@ class ECAP(_EpochData):
         self.stim = stim_data
         self.fs = ephys_data.sample_rate
 
-        if 'EMG' in self.ephys.ch_types:
+        if 'EMG' in self.ephys.types:
             self.emg_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['EMG']]
-        if 'ENG' in self.ephys.ch_types:
+        if 'ENG' in self.ephys.types:
             self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['ENG']]
         else:
             warnings.warn("Neural channels not implicitly stated. Assuming all channels are neural recordings")
+            self.ephys = self.ephys.set_ch_types(["ENG"]*self.ephys.shape[0])
             self.neural_channels = np.arange(0, self.ephys.shape[0])
 
         self.neural_window_indicies = self.calculate_neural_window_lengths()
 
-        if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
-            if self.neural_window_indicies.shape[0] != len(self.distance_log) and self.distance_log is not [0]:
-                raise ValueError("Recording lengths don't match recording channel lengths")
+        if type(self.distance_log) == list and self.distance_log != [0]:
+            if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
+                if self.neural_window_indicies.shape[0] != len(self.distance_log) and self.distance_log is not [0]:
+                    raise ValueError("Recording lengths don't match recording channel lengths")
 
-        elif len(self.neural_window_indicies) != len(self.distance_log) and self.distance_log is not [0]:
-            raise ValueError("Recording lengths don't match recording channel lengths")
+            elif len(self.neural_window_indicies) != len(self.distance_log):
+                raise ValueError("Recording lengths don't match recording channel lengths")
 
         self.mean_traces = []
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log is "Experimental Log.xlsx":
+        if distance_log == "Experimental Log.xlsx":
             self.log_path = ephys_data.base_path + distance_log
         else:
             self.log_path = distance_log
 
         super().__init__(ephys_data, stim_data, stim_data)
 
-        if 'EMG' in self.ephys.ch_types:
+        if 'EMG' in self.ephys.types:
             self.EMG_window_indicies = self.calculate_emg_window_lengths()  # [[[75, 600]], [[75, 600]], [[75, 600]]]
 
     def gather_num_conditions(self):
@@ -144,7 +146,7 @@ class ECAP(_EpochData):
         return time_windows
 
     def calculate_emg_window_lengths(self):
-        # Find stim length. Multiply by two for onset to account for capacitive discharge. Go to end of sample for offset, or 1/frequency, whichever is shorter
+        # Find pulse width. Multiply by six for onset to account for capacitive discharge. Go to end of sample for offset, or 1/frequency, whichever is shorter
         pw = self.stim.parameters.iloc[0]['pulse duration (ms)'] / 1000
         onset = int(pw * 6 * self.fs)
         offset1 = int(self.fs / self.stim.parameters.iloc[0]['frequency (Hz)']) - 1
@@ -449,9 +451,9 @@ class ECAP(_EpochData):
                 #                      rec_idx]
                 ch_types = []
                 for m in self.ephys.metadata:
-                    if 'ch_types' in m:
+                    if 'types' in m:
                         if len(m['ch_types']) > 1:
-                            ch_types.append(m['ch_types'])
+                            ch_types.extend(m['ch_types'])
                     else:
                         ch_types.append([''] * len(signal_chain[recording_channels]))
 

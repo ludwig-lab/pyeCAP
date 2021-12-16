@@ -18,8 +18,6 @@ from .base.utils.numeric import _to_numeric_array
 from .io.ripple_io import RippleIO, RippleEvents
 from .io.tdt_io import TdtIO, TdtStim
 
-#TODO: create and edit the docstrings
-
 
 class Stim(_EventData, _DioData, _ParameterData):
     """
@@ -84,19 +82,27 @@ class Stim(_EventData, _DioData, _ParameterData):
                 # Check if directory is for tdt data
                 tev_files = glob.glob(file_path + '/*.tev')  # There should only be one
                 if len(tev_files) == 0:
-                    raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    # Check if this is a folder of tanks, look for tev files one live deep
+                    tev_files = glob.glob(file_path + '/*/*.tev')
+                    if len (tev_files) == 0:
+                        raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    else:
+                        file_path = [os.path.split(f)[0] for f in tev_files]
+                        self.__init__(file_path,  io=io, events=events, event_indicators=event_indicators, dio=dio,
+                                      dio_indicators=dio_indicators, parameters=parameters, metadata=metadata)
+                        return
                 elif len(tev_files) > 1:
                     raise FileExistsError("Multiple '*.tev' files found in tank, 1 expected.")
                 else:
                     self.file_path = [file_path]
                     self.io = [TdtIO(file_path)]
                     tdt_stim = TdtStim(self.io[0])
+                    parameters = tdt_stim.parameters
                     metadata = tdt_stim.metadata
                     events = tdt_stim.events()
                     event_indicators = tdt_stim.events(indicators=True)
                     dio = tdt_stim.dio()
                     dio_indicators = tdt_stim.dio(indicators=True)
-                    parameters = tdt_stim.parameters
             # File type not found
             else:
                 print(file_path)
@@ -118,6 +124,25 @@ class Stim(_EventData, _DioData, _ParameterData):
             self.__init__(file_path, io, events, event_indicators, dio, dio_indicators, parameters, metadata)
         else:
             raise ValueError("Input expected to be string or list of strings")
+
+    @property
+    def raw_stores(self):
+        """
+        Returns data for raw stimulation waveforms ('eS1r' stores) and raw voltage monitoring data ('MonA' stores) if
+        they exist (TDT only).
+
+        Returns
+        -------
+        list
+            list of dictionaries that contain the raw data structs.
+        """
+        raw_data = []
+        try:
+            for i in range(len(self.metadata)):
+                raw_data.append({key: getattr(self.io[i].tdt_block.stores, key) for key in self.metadata[i]['raw_stores']})
+        except KeyError:
+            warnings.warn("Raw stores method is only for tdt objects")
+        return raw_data
 
     def plot_dio(self, *args, **kwargs):
         """

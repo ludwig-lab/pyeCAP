@@ -1,4 +1,5 @@
 # python standard library imports
+import os.path
 import warnings
 from datetime import datetime
 import copy
@@ -40,7 +41,6 @@ cache = Cache(2e9)  # Leverage two gigabytes of memory
 cache.register()  # Turn cache on globally
 
 
-# TODO: create and edit the docstrings
 class _TsData:
     """
     Class for time series data. Contains many of the methods for the pyCAP.Ephys child class.
@@ -273,6 +273,9 @@ class _TsData:
         """
         return [d.shape for d in self.data]
 
+    def remove_data(self, datasets, invert=False):
+        pass
+
     def remove_ch(self, channels, invert=False):
         """
         Method for removing channels from time series data objects.
@@ -357,7 +360,7 @@ class _TsData:
         """
         # TODO: make this accept a dictionary with channel mask which is more convenient for large ch counts
         if len(ch_names) != len(self.ch_names):
-            raise ValueError("Number of channels in input 'ch_types' does not match number of channels in data array.")
+            raise ValueError("Number of channels in input 'types' does not match number of channels in data array.")
         if len(set(ch_names)) != len(self.ch_names):
             raise ValueError("Multiple channels can not be assigned the same channel name.")
 
@@ -367,28 +370,56 @@ class _TsData:
         return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
 
     @property
-    def ch_types(self):
+    def types(self):
         """
-        Property getter method for channel types.
+        Returns the types present in the ephys dataset. For datasets that contain multiple types of ephys recordings
+        on differnt channels. For example a single dataset could contiain single unit data, LFP data, neurography
+        data or other specific ephys datasets on different channels. Defining types in a dataset enables operations
+        to be performed only on specific types of data.
 
         Returns
         -------
         list
-            List of channel types without duplicates.
+            List of channel types without repeats.
 
         Examples
         ________
         >>> ephys_data = ephys_data.set_ch_types(['L','L','L','L','E','E','E','E','L','L','L','L','E','E','E','E'])
-        >>> sorted(ephys_data.ch_types)     # sort this list to ensure the order is always the same
-        ['E', 'L']
+        >>> sorted(ephys_data.types)     # sort this list to ensure the order is always the same
+        ['L','L','L','L','E','E','E','E','L','L','L','L','E','E','E','E']
         """
-        ch_types = [tuple(meta['ch_types']) if 'ch_types' in meta.keys() else tuple() for meta in self.metadata ]
+        ch_types = [tuple(meta['types']) if 'types' in meta.keys() else tuple() for meta in self.metadata]
         if len(set(ch_types)) == 1:
             return list(set(ch_types[0]))
         else:
             raise ValueError("Import data sets do not have consistent channel types.")
 
-    def set_ch_types(self, ch_types):
+    @property
+    def ch_types(self):
+        """
+        Returns the types of each channel in the ephys dataset. For datasets that contain multiple types of ephys recordings
+        on differnt channels. For example a single dataset could contiain single unit data, LFP data, neurography
+        data or other specific ephys datasets on different channels. Defining types in a dataset enables operations
+        to be performed only on specific types of data.
+
+        Returns
+        -------
+        list
+            List of channel types. Matches length of number of channels in the dataset.
+
+        Examples
+        ________
+        >>> ephys_data = ephys_data.set_ch_types(['L','L','L','L','E','E','E','E','L','L','L','L','E','E','E','E'])
+        >>> sorted(ephys_data.types)     # sort this list to ensure the order is always the same
+        ['L','E']
+        """
+        ch_types = [tuple(meta['types']) if 'types' in meta.keys() else tuple() for meta in self.metadata]
+        if len(set(ch_types)) == 1:
+            return ch_types[0]
+        else:
+            raise ValueError("Import data sets do not have consistent channel types.")
+
+    def set_ch_types(self, ch_types, rename=False):
         """
         Method for setting the type of each channel.
 
@@ -396,6 +427,9 @@ class _TsData:
         ----------
         ch_types : list
             List of channel types
+
+        rename : bool
+            Boolean value indicating if the channels should be renamed based on the channel types.
 
         Returns
         -------
@@ -408,16 +442,26 @@ class _TsData:
 
         See Also
         ________
-        ch_types
+        types
 
         """
         # TODO: make this accept a dictionary with channel mask which is more convenient for large ch counts
         metadata = copy.deepcopy(self.metadata)
         if len(ch_types) != len(self.ch_names):
-            raise ValueError("Number of channels in input 'ch_types'", len(ch_types), "does not match number of channels in data array", len(self.ch_names), ".")
+            raise ValueError("Number of channels in input 'types'", len(ch_types), "does not match number of channels in data array", len(self.ch_names), ".")
         for m in metadata:
-            m['ch_types'] = ch_types
-        return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
+            m['types'] = ch_types
+        if rename:
+            ch_names = ch_types.copy()
+            for t in set(ch_types):
+                t_count = 1
+                for i, ch in enumerate(ch_names):
+                    if ch == t:
+                        ch_names[i] = ch_names[i] + " " + str(int(t_count))
+                        t_count += 1
+            return type(self)(self.data, metadata, chunks=self.chunks, daskify=False).set_ch_names(ch_names)
+        else:
+            return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
 
     @property
     def sample_rate(self):
@@ -583,18 +627,18 @@ class _TsData:
             data = [d - d[channel, :] for d in self.data]
         else:
             if isinstance(ch_type, str):
-                if ch_type in self.ch_types:
+                if ch_type in self.types:
                     channels = self._ch_type_to_index(ch_type)[:, None]
                 else:
-                    raise Warning(ch_type + " not found in ch_types")
+                    raise Warning(ch_type + " not found in types")
             elif isinstance(ch_type, (list, np.ndarray)):
                 channels = np.zeros((len(self.ch_names), 1))
                 for ch in ch_type:
                     if isinstance(ch, str):
-                        if ch in self.ch_types:
+                        if ch in self.types:
                             channels = np.logical_or(self._ch_type_to_index(ch)[:, None], channels)
                         else:
-                            raise Warning(ch + " not found in ch_types")
+                            raise Warning(ch + " not found in types")
                     else:
                         raise ValueError("Input 'ch_type' is expected to be list of str, not " + type(ch))
             else:
@@ -646,18 +690,18 @@ class _TsData:
                 raise ValueError(str(method) + " is not a valid option for input 'method'")
         else:
             if isinstance(ch_type, str):
-                if ch_type in self.ch_types:
+                if ch_type in self.types:
                     channels = self._ch_type_to_index(ch_type)[:, None]
                 else:
-                    raise Warning(ch_type + " not found in ch_types")
+                    raise Warning(ch_type + " not found in types")
             elif isinstance(ch_type, (list, tuple, np.ndarray)):
                 channels = np.zeros((len(self.ch_names), 1))
                 for ch in ch_type:
                     if isinstance(ch, str):
-                        if ch in self.ch_types:
+                        if ch in self.types:
                             channels = np.logical_or(self._ch_type_to_index(ch)[:, None], channels)
                         else:
-                            raise Warning(ch + " not found in ch_types")
+                            raise Warning(ch + " not found in types")
                     else:
                         raise ValueError("Input 'ch_type' is expected to be list of str, not " + type(ch))
             else:
@@ -1089,6 +1133,9 @@ class _TsData:
 
         plot_data = self._to_plt_line_collection(x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps)
         for data in plot_data:
+            # TODO: Matplotlib 3.5.0 has changed how offsets work. The easy solution for right now is to exclude
+            #  matplotlib version > 3.5 from the install list, however the best long-term solution is likely to shift
+            #  this to use matplotlibs transforms instead which should be compatible across versions.
             lines = LineCollection(data[0], offsets=offsets, colors=colors, linewidths=np.ones(plot_array.shape[0]), transOffset=None)
             current_lines = ax.add_collection(lines)
 
@@ -1276,6 +1323,27 @@ class _TsData:
         ax.set_title(None)
         return _plt_show_fig(fig, ax, show)
 
+    def save(self, path, *args, scale=1, dtype=None, store='data', compression='gzip', method='hdf5', **kwargs):
+        data = self.array
+        if scale != 1:
+            data = da.multiply(self.array, scale)
+        if dtype is not None:
+            data = data.astype(dtype)
+        if method is 'hdf5':
+            if not (path.endswith(".h5") or path.endswith(".hdf5")):
+                path = os.path.splitext(path)[0] + '.h5'
+            with ProgressBar():
+                data.to_hdf5(path, "\\"+store, compression='gzip')
+        if method is 'mat':
+            if not (path.endswith(".mat")):
+                path = os.path.splitext(path)[0] + '.mat'
+            with ProgressBar():
+                data.transpose().to_hdf5(path, "\\"+store, compression='gzip')
+        else:
+            raise ValueError("Save mehtod '{}' is not recognized. Implemented save methods include 'hdf5'.".format(method))
+
+
+
     def _ch_type_to_index(self, ch_type):
         """
         Returns a boolean array with indices matching the self.ch_names property and values indicating whether the
@@ -1294,7 +1362,7 @@ class _TsData:
         --------
         ch_names
         """
-        ch_types = [tuple(meta['ch_types']) for meta in self.metadata]
+        ch_types = [tuple(meta['types']) for meta in self.metadata]
         if len(set(ch_types)) == 1:
             return np.array((ch_types[0])) == ch_type
         else:
@@ -1520,10 +1588,10 @@ class _TsData:
             Dictionary of channel types and counr
             Example: LIFE: 1, 1, 1, 1, 0,0,0; EMG:0,0,0,0,1,1,1
         """
-        vals = self.ch_types
+        vals = self.types
         d = {}
         for val in vals:
-            count = [ch_type == val for ch_type in self.metadata[0]['ch_types']]
+            count = [ch_type == val for ch_type in self.metadata[0]['types']]
             d[val] = count
         return d
 

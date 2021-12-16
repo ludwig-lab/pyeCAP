@@ -132,29 +132,7 @@ class _EpochData:
         df_epocs_idx = round(df_epocs * fs).astype(int)
         df_epocs_idx = df_epocs_idx.rename(columns={"onset time (s)": "onset index", "offset time (s)": "offset index"})
 
-
-        #df_epocs_idx = df_epocs_idx.rename(columns={"onset time (s)": "onset index", "offset time (s)": "offset index"})
-        # # reshape to numpy array
-        # dim1 = len(df_epocs_idx.index.get_level_values(0).unique())
-        # dim2 = len(df_epocs_idx.index.get_level_values(1).unique())
-        # onset_indicies = df_epocs_idx.values.reshape((dim1, dim2, df_epocs_idx.shape[1]))
-        # # expand matrix to include all onsets based on pulse count
-        # stim_indicies = onset_indicies[:] + np.round(np.arange(0, pulse_count) * 1 / stim_freq * fs).astype(int)
-        # stim_indicies.shape
-
         return df_epocs_idx
-
-    # def stim_index(self, df_epocs_idx):
-    #     pulse_count =
-    #     dim1 = len(df_epocs_idx.index.get_level_values(0).unique())
-    #     dim2 = len(df_epocs_idx.index.get_level_values(1).unique())
-    #     onset_indicies = df_epocs_idx.values.reshape((dim1, dim2, df_epocs_idx.shape[1]))
-    #     print(onset_indicies.shape)
-    #
-    #     # expand matrix to include all onsets based on pulse count
-    #     stim_indicies = onset_indicies[:] + np.round(np.arange(0, pulse_count) * 1 / stim_freq * fs).astype(int)
-    #     print(stim_indicies.shape)
-    #     stim_indicies
 
     @lru_cache(maxsize=None)
     def dask_array(self, parameter):
@@ -178,6 +156,8 @@ class _EpochData:
         >>> ecap_data.dask_array((0,0)) # doctest: +SKIP
         """
         event_times = []
+        # ToDo: modify so data continues to be pulled out across channels if channels are equal between event_data
+        #  and ephys data but if channels match between the two datasets then pull out on a perchannel basis
         for ch in self.event_data.ch_names:
             events = self.event_data.events(ch, start_times=self.ts_data.start_indices / self.ts_data.sample_rate)
             event_indicators = self.event_data.event_indicators(ch)
@@ -193,7 +173,6 @@ class _EpochData:
             sample_len = int(np.round((self.x_lim[1] - self.x_lim[0]) * self.ts_data.sample_rate))
         event_times = self.ts_data._time_to_index(event_times)
 
-        # TODO: improve checks for the array being properly shaped
         indices = np.zeros(self.ts_data.shape[1], dtype=bool)
         for ts in event_times:
             te = int(ts + sample_len)
@@ -206,8 +185,10 @@ class _EpochData:
         event_data = self.ts_data.array[:, first_onset_idx:last_onset_idx + 1]
         idx_mask = np.repeat(indices[first_onset_idx:last_onset_idx + 1][np.newaxis,:], self.ts_data.shape[0], axis=0)
 
+        # ToDo: Create Heuristic model with best way to extract data if it is tightly packed or not
         if len(removal_idx[0]) > 0:
-            event_data = event_data[idx_mask]
+            # ToDo: rewrite so that this happens blockwise in dask as opposed to all at once to speed up.
+            event_data = event_data[idx_mask].compute_chunk_sizes()
 
         event_data_reshaped = da.reshape(event_data, (self.ts_data.shape[0], len(event_times), int(sample_len)))
         return da.moveaxis(event_data_reshaped, 1, 0)
