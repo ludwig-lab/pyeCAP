@@ -1326,12 +1326,12 @@ class _TsData:
             data = da.multiply(self.array, scale)
         if dtype is not None:
             data = data.astype(dtype)
-        if method is 'hdf5':
+        if method == 'hdf5':
             if not (path.endswith(".h5") or path.endswith(".hdf5")):
                 path = os.path.splitext(path)[0] + '.h5'
             with ProgressBar():
                 data.to_hdf5(path, "\\"+store, compression='gzip')
-        if method is 'mat':
+        if method == 'mat':
             if not (path.endswith(".mat")):
                 path = os.path.splitext(path)[0] + '.mat'
             with ProgressBar():
