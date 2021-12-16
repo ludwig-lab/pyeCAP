@@ -114,9 +114,6 @@ class _TsData:
             self.data = [s[0] for s in srted]
             self.metadata = [s[1] for s in srted]
 
-    def save(self):
-        pass
-
     @property
     def array(self):
         """
