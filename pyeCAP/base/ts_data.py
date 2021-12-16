@@ -924,37 +924,6 @@ class _TsData:
             cutoffs.append(f + (w / 2.0) + (trans_bandwidth / 2.0))
         return self.filter_fir(cutoffs, width=trans_bandwidth)
     
-    def filter_Spike(self, Wn=[300,5000], rp=0.01, rs=100, btype='bandpass', order=4):
-        """
-        Filters the data with an infinite impulse response (iir) filter with the scipy.signal.iirfilter method.
-        Parameters
-        ----------
-        Wn : list, tuple
-            Sequence with 2 elements containing critical frequencies.
-        rp : None, float
-            Maximum ripple in the passband in decibels for Chebyshev and ellipitic filters.
-        rs : None, float
-             Minimum attenuation in the stop band for Chebyshev and ellipitic filters.
-        btype : str
-            Use 'band', 'bandpass’, ‘lowpass’, ‘highpass’, or ‘bandstop’ to specify type of filter.
-        order : int
-            Order of the filter. Default is 1.
-        ftype : str
-            Use 'butter' for Butterworth filter, 'cheby1' for Chebyshev I filter, 'cheby2' for Chebyshev II filter,
-            'ellip' for elliptic filter, 'bessel' for Bessel filter.
-        Returns
-        -------
-        _TsData or subclass
-            New class instance of the same type as self which contains the filtered data.
-        """
-        lowFreq = Wn[0]
-        highFreq = Wn[1]
-        sos = signal.ellip(order, rp, rs,[2*np.pi*lowFreq,2*np.pi*highFreq], btype, analog=True)
-        b,a = signal.ellip(order, rp, rs,[2*np.pi*lowFreq,2*np.pi*highFreq], btype, analog=True)
-        overlap = max(len(a), len(b))
-        data = [da.map_overlap(d, lambda x: signal.sosfiltfilt(sos, x), (0, overlap), dtype=d.dtype) for d in self.data]
-        return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
-
     def plot_times(self, *args, axis=None, events=None, x_lim=None, fig_size=(10, 2), show=True, **kwargs):
         """
         Plots the times when experiments represented by the data sets were conducted.
