@@ -457,7 +457,7 @@ class ECAP(_EpochData):
                     else:
                         ch_types.append([''] * len(signal_chain[recording_channels]))
 
-                plotting_metadata = [*[p[signal_idx] for p in info_list], recording_channel_names[rec_idx], ch_types[rec_idx]]
+                plotting_metadata = [*[p[signal_idx] for p in info_list], rec_idx]
                 calc_values = self.calc_AUC_method(rec_chain, rec_idx, window_type, analysis_method, plotting_metadata,
                                                    plot_AUCs=plot_AUC, save_path=save_path)
                 for specific_window_idx, vals in enumerate(calc_values):
