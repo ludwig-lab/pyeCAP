@@ -452,8 +452,8 @@ class ECAP(_EpochData):
                 ch_types = []
                 for m in self.ephys.metadata:
                     if 'types' in m:
-                        if len(m['ch_types']) > 1:
-                            ch_types.extend(m['ch_types'])
+                        if len(m['types']) > 1:
+                            ch_types.extend(m['types'])
                     else:
                         ch_types.append([''] * len(signal_chain[recording_channels]))
 
