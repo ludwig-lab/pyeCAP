@@ -524,3 +524,9 @@ class _EpochData:
         >>> ecap_data.std((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
         return np.std(self.array(parameter, channels=channels), axis=0)
+
+    @lru_cache(maxsize=None)
+    def _AUC_Vrms(self, parameter, channel, window):
+        vRMS = np.sqrt(np.mean(self.array(parameter, channels=channel)[0, :, window[0]:window[1]] ** 2)).compute()
+        return vRMS
+

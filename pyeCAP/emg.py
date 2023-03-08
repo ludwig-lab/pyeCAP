@@ -19,14 +19,14 @@ import time
 
 
 # TODO: edit docstrings
-class ECAP(_EpochData):
+class EMG(_EpochData):
     """
-    This class represents ECAP data
+    This class represents EMG data
     """
 
-    def __init__(self, ephys_data, stim_data, distance_log=None):
+    def __init__(self, ephys_data, stim_data):
         """
-        Constructor for the ECAP class.
+        Constructor for the EMG class.
 
         Parameters
         ----------
@@ -40,13 +40,7 @@ class ECAP(_EpochData):
         # todo: improve unit checking i.e. [2 cm, 1 mm]
         # TODO: check len(distances) == len(rec_electrodes)
 
-        if distance_log is not None:
-            self.distance_log = _to_numeric_array(distance_log)
-        else:
-            self.distance_log = [0]
-
         # Lists to look through for ranges
-        self.neural_fiber_names = ['A-alpha', 'A-beta', 'A-gamma', 'A-delta', 'B']
         self.emg_window = ["Total EMG"]
 
         self.ephys = ephys_data
@@ -55,36 +49,20 @@ class ECAP(_EpochData):
 
         if 'EMG' in self.ephys.types:
             self.emg_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['EMG']]
-        elif 'ENG' in self.ephys.types:
+        if 'ENG' in self.ephys.types:
             self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['ENG']]
         else:
             warnings.warn("Neural channels not implicitly stated. Assuming all channels are neural recordings")
             self.ephys = self.ephys.set_ch_types(["ENG"]*self.ephys.shape[0])
             self.neural_channels = np.arange(0, self.ephys.shape[0])
 
-        #self.neural_window_indicies = self.calculate_neural_window_lengths()
-
-        if type(self.distance_log) == list and self.distance_log != [0]:
-            if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
-                if self.neural_window_indicies.shape[0] != len(self.distance_log) and self.distance_log is not [0]:
-                    raise ValueError("Recording lengths don't match recording channel lengths")
-
-            elif len(self.neural_window_indicies) != len(self.distance_log):
-                raise ValueError("Recording lengths don't match recording channel lengths")
-
         self.mean_traces = []
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log == "Experimental Log.xlsx":
-            self.log_path = ephys_data.base_path + distance_log
-        else:
-            self.log_path = distance_log
-
         super().__init__(ephys_data, stim_data, stim_data)
 
-        if 'EMG' in self.ephys.types:
-            self.EMG_window_indicies = self.calculate_emg_window_lengths()  # [[[75, 600]], [[75, 600]], [[75, 600]]]
+        self.EMG_window_indicies = self.calculate_emg_window_lengths()
 
     def gather_num_conditions(self):
         all_indices = self.stim.parameters.index
@@ -114,37 +92,6 @@ class ECAP(_EpochData):
         else:
             sys.exit("Improper Dimensions.")
 
-    def calculate_neural_window_lengths(self):
-        """
-        :return: time_windows[recording_electrode][fiber_type][start/stop]
-        """
-        # min and max conduction velocities of various fiber types
-        a_alpha = [120,
-                   70]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        a_beta = [70,
-                  30]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        a_gamma = [30,
-                   15]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        a_delta = [30,
-                   5]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        B = [15, 3]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        velocity_matrix = np.array([a_alpha, a_beta, a_gamma, a_delta, B])
-        # create time_windows based on fiber type activation for every recording
-        # time_window[rec_electrode][fiber_type][start/stop]
-        rec_electrode = len(self.neural_channels)
-        fiber_type = len(self.neural_fiber_names)
-        time_windows = np.zeros((rec_electrode, fiber_type, 2))
-        for i, vel in enumerate(velocity_matrix):
-            for j, length_cm in enumerate(self.distance_log):
-                time_windows[j][i] = ([length_cm / 100 * (1 / ii) for ii in vel])
-
-        time_windows *= self.fs
-        time_windows = np.round(time_windows)
-
-        np.round(time_windows)
-        time_windows = time_windows.astype(int)
-        return time_windows
-
     def calculate_emg_window_lengths(self):
         # Find pulse width. Multiply by six for onset to account for capacitive discharge. Go to end of sample for offset, or 1/frequency, whichever is shorter
         pw = self.stim.parameters.iloc[0]['pulse duration (ms)'] / 1000
@@ -157,29 +104,6 @@ class ECAP(_EpochData):
         else:
             return [[[onset, offset2]] for c in self.emg_channels]
 
-
-    def calc_AUC(self, params, channels, window=None, window_units=None):
-
-        if window is not None:
-
-            if window_units is None:
-                raise ValueError("User-specified limits for AUC calculation have been specified, however the units for window limits are not defined. Specify window_units in 'ms' or 'samples'.")
-            elif window_units == 'ms':
-                print('Window units defined in milliseconds (ms)')
-                #Need to convert the time in ms to sample# based on sampling freq
-
-            elif window_units == 'samples':
-                print('Window units defined by sample #')
-                start_idx = window[0]
-                stop_idx = window[1]
-            else:
-                raise ValueError("Unit type of AUC window not recognized. Acceptable units are either in 'ms' or 'samples'.")
-
-        #utilize the neural windows steph previously used if there's no user specified input
-        #window units to be defined in time or samples?  Could prompt user for that info
-
-        pass
-
     def calc_AUC_method(self, signal, recording_idx, window_type, calculation_type, metadata, plot_AUCs=False,
                         save_path=None):
         if calculation_type == "RMS":
@@ -187,16 +111,11 @@ class ECAP(_EpochData):
                 window_onset_idx = self.neural_window_indicies
             if window_type.endswith("EMG"):
                 window_onset_idx = self.EMG_window_indicies
-                print('EMG_window_indicies: ' + str(self.EMG_window_indicies))
 
             current_list = []
-            self.windows = window_onset_idx
-
-
             for specific_window_idx, specific_window in enumerate(window_onset_idx[recording_idx]):
                 specific_onset = specific_window[0]
                 specific_offset = specific_window[1]
-
                 current_list.append(np.sqrt(np.mean(signal[specific_onset:specific_offset] ** 2)))
 
                 if plot_AUCs:
@@ -459,13 +378,12 @@ class ECAP(_EpochData):
         # create empty array to store calculated values in
         master_list = []
 
-        #if len(self.neural_window_indicies) != len(self.neural_channels):
-        #    sys.exit("amounts of neural channels don't add up")
+        if len(self.neural_window_indicies) != len(self.neural_channels):
+            sys.exit("amounts of neural channels don't add up")
 
         if window_type.endswith("EMG"):
             window_nomenclature = self.emg_window
             recording_channels = self.emg_channels
-            recording_channel_names = np.array(self.ephys.ch_names)[recording_channels]
         elif window_type.endswith("neural"):
             window_nomenclature = self.neural_fiber_names
             recording_channels = self.neural_channels
@@ -474,27 +392,21 @@ class ECAP(_EpochData):
         # will iterate through each condition
         for signal_idx, signal_chain in enumerate(self.mean_traces):
             # will iterate through recording electrode
-            ch_types = []
             for rec_idx, rec_chain in enumerate(signal_chain[recording_channels]):
                 # iterate through each fiber type
                 # plotting_metadata = [condition_list[signal_idx], channel_list[signal_idx], amplitude_list[signal_idx],
                 #                      rec_idx]
-
+                ch_types = []
                 for m in self.ephys.metadata:
-                    #print(len(m['types']))
-                    #print(m)
-
                     if 'types' in m:
-                        if len(m['types']) > 1:
-                            ch_types.extend(m['types'])
+                        if len(m['ch_types']) > 1:
+                            ch_types.extend(m['ch_types'])
                     else:
                         ch_types.append([''] * len(signal_chain[recording_channels]))
 
                 plotting_metadata = [*[p[signal_idx] for p in info_list], recording_channel_names[rec_idx], ch_types[rec_idx]]
-
                 calc_values = self.calc_AUC_method(rec_chain, rec_idx, window_type, analysis_method, plotting_metadata,
                                                    plot_AUCs=plot_AUC, save_path=save_path)
-
                 for specific_window_idx, vals in enumerate(calc_values):
                     # master_list.append(
                     #     [vals, analysis_method, window_nomenclature[specific_window_idx], amplitude_list[signal_idx],
@@ -535,7 +447,6 @@ class ECAP(_EpochData):
         # toc = time.perf_counter()
         #
         # print(toc-tic, "elapsed")
-
 
         bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
         print("Begin Averaging Data")

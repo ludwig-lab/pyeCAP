@@ -19,14 +19,14 @@ import time
 
 
 # TODO: edit docstrings
-class ECAP(_EpochData):
+class EMG(_EpochData):
     """
-    This class represents ECAP data
+    This class represents EMG data
     """
 
-    def __init__(self, ephys_data, stim_data, distance_log=None):
+    def __init__(self, ephys_data, stim_data):
         """
-        Constructor for the ECAP class.
+        Constructor for the EMG class.
 
         Parameters
         ----------
@@ -40,51 +40,19 @@ class ECAP(_EpochData):
         # todo: improve unit checking i.e. [2 cm, 1 mm]
         # TODO: check len(distances) == len(rec_electrodes)
 
-        if distance_log is not None:
-            self.distance_log = _to_numeric_array(distance_log)
-        else:
-            self.distance_log = [0]
-
         # Lists to look through for ranges
-        self.neural_fiber_names = ['A-alpha', 'A-beta', 'A-gamma', 'A-delta', 'B']
         self.emg_window = ["Total EMG"]
 
         self.ephys = ephys_data
         self.stim = stim_data
         self.fs = ephys_data.sample_rate
-
-        if 'EMG' in self.ephys.types:
-            self.emg_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['EMG']]
-        elif 'ENG' in self.ephys.types:
-            self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['ENG']]
-        else:
-            warnings.warn("Neural channels not implicitly stated. Assuming all channels are neural recordings")
-            self.ephys = self.ephys.set_ch_types(["ENG"]*self.ephys.shape[0])
-            self.neural_channels = np.arange(0, self.ephys.shape[0])
-
-        #self.neural_window_indicies = self.calculate_neural_window_lengths()
-
-        if type(self.distance_log) == list and self.distance_log != [0]:
-            if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
-                if self.neural_window_indicies.shape[0] != len(self.distance_log) and self.distance_log is not [0]:
-                    raise ValueError("Recording lengths don't match recording channel lengths")
-
-            elif len(self.neural_window_indicies) != len(self.distance_log):
-                raise ValueError("Recording lengths don't match recording channel lengths")
-
         self.mean_traces = []
         self.master_df = pd.DataFrame()
         self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
-        if distance_log == "Experimental Log.xlsx":
-            self.log_path = ephys_data.base_path + distance_log
-        else:
-            self.log_path = distance_log
-
         super().__init__(ephys_data, stim_data, stim_data)
 
-        if 'EMG' in self.ephys.types:
-            self.EMG_window_indicies = self.calculate_emg_window_lengths()  # [[[75, 600]], [[75, 600]], [[75, 600]]]
+        self.EMG_window_indicies = self.calculate_emg_window_lengths()
 
     def gather_num_conditions(self):
         all_indices = self.stim.parameters.index
@@ -114,37 +82,6 @@ class ECAP(_EpochData):
         else:
             sys.exit("Improper Dimensions.")
 
-    def calculate_neural_window_lengths(self):
-        """
-        :return: time_windows[recording_electrode][fiber_type][start/stop]
-        """
-        # min and max conduction velocities of various fiber types
-        a_alpha = [120,
-                   70]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        a_beta = [70,
-                  30]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        a_gamma = [30,
-                   15]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        a_delta = [30,
-                   5]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        B = [15, 3]  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
-        velocity_matrix = np.array([a_alpha, a_beta, a_gamma, a_delta, B])
-        # create time_windows based on fiber type activation for every recording
-        # time_window[rec_electrode][fiber_type][start/stop]
-        rec_electrode = len(self.neural_channels)
-        fiber_type = len(self.neural_fiber_names)
-        time_windows = np.zeros((rec_electrode, fiber_type, 2))
-        for i, vel in enumerate(velocity_matrix):
-            for j, length_cm in enumerate(self.distance_log):
-                time_windows[j][i] = ([length_cm / 100 * (1 / ii) for ii in vel])
-
-        time_windows *= self.fs
-        time_windows = np.round(time_windows)
-
-        np.round(time_windows)
-        time_windows = time_windows.astype(int)
-        return time_windows
-
     def calculate_emg_window_lengths(self):
         # Find pulse width. Multiply by six for onset to account for capacitive discharge. Go to end of sample for offset, or 1/frequency, whichever is shorter
         pw = self.stim.parameters.iloc[0]['pulse duration (ms)'] / 1000
@@ -157,46 +94,19 @@ class ECAP(_EpochData):
         else:
             return [[[onset, offset2]] for c in self.emg_channels]
 
-
-    def calc_AUC(self, params, channels, window=None, window_units=None):
-
-        if window is not None:
-
-            if window_units is None:
-                raise ValueError("User-specified limits for AUC calculation have been specified, however the units for window limits are not defined. Specify window_units in 'ms' or 'samples'.")
-            elif window_units == 'ms':
-                print('Window units defined in milliseconds (ms)')
-                #Need to convert the time in ms to sample# based on sampling freq
-
-            elif window_units == 'samples':
-                print('Window units defined by sample #')
-                start_idx = window[0]
-                stop_idx = window[1]
-            else:
-                raise ValueError("Unit type of AUC window not recognized. Acceptable units are either in 'ms' or 'samples'.")
-
-        #utilize the neural windows steph previously used if there's no user specified input
-        #window units to be defined in time or samples?  Could prompt user for that info
-
-        pass
-
     def calc_AUC_method(self, signal, recording_idx, window_type, calculation_type, metadata, plot_AUCs=False,
                         save_path=None):
+
         if calculation_type == "RMS":
             if window_type.endswith("neural"):
                 window_onset_idx = self.neural_window_indicies
             if window_type.endswith("EMG"):
                 window_onset_idx = self.EMG_window_indicies
-                print('EMG_window_indicies: ' + str(self.EMG_window_indicies))
 
             current_list = []
-            self.windows = window_onset_idx
-
-
             for specific_window_idx, specific_window in enumerate(window_onset_idx[recording_idx]):
                 specific_onset = specific_window[0]
                 specific_offset = specific_window[1]
-
                 current_list.append(np.sqrt(np.mean(signal[specific_onset:specific_offset] ** 2)))
 
                 if plot_AUCs:
@@ -205,229 +115,6 @@ class ECAP(_EpochData):
                     ax.vlines([specific_onset, specific_offset], np.max(signal[specific_onset:specific_offset]),
                               np.min(signal[specific_onset:specific_offset]))
                     plt.show()
-            return current_list
-
-        elif calculation_type == "Peaks":
-
-            def find_max(signal, start, stop):
-                """
-                Finds idx of maxima
-                :param signal:
-                :param start:
-                :param stop:
-                :return:
-                """
-                jitter_percentage = .01
-
-                if stop > len(signal):
-                    stop = len(signal) - 1
-
-                peak_distance = (stop - start) / 10
-
-                # distance in find_peaks must be at least 1. Check to makes sure:
-                if peak_distance < 1:
-                    peak_distance = 1
-
-                peak_idx, _ = find_peaks(signal[start:stop], distance=peak_distance)
-                peak_idx = [i + start for i in peak_idx]
-                final_idx = []
-                for idx, val in enumerate(peak_idx):
-                    if start * (1 + jitter_percentage) < val < stop:
-                        final_idx.append(val)
-                maxima = [signal[i] for i in final_idx]
-
-                if not maxima:
-                    return stop
-                max_value = max(maxima)
-                max_idx = np.where(signal[start:stop] == max_value)
-                max_idx = [i + start for i in max_idx]
-
-                # returns the index of max location. Max index has been stored as a tuple, so the [0][0] is necessary
-                return max_idx[0][0]
-
-            def find_minima(signal, start, stop, max_idx, overlap=True):
-                try:
-                    smoothed_curve = savgol_filter(signal, 5, 1)
-                except:
-                    warnings.warn("Curve couldn't be smoothed")
-                    smoothed_curve = signal
-
-                max_min = np.diff(np.sign(np.diff(smoothed_curve)))
-                # max_min loses a data point for every derivative it takes. Therefore, it is necessary to pad the end.
-                max_min = np.append(max_min, [0, 0])
-                # go from max forward in time until you reach boundary, or you find a min (max_min = 2)
-
-                # There is a case for A delta fibers that due to their conduction velocities, their onset occurs after the sampling window.
-                # This if statement is meant to address this case. It will return the last points in the data set
-                if len(signal) - max_idx <= 2:
-                    min1 = len(signal) - 3
-                    min2 = len(signal) - 1
-                    return min1, min2
-
-                min1 = []
-                min2 = []
-
-                for ii in range(max_idx + 1, len(max_min)):
-                    if not overlap and ii >= stop:
-                        min2 = stop
-                        break
-                    elif max_min[ii] == 2 and signal[ii] < signal[max_idx]:
-                        min2 = ii + 1
-                        break
-                    elif ii == len(signal) - 1 or ii - stop > .25 * (stop - start):
-                        if stop > len(signal):
-                            min2 = len(signal) - 1
-                        else:
-                            min2 = stop
-                        break
-
-                if not min2:
-                    if stop < len(max_min):
-                        min2 = stop
-                    else:
-                        min2 = len(max_min) - 1
-
-                for ii in range(max_idx - 1, 0, -1):
-                    if not overlap and ii <= start:
-                        min1 = start
-                        break
-                    elif max_min[ii] == 2 and signal[ii] < signal[max_idx]:
-                        # adding +1 to make up for the filter removing one data point
-                        min1 = ii + 1
-                        break
-                    elif ii == 0 or start - ii > .25 * (stop - start):
-                        min1 = start
-                        break
-
-                if not min1:
-                    min1 = start
-
-                while signal[min1] > signal[max_idx]:
-                    max_min = np.diff(np.sign(np.diff(signal)))
-                    # max_min loses a data point for every derivative it takes. Therefore, it is necessary to pad the end.
-                    max_min = np.append(max_min, [0, 0])
-                    # go from max forward in time until you reach boundary, or you find a min (max_min = 2)
-
-                    # There is a case for A delta fibers that due to their conduction velocities, their onset occurs after the sampling window.
-                    # This if statement is meant to address this case. It will return the last points in the data set
-
-                    min1 = []
-                    min2 = []
-
-                    for ii in range(max_idx - 1, 0, -1):
-                        if not overlap and ii <= start:
-                            min1 = start
-                            break
-                        elif max_min[ii] == 2 and signal[ii] < signal[max_idx]:
-                            # adding +1 to make up for the filter removing one data point
-                            min1 = ii + 1
-                            break
-                        elif ii == 0 or start - ii > .25 * (stop - start):
-                            min1 = start
-                            break
-
-                    # worst case: subtract one datapoint from max_idx
-                    min1 = max_idx - 1
-                    break
-
-                if not min2:
-                    min2 = stop
-
-                return [min1, min2]
-
-            def determine_plotting_boundaries(signal, fiber_minima, fiber_maxima):
-                min_y = signal[fiber_minima[0][0]]
-                max_y = signal[fiber_maxima[0]]
-                for i in fiber_maxima:
-                    if signal[i] > max_y:
-                        max_y = signal[i]
-
-                for i in fiber_minima:
-                    for j in i:
-                        if signal[j] < min_y:
-                            min_y = signal[j]
-
-                my_range = max_y - min_y
-
-                return min_y - my_range / 2, max_y + my_range / 2
-
-            def relevant_AUC(signal, recording_num, plot_AUC=False, save_path=None, recording_type='neural'):
-                fiber_maxima = [find_max(signal, win_indicies[0], win_indicies[1]) for win_indicies in
-                                self.neural_window_indicies[recording_idx]]
-
-                # print(fiber_maxima)
-                fiber_minima = [find_minima(signal, win_indicies[0], win_indicies[1], fiber_maxima[idx]) for
-                                idx, win_indicies in enumerate(self.neural_window_indicies[recording_idx])]
-                # print(fiber_minima)
-
-                # Calculate AUC based on the maxima and their corresponding minima
-                # Step one is integrating the area of the signal from point one to point two
-                AUC1 = [np.trapz(signal[min_idx[0]:min_idx[1]]) for min_idx in fiber_minima]
-                AUC1 = np.array(AUC1)
-                # Step two is integrating the area underneath that section, to be subtracted later
-                AUC2 = [np.trapz(np.linspace(signal[min_idx2[0]], signal[min_idx2[1]], min_idx2[1] - min_idx2[0]))
-                        for
-                        min_idx2
-                        in
-                        fiber_minima]
-                AUC2 = np.array(AUC2)
-                real_AUC = AUC1 - AUC2
-                real_AUC = [0 if i < 0 else i for i in real_AUC]
-
-                if plot_AUC:
-                    min_y, max_y = determine_plotting_boundaries(signal, fiber_minima, fiber_maxima)
-                    relative_ts = np.arange(0, len(signal)) / self.fs
-                    # smoothed_curve = savgol_filter(signal, 7, 3)
-                    # my_diff = np.diff(np.sign(np.diff(smoothed_curve)))
-
-                    fig, ax = plt.subplots(1, figsize=(15, 15))
-
-                    title = "{} {}, Amp {}, ENG {}".format(*metadata)
-                    fig.suptitle(title)
-                    # some cases have such close min and max, that it's best not windowed
-                    if abs(max_y - min_y) > 1e-9:
-                        ax.set_ylim(min_y, max_y)
-                    ax.set_xlim(0, .015)
-                    ax.plot(relative_ts, signal)
-                    # ax.vlines(21/FS, min(signal), max(signal), color='red')
-                    # ax.vlines(21 / FS + 10 / 70 / 100, min(signal), max(signal), color='red')
-                    ax.vlines(self.neural_window_indicies[recording_num] / self.fs,
-                              min(signal),
-                              max(signal),
-                              linewidth=3)
-                    for idx, val in enumerate(fiber_maxima):
-                        ax.scatter(val / self.fs,
-                                   signal[fiber_maxima[idx]],
-                                   marker='o',
-                                   color='C1',
-                                   s=150)
-                        ax.scatter(fiber_minima[idx][0] / self.fs,
-                                   signal[fiber_minima[idx][0]],
-                                   marker='o',
-                                   color='C6', s=150)
-                        ax.scatter(fiber_minima[idx][1] / self.fs,
-                                   signal[fiber_minima[idx][1]],
-                                   marker='o',
-                                   color='C6', s=150)
-                    # ax.plot(relative_ts, smoothed_curve, linewidth=2)
-                    # ax.plot(relative_ts,my_diff * .000005 - .00005)
-                    if save_path is None:
-                        meta_data = self.ephys.metadata
-                        if len(meta_data) > 1:
-                            base_path = meta_data[0]['file_location']
-                        else:
-                            base_path = meta_data[0]['file_location']
-                        base_path += '/AUC Plots/'
-                        check_make_dir(base_path)
-                    else:
-                        base_path = save_path
-                    save_path = base_path + "/" + recording_type + " " + title + ".png"
-                    plt.savefig(save_path)
-                    plt.close('all')
-
-                return real_AUC
-
-            current_list = relevant_AUC(signal, recording_idx, plot_AUCs, save_path)
             return current_list
 
     def calculate_AUC(self, window_type="standard_neural", analysis_method="RMS", plot_AUC=False, save_path=None):
@@ -459,41 +146,35 @@ class ECAP(_EpochData):
         # create empty array to store calculated values in
         master_list = []
 
-        #if len(self.neural_window_indicies) != len(self.neural_channels):
-        #    sys.exit("amounts of neural channels don't add up")
+        if len(self.neural_window_indicies) != len(self.neural_channels):
+            sys.exit("amounts of neural channels don't add up")
 
-        if window_type.endswith("EMG"):
-            window_nomenclature = self.emg_window
-            recording_channels = self.emg_channels
-            recording_channel_names = np.array(self.ephys.ch_names)[recording_channels]
-        elif window_type.endswith("neural"):
-            window_nomenclature = self.neural_fiber_names
-            recording_channels = self.neural_channels
-            recording_channel_names = np.array(self.ephys.ch_names)[recording_channels]
+        window_nomenclature = self.emg_window
+        recording_channels = self.emg_channels
 
         # will iterate through each condition
         for signal_idx, signal_chain in enumerate(self.mean_traces):
+
             # will iterate through recording electrode
-            ch_types = []
             for rec_idx, rec_chain in enumerate(signal_chain[recording_channels]):
                 # iterate through each fiber type
                 # plotting_metadata = [condition_list[signal_idx], channel_list[signal_idx], amplitude_list[signal_idx],
                 #                      rec_idx]
 
+                ch_types = []
                 for m in self.ephys.metadata:
-                    #print(len(m['types']))
-                    #print(m)
-
                     if 'types' in m:
-                        if len(m['types']) > 1:
-                            ch_types.extend(m['types'])
+                        if len(m['ch_types']) > 1:
+                            ch_types.extend(m['ch_types'])
                     else:
                         ch_types.append([''] * len(signal_chain[recording_channels]))
 
                 plotting_metadata = [*[p[signal_idx] for p in info_list], recording_channel_names[rec_idx], ch_types[rec_idx]]
 
+
                 calc_values = self.calc_AUC_method(rec_chain, rec_idx, window_type, analysis_method, plotting_metadata,
                                                    plot_AUCs=plot_AUC, save_path=save_path)
+
 
                 for specific_window_idx, vals in enumerate(calc_values):
                     # master_list.append(
@@ -535,7 +216,6 @@ class ECAP(_EpochData):
         # toc = time.perf_counter()
         #
         # print(toc-tic, "elapsed")
-
 
         bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
         print("Begin Averaging Data")
