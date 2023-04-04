@@ -530,3 +530,10 @@ class _EpochData:
         vRMS = np.sqrt(np.mean(self.array(parameter, channels=channel)[0, :, window[0]:window[1]] ** 2)).compute()
         return vRMS
 
+    def _calc_RMS(self, data, window=None):
+        if window is not None:
+            RMS = np.sqrt(np.mean(data[window[0]:window[1]] ** 2)).compute()
+        else:
+            RMS = np.sqrt(np.mean(data ** 2))
+        return RMS
+

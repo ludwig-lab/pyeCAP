@@ -157,49 +157,6 @@ class ECAP(_EpochData):
         else:
             return [[[onset, offset2]] for c in self.emg_channels]
 
-    def calc_AUC(self, params=None, channels=None, window=None, window_units=None, method='mean'):
-
-        column_headers = self.stim.parameters.columns
-        self._avg_data_for_AUC(method=method)
-
-        if window is not None:
-            if window_units is None:
-                raise ValueError("User-specified limits for AUC calculation have been specified, however the units for window limits are not defined. Specify window_units in 'ms' or 'samples'.")
-            elif window_units == 'ms':
-                print('Window units defined in milliseconds (ms)')
-                #Need to convert the time in ms to sample# based on sampling freq
-            elif window_units == 'samples':
-                print('Window units defined by sample #')
-                start_idx = window[0]
-                stop_idx = window[1]
-            else:
-                raise ValueError("Unit type of AUC window not recognized. Acceptable units are either in 'ms' or 'samples'.")
-
-        calculated_Values_list = []
-
-        tic = time.perf_counter()
-
-        if method == 'mean':
-            for idx, param in enumerate(self.stim.parameters.index):
-                x = self.mean(param)
-                calculated_Values_list.append(x)
-        elif method == 'median':
-            for idx, param in enumerate(self.stim.parameters.index):
-                x = self.median(param)
-                calculated_Values_list.append(x)
-        data = np.array(calculated_Values_list)
-
-        for stimIDX, signal in enumerate(data):
-            for chanIDX,trace in enumerate(signal):
-                pass
-
-        toc = time.perf_counter()
-        print(toc - tic, "elapsed")
-
-        return data
-        #utilize the neural windows steph previously used if there's no user specified input
-        #window units to be defined in time or samples?  Could prompt user for that info
-
     def calc_AUC_method(self, signal, recording_idx, window_type, calculation_type, metadata, plot_AUCs=False,
                         save_path=None):
         if calculation_type == "RMS":
@@ -537,7 +494,7 @@ class ECAP(_EpochData):
 
         # change negative amplitudes to positive
 
-    def _avg_data_for_AUC(self, parameter_index=None, method='mean'):
+    def average_data(self, parameter_index=None):
         # data frame with onset and offsets
         self.df_epoc_idx = self.epoc_index()
 
@@ -545,6 +502,8 @@ class ECAP(_EpochData):
             parameter_index = self.df_epoc_idx.index
 
         # import time
+        #
+        #
         # tic = time.perf_counter()
         # reshaped_traces = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x))).compute()
         # mean_traces_dasked = [np.mean(x, axis=0) for x in reshaped_traces]
@@ -553,20 +512,13 @@ class ECAP(_EpochData):
         # toc = time.perf_counter()
         #
         # print(toc-tic, "elapsed")
-        tic = time.perf_counter()
-        bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
 
-        #print(parameter_index)
-        #print("Begin Averaging Data")
-        if method == 'mean':
-            print('Begin averaging data by mean.')
-            self.AUC_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
-        elif method == 'median':
-            print('Begin averaging data by median.')
-            self.AUC_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.median(x, axis=0)).compute()))
+        bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
+        print("Begin Averaging Data")
+        self.mean_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
         print("Finished Averaging Data")
-        toc = time.perf_counter()
-        print(toc - tic, "elapsed")
+
+
     def filter_averages(self, filter_channels=None, filter_median_highpass=False, filter_median_lowpass=False,
                         filter_gaussian_highpass=False, filter_powerline=False):
 
