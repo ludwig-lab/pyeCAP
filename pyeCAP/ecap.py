@@ -177,26 +177,10 @@ class ECAP(_EpochData):
 
         calculated_Values_list = []
 
-        tic = time.perf_counter()
-
-        if method == 'mean':
-            for idx, param in enumerate(self.stim.parameters.index):
-                x = self.mean(param)
-                calculated_Values_list.append(x)
-        elif method == 'median':
-            for idx, param in enumerate(self.stim.parameters.index):
-                x = self.median(param)
-                calculated_Values_list.append(x)
-        data = np.array(calculated_Values_list)
-
-        for stimIDX, signal in enumerate(data):
+        for stimIDX, signal in enumerate(self.AUC_traces):
             for chanIDX,trace in enumerate(signal):
                 pass
 
-        toc = time.perf_counter()
-        print(toc - tic, "elapsed")
-
-        return data
         #utilize the neural windows steph previously used if there's no user specified input
         #window units to be defined in time or samples?  Could prompt user for that info
 
