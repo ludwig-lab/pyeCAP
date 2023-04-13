@@ -62,7 +62,7 @@ class ECAP(_EpochData):
             self.ephys = self.ephys.set_ch_types(["ENG"]*self.ephys.shape[0])
             self.neural_channels = np.arange(0, self.ephys.shape[0])
 
-        #self.neural_window_indicies = self.calculate_neural_window_lengths()
+        self.neural_window_indicies = self.calculate_neural_window_lengths()
 
         if type(self.distance_log) == list and self.distance_log != [0]:
             if type(self.neural_window_indicies) == np.ndarray and len(self.neural_window_indicies.shape) > 1:
@@ -426,6 +426,7 @@ class ECAP(_EpochData):
         params = self.stim.parameters.columns
         # list of specifics: channels, condition, amplitude, stim type, etc...
         info_list = [self.stim.parameters[p].to_numpy() for p in params]
+        print(info_list)
 
         # # Get pertinent info from dataframe
         # channel_list = self.stim.parameters["channel"].to_numpy()

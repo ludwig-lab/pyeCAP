@@ -532,7 +532,7 @@ class _EpochData:
 
     def _calc_RMS(self, data, window=None):
         if window is not None:
-            RMS = np.sqrt(np.mean(data[window[0]:window[1]] ** 2)).compute()
+            RMS = np.sqrt(np.mean(data[window[0]:window[1]] ** 2))
         else:
             RMS = np.sqrt(np.mean(data ** 2))
         return RMS
