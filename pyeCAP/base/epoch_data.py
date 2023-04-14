@@ -193,50 +193,6 @@ class _EpochData:
         event_data_reshaped = da.reshape(event_data, (self.ts_data.shape[0], len(event_times), int(sample_len)))
         return da.moveaxis(event_data_reshaped, 1, 0)
 
-    def plot(self, axis=None, channels=None, x_lim=None, y_lim='auto', ch_labels=None, colors=sns.color_palette(),
-             fig_size=(12, 3), show=True):
-        """
-        Plotting method for ECAP data.
-
-        Parameters
-        ----------
-        axis : None, matplotlib.axis.Axis
-            Either None to use a new axis, or a matplotlib axis to plot on.
-        channels :  int, str, list, tuple, np.ndarray
-            Channels to plot. Can be a boolean numpy array with the same length as the number of channels, an integer
-            array, or and array of strings containing channel names.
-        x_lim : None, list, tuple, np.ndarray
-            None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
-            end times for data to plot.
-        y_lim : None, str, list, tuple, np.ndarray
-            None or 'auto' to automatically calculate reasonable bounds based on standard deviation of data. 'max' to
-            plot y axis limits encompassing all accessible data. Otherwise tuple, list, or numpy array of length 2
-            containing limits for the y axis.
-        ch_labels : list, tuple, np.ndarray
-            Stings to use as channel labels in the plot. Must match length of channels being displayed.
-        colors : list
-            Color palette or list of colors to use for channels.
-        fig_size : list, tuple, np.ndarray
-            The size of the matplotlib figure to plot axis on if axis=None.
-        show : bool, str
-            String 'notebook' to plot interactively in a jupyter notebook or boolean value indicating if the plot should
-            be displayed.
-
-        Returns
-        -------
-        matplotlib.axis.Axis, None
-            If show is False, returns a matplotlib axis. Otherwise, plots the figure and returns None.
-        """
-        fig, ax = _plt_setup_fig_axis(axis, fig_size)
-
-        # Get channels to plot
-        if channels is None:
-            channels = slice(None, None, None)
-        else:
-            channels = self._ch_to_index(channels)
-
-        return _plt_show_fig(fig, ax, show)
-
     def plot_channel(self, channel, parameters, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
                      colors=sns.color_palette(), fig_size=(10, 3), show=True, **kwargs):
         """
