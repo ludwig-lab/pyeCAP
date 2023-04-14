@@ -99,7 +99,6 @@ class EMG(_EpochData):
         if parameter_index is None:
             parameter_index = self.df_epoc_idx.index
 
-        # print(toc-tic, "elapsed")
         #tic = time.perf_counter()
         bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
 
