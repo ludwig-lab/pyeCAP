@@ -17,6 +17,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import seaborn as sns
+import math
 # interactive plotting
 from ipywidgets import interact, AppLayout, FloatSlider, VBox, Button, Output
 
@@ -194,7 +195,7 @@ class _EpochData:
         return da.moveaxis(event_data_reshaped, 1, 0)
 
     def plot_channel(self, channel, parameters, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
-                     colors=sns.color_palette(), fig_size=(10, 3), show=True, **kwargs):
+                     colors=sns.color_palette(), fig_size=(10, 3), show=True, show_window=False, window_labels=False,  fig_title=None,  **kwargs):
         """
         Plots the data from a channel for the given stimulation parameters. Plotting occurs over the time interval of
         one pulse period, starting at 0 seconds. Plotting uses either the mean or median of each data point across all
@@ -271,10 +272,107 @@ class _EpochData:
         ax.set_xlabel('time (s)')
         ax.set_ylabel('amplitude (V)')
 
+        if fig_title is not None:
+            ax.set_title(fig_title)
+
         if x_lim is None:
             ax.set_xlim(plot_time[0], plot_time[-1])
         else:
             ax.set_xlim(x_lim)
+
+        #IN DEVELOPMENT -- Display integration windows on plot
+        if show_window == True:
+            #colors = cycle(plt.rcParams['axes.prop_cycle'].by_key()['color'])
+            c_map = 'bgrym'
+            #c_map = ['blue','green','red','cyan','yellow']
+            label_scale = [0.9,0.8, 0.7, 0.6, 0.5]
+
+            if self.neural_window_indicies is not None:
+                #print(self.neural_window_indicies)
+
+                window_array = self.neural_window_indicies[np.where(self.ts_data._ch_to_index(channel))]
+                #print(windows)
+                for i, win in enumerate(window_array[0]):
+                    start = win[0] / self.fs
+                    stop = win[1] / self.fs
+                    ax.axvspan(start, stop, alpha=0.1, color = c_map[i])
+                    ax.axvspan(start, stop, edgecolor='k', fill=False)
+
+                    if window_labels == True:
+                        ax.hlines(label_scale[i]*np.max(y_lim), start, stop, color = c_map[i])
+                        ax.text(start, label_scale[i]*np.max(y_lim), self.neural_fiber_names[i], ha='right', va='center')
+            else:
+                raise ValueError("Neural window indicies values have not been calculated for this data yet.")
+
+        return _plt_show_fig(fig, ax, show)
+
+    def multiplot(self, channels, parameters, num_cols, *args, method='mean', x_lim=None, y_lim='auto',
+                  fig_size=(10,3), show=True, fig_title=None, sort=None, **kwargs):
+
+        num_rows = math.ceil(len(parameters) / num_cols)
+
+        fig_width = fig_size[0] * num_cols
+        fig_height = fig_size[1] * num_rows
+
+        fig, ax = plt.subplots(ncols=num_cols, nrows=num_rows, figsize=(fig_width,fig_height))
+        plt.suptitle(fig_title, fontsize='medium')
+
+        print('Channels: ' + str(channels))
+        print('Parameter indices: ' + str(parameters))
+        ax = ax.ravel()
+        axrange = range(len(parameters))
+
+        if sort is not None:
+            if sort == 'ascending':
+                sorted_params = self.parameters.parameters.sort_values('pulse amplitude (μA)', ascending=False).index
+            elif sort == 'descending':
+                sorted_params = self.parameters.parameters.sort_values('pulse amplitude (μA)', ascending=True).index
+        else:
+            sorted_params = parameters
+
+
+        for param, idx in zip(_to_parameters(sorted_params), axrange):
+            #print('Parameter: ' + str(param))
+            #print('Index: ' + str(idx))
+
+            for chan in channels:
+                name = self.parameters.parameters['pulse amplitude (μA)'][param]
+
+                if method == 'mean':
+                    plot_data = self.mean(param, channels=chan)
+                    # print('mean')   #Check to make sure 'if' loop functions
+                elif method == 'median':
+                    plot_data = self.median(param, channels=chan)
+                    # print('median')
+                else:
+                    raise ValueError(
+                        "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
+                        "and 'median'.")
+
+                plot_time = self.time(param)
+
+                # compute appropriate y_limits
+                if y_lim is None or y_lim == 'auto':
+                    std_data = np.std(plot_data)
+                    calc_y_lim = [np.min([-std_data * 6, calc_y_lim[0]]),
+                                  np.max([std_data * 6, calc_y_lim[1]])]
+                elif y_lim == 'max':
+                    calc_y_lim = None
+                else:
+                    calc_y_lim = _to_numeric_array(y_lim)
+
+                ax[idx].plot(plot_time, plot_data[0, :], label=chan, *args, **kwargs)
+
+                ax[idx].set_ylim(calc_y_lim)
+                ax[idx].set_xlabel('time (s)')
+                ax[idx].set_ylabel('amplitude (V)')
+                ax[idx].legend()
+                ax[idx].set_title(name)
+
+                if x_lim is None:
+                    ax[idx].set_xlim(plot_time[0], plot_time[-1])
+                else:
+                    ax[idx].set_xlim(x_lim)
 
         return _plt_show_fig(fig, ax, show)
 
@@ -482,6 +580,7 @@ class _EpochData:
         return np.std(self.array(parameter, channels=channels), axis=0)
 
     @lru_cache(maxsize=None)
+    #RMS functions not fully implemented in normal AUC calculation yet
     def _AUC_Vrms(self, parameter, channel, window):
         vRMS = np.sqrt(np.mean(self.array(parameter, channels=channel)[0, :, window[0]:window[1]] ** 2)).compute()
         return vRMS
