@@ -20,6 +20,8 @@ import seaborn as sns
 import math
 # interactive plotting
 from ipywidgets import interact, AppLayout, FloatSlider, VBox, Button, Output
+import plotly.graph_objects as go
+import plotly.express as px
 
 # pyCAP imports
 from .ts_data import _TsData
@@ -306,11 +308,17 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
-    def multiplot(self, channels, parameters, num_cols, *args, method='mean', x_lim=None, y_lim='auto',
-                  fig_size=(10,3), show=True, fig_title=None, sort=None, **kwargs):
+    def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
+                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, **kwargs):
+
+        #If a string is passed because the user only specified a single channel, will convert to list before proceeding
+        if isinstance(channels, str):
+            channels = [channels]
+
+        if show_window == True and len(channels) > 1:
+            warnings.warn("Multiple channels passed. Neural fiber window displays with respect to first channel only.")
 
         num_rows = math.ceil(len(parameters) / num_cols)
-
         fig_width = fig_size[0] * num_cols
         fig_height = fig_size[1] * num_rows
 
@@ -318,9 +326,10 @@ class _EpochData:
         plt.suptitle(fig_title, fontsize='medium')
 
         print('Channels: ' + str(channels))
-        print('Parameter indices: ' + str(parameters))
+        #print('Parameter indices: ' + str(parameters))
         ax = ax.ravel()
         axrange = range(len(parameters))
+        calc_y_lim = [0, 0]
 
         if sort is not None:
             if sort == 'ascending':
@@ -336,7 +345,7 @@ class _EpochData:
             #print('Index: ' + str(idx))
 
             for chan in channels:
-                name = self.parameters.parameters['pulse amplitude (μA)'][param]
+                name = str(self.parameters.parameters['pulse amplitude (μA)'][param]) + ' ' + str(param)
 
                 if method == 'mean':
                     plot_data = self.mean(param, channels=chan)
@@ -373,6 +382,131 @@ class _EpochData:
                     ax[idx].set_xlim(plot_time[0], plot_time[-1])
                 else:
                     ax[idx].set_xlim(x_lim)
+
+                # IN DEVELOPMENT -- Display integration windows on plot
+                if show_window == True:
+                    c_map = 'bgrym'
+                    label_scale = [0.9, 0.8, 0.7, 0.6, 0.5]
+
+                    if self.neural_window_indicies is not None:
+                        # print(self.neural_window_indicies)
+                        window_array = self.neural_window_indicies[np.where(self.ts_data._ch_to_index(channels[0]))]
+                        # print(windows)
+                        for i, win in enumerate(window_array[0]):
+                            start = win[0] / self.fs
+                            stop = win[1] / self.fs
+                            ax[idx].axvspan(start, stop, alpha=0.1, color=c_map[i])
+                            ax[idx].axvspan(start, stop, edgecolor='k', fill=False)
+
+                            #if window_labels == True:
+                            #    ax.hlines(label_scale[i] * np.max(y_lim), start, stop, color=c_map[i])
+                            #    ax.text(start, label_scale[i] * np.max(y_lim), self.neural_fiber_names[i],
+                            #            ha='right', va='center')
+                    else:
+                        raise ValueError(
+                            "Neural window indicies values have not been calculated for this data yet.")
+
+        return _plt_show_fig(fig, ax, show)
+
+    def plot_phase_delay(self, channels, parameter, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
+                     colors=sns.color_palette(), fig_size=(10, 3), show=True, fig_title=None, **kwargs):
+        """
+        Plots the data from a channel for the given stimulation parameters. Plotting occurs over the time interval of
+        one pulse period, starting at 0 seconds. Plotting uses either the mean or median of each data point across all
+        pulses.
+
+        Parameters
+        ----------
+        channels : list
+            List of channels to be plotted
+        parameter : tuple
+            Stimulation parameter.
+        * args : Arguments
+            See `mpl.axes.Axes.plot <https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.plot.html>`_ for more
+            information.
+        method : str
+            Use 'mean' to plot the mean values and 'median' to plot the median values.
+        axis : None, matplotlib.axis.Axis
+            Either None to use a new axis, or a matplotlib axis to plot on.
+        x_lim : None, list, tuple, np.ndarray
+            None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
+            end times for data to plot.
+        y_lim : None, str, list, tuple, np.ndarray
+            None or 'auto' to automatically calculate reasonable bounds based on standard deviation of data. 'max' to
+            plot y axis limits encompassing all accessible data. Otherwise tuple, list, or numpy array of length 2
+            containing limits for the y axis.
+        colors : list
+            Color palette or list of colors to use for the plot.
+        fig_size : list, tuple, np.ndarray
+            The size of the matplotlib figure to plot axis on if axis=None.
+        show : bool
+            Set to True to display the plot and return nothing, set to False to return the plotting axis and display
+            nothing.
+        ** kwargs : KeywordArguments
+            See `mpl.axes.Axes.plot <https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.plot.html>`_ for more
+            information.
+
+        Returns
+        -------
+        matplotlib.axis.Axis, None
+            If show is False, returns a matplotlib axis. Otherwise, plots the figure and returns None.
+
+        Examples
+        ________
+        >>> ecap_data.plot("RawE 1", (0,0))     # doctest: +SKIP
+        """
+        fig, ax = _plt_setup_fig_axis(axis, fig_size)
+
+        calc_y_lim = [0, 0]
+        print("Parameter index: " + str(parameter))
+
+        for chan in channels:
+            #print(chan)
+            if method == 'mean':
+                plot_data = self.mean(parameter, channels=chan)
+                #print('mean')   #Check to make sure 'if' loop functions
+            elif method == 'median':
+                plot_data = self.median(parameter, channels=chan)
+                #print('median')
+            else:
+                raise ValueError(
+                        "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
+                        "and 'median'.")
+
+            plot_time = self.time(parameter)
+
+            # compute appropriate y_limits
+            if y_lim is None or y_lim == 'auto':
+                std_data = np.std(plot_data)
+                calc_y_lim = [np.min([-std_data * 6, calc_y_lim[0]]),
+                                  np.max([std_data * 6, calc_y_lim[1]])]
+            elif y_lim == 'max':
+                calc_y_lim = None
+            else:
+                calc_y_lim = _to_numeric_array(y_lim)
+
+            ax.plot(plot_time, plot_data[0, :],label=chan, *args, **kwargs)
+
+        ax.set_ylim(calc_y_lim)
+        ax.set_xlabel('time (s)')
+        ax.set_ylabel('amplitude (V)')
+        ax.legend(loc=0)
+        if fig_title is not None:
+            ax.set_title(fig_title)
+
+        if x_lim is None:
+            ax.set_xlim(plot_time[0], plot_time[-1])
+        else:
+            ax.set_xlim(x_lim)
+
+        #IN DEVELOPMENT
+        # if show_window == True:
+        #     if self.neural_window_indicies is not None:
+        #         #print(self.neural_window_indicies)
+        #         for win in self.neural_window_indicies:
+        #             print(win)
+        #     else:
+        #         raise ValueError("Neural window indicies values have not been calculated for this data yet.")
 
         return _plt_show_fig(fig, ax, show)
 
@@ -478,6 +612,35 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
+    def plot_interactive(self, channels, parameter, *args, method='mean', x_lim=None, y_lim='auto',
+                     colors=sns.color_palette(), fig_size=(10, 3), fig_title=None,  **kwargs):
+
+        if isinstance(parameter, list):
+            raise Exception("Interactive plots can only contain a single parameter (amplitude).")
+
+        if not isinstance(channels, list):
+            channels = [channels]
+
+        plotDF = pd.DataFrame()
+        nameLIST = []
+        plotDF['Time (ms)'] = self.time(parameter)
+
+        #TODO: If channels are passed as integers convert them to channel names
+
+        for chan in channels:
+            #print("Channel: " + chan)
+            if method == 'mean':
+                plotDF[chan] = self.mean(parameter, channels=chan).T
+            elif method == 'median':
+                plotDF[chan] = self.median(parameter, channels=chan).T
+            nameLIST.append(chan)
+        #print(nameLIST)
+        fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = fig_title, text='Time (ms)')
+        fig.update_xaxes(title_text='Sample #')
+        fig.update_yaxes(title_text='Voltage (V)')
+        fig.show()
+        return
+
     @lru_cache(maxsize=None)
     def array(self, parameter, channels=None):
         """
@@ -553,7 +716,7 @@ class _EpochData:
         ________
         >>> ecap_data.median((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
-        return np.median(self.array(parameter, channels=channels), axis=0)
+        return np.nanmedian(self.array(parameter, channels=channels), axis=0)
 
     @lru_cache(maxsize=None)  # Caching this since results are small but computational cost high
     def std(self, parameter, channels=None):
