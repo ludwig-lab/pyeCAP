@@ -624,6 +624,7 @@ class _EpochData:
         plotDF = pd.DataFrame()
         nameLIST = []
         plotDF['Time (ms)'] = self.time(parameter)
+        plotNAME = 'Amplitude (uA): ' + str(self.parameters.parameters['pulse amplitude (μA)'][parameter]) + ' - Param ID: ' + str(parameter)
 
         #TODO: If channels are passed as integers convert them to channel names
 
@@ -635,7 +636,7 @@ class _EpochData:
                 plotDF[chan] = self.median(parameter, channels=chan).T
             nameLIST.append(chan)
         #print(nameLIST)
-        fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = fig_title, text='Time (ms)')
+        fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = plotNAME, text='Time (ms)')
         fig.update_xaxes(title_text='Sample #')
         fig.update_yaxes(title_text='Voltage (V)')
         fig.show()
