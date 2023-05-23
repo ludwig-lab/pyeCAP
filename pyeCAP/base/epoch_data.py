@@ -634,9 +634,9 @@ class _EpochData:
                 plotDF[chan] = self.mean(parameter, channels=chan).T
             elif method == 'median':
                 plotDF[chan] = self.median(parameter, channels=chan).T
-            nameLIST.append(chan)
+            nameLIST.append(plotDF[chan])
         #print(nameLIST)
-        fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = plotNAME, text='Time (ms)')
+        fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = plotNAME, hover_data=['Time (ms)']) #, hover_data='Time (ms)') plotDF.index
         fig.update_xaxes(title_text='Sample #')
         fig.update_yaxes(title_text='Voltage (V)')
         fig.show()
