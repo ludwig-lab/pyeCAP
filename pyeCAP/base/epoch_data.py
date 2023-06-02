@@ -309,7 +309,7 @@ class _EpochData:
         return _plt_show_fig(fig, ax, show)
 
     def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
-                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, **kwargs):
+                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, **kwargs):
 
         #If a string is passed because the user only specified a single channel, will convert to list before proceeding
         if isinstance(channels, str):
@@ -323,22 +323,22 @@ class _EpochData:
         fig_height = fig_size[1] * num_rows
 
         fig, ax = plt.subplots(ncols=num_cols, nrows=num_rows, figsize=(fig_width,fig_height))
-        plt.suptitle(fig_title, fontsize='medium')
+        fig.suptitle(fig_title, fontsize='medium')
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.95, hspace=0.25, wspace=0.15)
 
         print('Channels: ' + str(channels))
         #print('Parameter indices: ' + str(parameters))
         ax = ax.ravel()
         axrange = range(len(parameters))
-        calc_y_lim = [0, 0]
 
         if sort is not None:
             if sort == 'ascending':
-                sorted_params = self.parameters.parameters.sort_values('pulse amplitude (μA)', ascending=False).index
+                sorted_params = self.parameters.parameters.loc[parameters].sort_values('pulse amplitude (μA)', ascending=False).index
             elif sort == 'descending':
-                sorted_params = self.parameters.parameters.sort_values('pulse amplitude (μA)', ascending=True).index
+                sorted_params = self.parameters.parameters.loc[parameters].sort_values('pulse amplitude (μA)', ascending=True).index
         else:
             sorted_params = parameters
-
 
         for param, idx in zip(_to_parameters(sorted_params), axrange):
             #print('Parameter: ' + str(param))
@@ -361,10 +361,14 @@ class _EpochData:
                 plot_time = self.time(param)
 
                 # compute appropriate y_limits
+                calc_y_lim = [0, 0]
                 if y_lim is None or y_lim == 'auto':
                     std_data = np.std(plot_data)
-                    calc_y_lim = [np.min([-std_data * 6, calc_y_lim[0]]),
-                                  np.max([std_data * 6, calc_y_lim[1]])]
+                    #print(std_data.compute())
+                    calc_y_lim = [np.min([-std_data.compute() * 7, calc_y_lim[0]]),
+                                  np.max([std_data.compute() * 7, calc_y_lim[1]])]
+                    #print(calc_y_lim)
+                    #calc_y_lim = [-std_data * 7, std_data * 7]
                 elif y_lim == 'max':
                     calc_y_lim = None
                 else:
@@ -405,7 +409,8 @@ class _EpochData:
                     else:
                         raise ValueError(
                             "Neural window indicies values have not been calculated for this data yet.")
-
+            if save:
+                plt.savefig(fig_title)
         return _plt_show_fig(fig, ax, show)
 
     def plot_phase_delay(self, channels, parameter, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
@@ -623,7 +628,7 @@ class _EpochData:
 
         plotDF = pd.DataFrame()
         nameLIST = []
-        plotDF['Time (ms)'] = self.time(parameter)
+        plotDF['Time (ms)'] = self.time(parameter) * 1e3
         plotNAME = 'Amplitude (uA): ' + str(self.parameters.parameters['pulse amplitude (μA)'][parameter]) + ' - Param ID: ' + str(parameter)
 
         #TODO: If channels are passed as integers convert them to channel names
@@ -693,7 +698,7 @@ class _EpochData:
         ________
         >>> ecap_data.mean  ((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
-        return np.mean(self.array(parameter, channels=channels), axis=0)
+        return np.nanmean(self.array(parameter, channels=channels), axis=0)
 
     @lru_cache(maxsize=None)  # Caching this since results are small but computational cost high
     def median(self, parameter, channels=None):

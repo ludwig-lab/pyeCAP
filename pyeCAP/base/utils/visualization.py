@@ -84,7 +84,7 @@ def _plt_show_fig(fig, ax, show):
     """
     if show:
         backend = mpl_get_backend()
-        fig.tight_layout()
+        #fig.tight_layout()
         if backend == 'module://ipympl.backend_nbagg':
             fig.canvas.header_visible = False
             fig.canvas.footer_visible = False
