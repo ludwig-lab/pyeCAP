@@ -309,7 +309,7 @@ class _EpochData:
         return _plt_show_fig(fig, ax, show)
 
     def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
-                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, **kwargs):
+                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, vlines=None, **kwargs):
 
         #If a string is passed because the user only specified a single channel, will convert to list before proceeding
         if isinstance(channels, str):
@@ -386,6 +386,18 @@ class _EpochData:
                     ax[idx].set_xlim(plot_time[0], plot_time[-1])
                 else:
                     ax[idx].set_xlim(x_lim)
+
+                if vlines is not None:
+                    #Add vline at specific sample # -- Later: Incorporate adding it in at a specific time
+                    if isinstance(vlines, int):  #For case where only one line is passed
+                        #ax[idx].axvline(vlines * self.fs)
+                        ax[idx].axvline(vlines * (1 / self.fs), linestyle='--', c='red')
+                    elif isinstance(vlines,list):
+                        for line in vlines:
+                            ax[idx].axvline(line * (1 / self.fs), linestyle='--', c='red')
+                    else:
+                        raise Exception('Vertical line inputs must be integer (for single line), or a list of integers.')
+
 
                 # IN DEVELOPMENT -- Display integration windows on plot
                 if show_window == True:
