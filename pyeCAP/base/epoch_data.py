@@ -197,7 +197,8 @@ class _EpochData:
         return da.moveaxis(event_data_reshaped, 1, 0)
 
     def plot_channel(self, channel, parameters, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
-                     colors=sns.color_palette(), fig_size=(10, 3), show=True, show_window=False, window_labels=False,  fig_title=None,  **kwargs):
+                     colors=sns.color_palette(), fig_size=(10, 3), show=True, show_window=False, window_labels=False,  fig_title=None,
+                     vlines=None,**kwargs):
         """
         Plots the data from a channel for the given stimulation parameters. Plotting occurs over the time interval of
         one pulse period, starting at 0 seconds. Plotting uses either the mean or median of each data point across all
@@ -282,6 +283,17 @@ class _EpochData:
         else:
             ax.set_xlim(x_lim)
 
+        if vlines is not None:
+            # Add vline at specific sample # -- Later: Incorporate adding it in at a specific time
+            if isinstance(vlines, int):  # For case where only one line is passed
+                # ax[idx].axvline(vlines * self.fs)
+                ax.axvline(vlines * (1 / self.fs), linestyle='--', c='red')
+            elif isinstance(vlines, list):
+                for line in vlines:
+                    ax.axvline(line * (1 / self.fs), linestyle='--', c='red')
+            else:
+                raise Exception('Vertical line inputs must be integer (for single line), or a list of integers.')
+
         #IN DEVELOPMENT -- Display integration windows on plot
         if show_window == True:
             #colors = cycle(plt.rcParams['axes.prop_cycle'].by_key()['color'])
@@ -353,6 +365,8 @@ class _EpochData:
                 elif method == 'median':
                     plot_data = self.median(param, channels=chan)
                     # print('median')
+                elif method =='std':
+                    plot_data = self.std(param, channels=chan)
                 else:
                     raise ValueError(
                         "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
@@ -527,6 +541,119 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
+    def plot_multi_amps(self, channel, parameters, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
+                     colors=sns.color_palette(), fig_size=(10, 3), show=True, sort=None, fig_title=None, vlines=None, **kwargs):
+        """
+        Plots the data from a channel for the given stimulation parameters. Plotting occurs over the time interval of
+        one pulse period, starting at 0 seconds. Plotting uses either the mean or median of each data point across all
+        pulses.
+
+        Parameters
+        ----------
+        channels : list
+            Channel to be plotted.
+        parameter : tuple
+            List of stimulation parameters to plot.
+        * args : Arguments
+            See `mpl.axes.Axes.plot <https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.plot.html>`_ for more
+            information.
+        method : str
+            Use 'mean' to plot the mean values and 'median' to plot the median values.
+        axis : None, matplotlib.axis.Axis
+            Either None to use a new axis, or a matplotlib axis to plot on.
+        x_lim : None, list, tuple, np.ndarray
+            None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
+            end times for data to plot.
+        y_lim : None, str, list, tuple, np.ndarray
+            None or 'auto' to automatically calculate reasonable bounds based on standard deviation of data. 'max' to
+            plot y axis limits encompassing all accessible data. Otherwise tuple, list, or numpy array of length 2
+            containing limits for the y axis.
+        colors : list
+            Color palette or list of colors to use for the plot.
+        fig_size : list, tuple, np.ndarray
+            The size of the matplotlib figure to plot axis on if axis=None.
+        show : bool
+            Set to True to display the plot and return nothing, set to False to return the plotting axis and display
+            nothing.
+        ** kwargs : KeywordArguments
+            See `mpl.axes.Axes.plot <https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.plot.html>`_ for more
+            information.
+
+        Returns
+        -------
+        matplotlib.axis.Axis, None
+            If show is False, returns a matplotlib axis. Otherwise, plots the figure and returns None.
+
+        Examples
+        ________
+        >>> ecap_data.plot("RawE 1", (0,0))     # doctest: +SKIP
+        """
+        fig, ax = _plt_setup_fig_axis(axis, fig_size)
+
+        calc_y_lim = [0, 0]
+
+        if sort is not None:
+            if sort == 'ascending':
+                sorted_params = self.parameters.parameters.loc[parameters].sort_values('pulse amplitude (μA)', ascending=False).index
+            elif sort == 'descending':
+                sorted_params = self.parameters.parameters.loc[parameters].sort_values('pulse amplitude (μA)', ascending=True).index
+        else:
+            sorted_params = parameters
+
+        for param in sorted_params:
+            #print(chan)
+            if method == 'mean':
+                plot_data = self.mean(param, channel)
+                #print('mean')   #Check to make sure 'if' loop functions
+            elif method == 'median':
+                plot_data = self.median(param, channel)
+                #print('median')
+            elif method =='std':
+                plot_data = self.std(param, channel)
+            else:
+                raise ValueError(
+                        "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
+                        "and 'median'.")
+
+            plot_time = self.time(param)
+
+            # compute appropriate y_limits
+            if y_lim is None or y_lim == 'auto':
+                std_data = np.std(plot_data)
+                calc_y_lim = [np.min([-std_data * 6, calc_y_lim[0]]),
+                                  np.max([std_data * 6, calc_y_lim[1]])]
+            elif y_lim == 'max':
+                calc_y_lim = None
+            else:
+                calc_y_lim = _to_numeric_array(y_lim)
+
+            ax.plot(plot_time, plot_data[0, :],label=self.parameters.parameters.loc[param]['pulse amplitude (μA)'], *args, **kwargs)
+
+        ax.set_ylim(calc_y_lim)
+        ax.set_xlabel('time (s)')
+        ax.set_ylabel('amplitude (V)')
+        ax.legend(loc=1)
+
+        if fig_title is not None:
+            ax.set_title(fig_title)
+
+        if x_lim is None:
+            ax.set_xlim(plot_time[0], plot_time[-1])
+        else:
+            ax.set_xlim(x_lim)
+
+        if vlines is not None:
+            # Add vline at specific sample # -- TODO: Incorporate adding it in at a specific time
+            if isinstance(vlines, int):  # For case where only one line is passed
+                ax.axvline(vlines * (1 / self.fs), linestyle='--', c='red')
+            elif isinstance(vlines, list):
+                for line in vlines:
+                    ax.axvline(line * (1 / self.fs), linestyle='--', c='red')
+            else:
+                raise Exception('Vertical line inputs must be integer (for single line), or a list of integers.')
+
+        return _plt_show_fig(fig, ax, show)
+
     def plot_raster(self, channel, parameters, *args, method='mean', axis=None, x_lim=None, c_lim='auto',
                     c_map='RdYlBu', fig_size=(10, 4), show=True, **kwargs):
         """
@@ -656,7 +783,7 @@ class _EpochData:
         fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = plotNAME, hover_data=['Time (ms)']) #, hover_data='Time (ms)') plotDF.index
         fig.update_xaxes(title_text='Sample #')
         fig.update_yaxes(title_text='Voltage (V)')
-        fig.show()
+        fig.show(renderer='browser')
         return
 
     @lru_cache(maxsize=None)
