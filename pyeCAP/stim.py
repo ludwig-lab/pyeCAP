@@ -14,6 +14,7 @@ from .base.dio_data import _DioData
 from .base.parameter_data import _ParameterData
 from .base.utils.base import _is_iterable
 from .base.utils.numeric import _to_numeric_array
+
 # pyeCAP io class imports
 from .io.ripple_io import RippleIO, RippleEvents
 from .io.tdt_io import TdtIO, TdtStim
@@ -23,8 +24,18 @@ class Stim(_EventData, _DioData, _ParameterData):
     """
     Class for working with stimulation data.
     """
-    def __init__(self, file_path, io=None, events=None, event_indicators=None, dio=None, dio_indicators=None,
-                 parameters=None, metadata=None):
+
+    def __init__(
+        self,
+        file_path,
+        io=None,
+        events=None,
+        event_indicators=None,
+        dio=None,
+        dio_indicators=None,
+        parameters=None,
+        metadata=None,
+    ):
         """
         Constructor for stimulation data objects.
 
@@ -56,14 +67,16 @@ class Stim(_EventData, _DioData, _ParameterData):
         >>> pyeCAP.Stim([pathname1, pathname2, pathname3])                       # doctest: +SKIP
         """
 
-        if isinstance(file_path, list) \
-                and isinstance(io, list) \
-                and isinstance(events, list) \
-                and isinstance(event_indicators, list) \
-                and isinstance(dio, list) \
-                and isinstance(dio_indicators, list) \
-                and isinstance(parameters, list) \
-                and isinstance(metadata, list):
+        if (
+            isinstance(file_path, list)
+            and isinstance(io, list)
+            and isinstance(events, list)
+            and isinstance(event_indicators, list)
+            and isinstance(dio, list)
+            and isinstance(dio_indicators, list)
+            and isinstance(parameters, list)
+            and isinstance(metadata, list)
+        ):
             self.file_path = file_path
             self.io = io
             _EventData.__init__(self, events, metadata, indicators=event_indicators)
@@ -71,28 +84,40 @@ class Stim(_EventData, _DioData, _ParameterData):
             _ParameterData.__init__(self, parameters, metadata)
         elif isinstance(file_path, str):
             # Read in Ripple data files
-            if file_path.endswith('.nev'):
+            if file_path.endswith(".nev"):
                 # TODO: Changes for tdt will break this code for ripple, need to repair
                 self.file_path = [file_path]
                 self.io = [RippleIO(file_path)]
-                events = RippleEvents(self.io[0], type='stim')
+                events = RippleEvents(self.io[0], type="stim")
 
             # Read in file types that point to a directory (i.e. tdt)
             elif os.path.isdir(file_path):
                 # Check if directory is for tdt data
-                tev_files = glob.glob(file_path + '/*.tev')  # There should only be one
+                tev_files = glob.glob(file_path + "/*.tev")  # There should only be one
                 if len(tev_files) == 0:
                     # Check if this is a folder of tanks, look for tev files one live deep
-                    tev_files = glob.glob(file_path + '/*/*.tev')
-                    if len (tev_files) == 0:
-                        raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    tev_files = glob.glob(file_path + "/*/*.tev")
+                    if len(tev_files) == 0:
+                        raise FileNotFoundError(
+                            "Could not located '*.tev' file expected for tdt tank."
+                        )
                     else:
                         file_path = [os.path.split(f)[0] for f in tev_files]
-                        self.__init__(file_path,  io=io, events=events, event_indicators=event_indicators, dio=dio,
-                                      dio_indicators=dio_indicators, parameters=parameters, metadata=metadata)
+                        self.__init__(
+                            file_path,
+                            io=io,
+                            events=events,
+                            event_indicators=event_indicators,
+                            dio=dio,
+                            dio_indicators=dio_indicators,
+                            parameters=parameters,
+                            metadata=metadata,
+                        )
                         return
                 elif len(tev_files) > 1:
-                    raise FileExistsError("Multiple '*.tev' files found in tank, 1 expected.")
+                    raise FileExistsError(
+                        "Multiple '*.tev' files found in tank, 1 expected."
+                    )
                 else:
                     self.file_path = [file_path]
                     self.io = [TdtIO(file_path)]
@@ -107,7 +132,9 @@ class Stim(_EventData, _DioData, _ParameterData):
             else:
                 print(file_path)
                 _, file_extension = os.path.splitext(file_path)
-                raise IOError('"' + file_extension + '" is not a supported file extension')
+                raise IOError(
+                    '"' + file_extension + '" is not a supported file extension'
+                )
             _EventData.__init__(self, events, metadata, indicators=event_indicators)
             _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
             _ParameterData.__init__(self, parameters, metadata)
@@ -121,7 +148,16 @@ class Stim(_EventData, _DioData, _ParameterData):
             dio_indicators = [item for d in data for item in d._dio_indicators]
             parameters = [item for d in data for item in d._parameters]
             metadata = [item for d in data for item in d._metadata]
-            self.__init__(file_path, io, events, event_indicators, dio, dio_indicators, parameters, metadata)
+            self.__init__(
+                file_path,
+                io,
+                events,
+                event_indicators,
+                dio,
+                dio_indicators,
+                parameters,
+                metadata,
+            )
         else:
             raise ValueError("Input expected to be string or list of strings")
 
@@ -139,7 +175,12 @@ class Stim(_EventData, _DioData, _ParameterData):
         raw_data = []
         try:
             for i in range(len(self.metadata)):
-                raw_data.append({key: getattr(self.io[i].tdt_block.stores, key) for key in self.metadata[i]['raw_stores']})
+                raw_data.append(
+                    {
+                        key: getattr(self.io[i].tdt_block.stores, key)
+                        for key in self.metadata[i]["raw_stores"]
+                    }
+                )
         except KeyError:
             warnings.warn("Raw stores method is only for tdt objects")
         return raw_data
@@ -212,8 +253,7 @@ class Stim(_EventData, _DioData, _ParameterData):
         None
         """
         print(len(values))
-        potential_parameters = ['polarity',
-                                'channel']
+        potential_parameters = ["polarity", "channel"]
         if parameter in potential_parameters:
             if _is_iterable(values):
                 if len(values) == 1:
@@ -223,7 +263,9 @@ class Stim(_EventData, _DioData, _ParameterData):
                     for p_df, v in zip(self._parameters, values):
                         p_df[parameter] = v
                 else:
-                    raise ValueError("Number of values must be 1 or equal to the number of data sets")
+                    raise ValueError(
+                        "Number of values must be 1 or equal to the number of data sets"
+                    )
             else:
                 for p_df in self._parameters:
                     p_df[parameter] = values
@@ -246,27 +288,31 @@ class Stim(_EventData, _DioData, _ParameterData):
         """
         if _is_iterable(values):
             if len(values) == 1:
-                values = list(values)*len(self._parameters)
+                values = list(values) * len(self._parameters)
             elif len(values) == len(self._parameters):
                 pass
             else:
-                raise ValueError("Number of values must be 1 or equal to the number of data sets")
+                raise ValueError(
+                    "Number of values must be 1 or equal to the number of data sets"
+                )
             for p_df, v in zip(self._parameters, values):
                 v = _to_numeric_array(v, dtype=int)
-                p_df['polarity'] = len(v)
+                p_df["polarity"] = len(v)
                 if len(v) == 1:
-                    p_df['channel'] = v[0]
-                    if 'cathode' in p_df.columns:
-                        p_df['cathode'] = np.NaN
-                    if 'anode' in p_df.columns:
-                        p_df['anode'] = np.NaN
+                    p_df["channel"] = v[0]
+                    if "cathode" in p_df.columns:
+                        p_df["cathode"] = np.NaN
+                    if "anode" in p_df.columns:
+                        p_df["anode"] = np.NaN
                 elif len(v) == 2:
-                    p_df['cathode'] = v[0]
-                    p_df['anode'] = v[1]
-                    if 'channel' in p_df.columns:
-                        p_df['channel'] = np.NaN
+                    p_df["cathode"] = v[0]
+                    p_df["anode"] = v[1]
+                    if "channel" in p_df.columns:
+                        p_df["channel"] = np.NaN
                 else:
-                    raise NotImplementedError('Only monopolar and bipolar stimulation implemented at this time')
+                    raise NotImplementedError(
+                        "Only monopolar and bipolar stimulation implemented at this time"
+                    )
         else:
             self.set_channels([values])
 
@@ -276,9 +322,11 @@ class Stim(_EventData, _DioData, _ParameterData):
         """
         num_amplitudes = len(self._parameters[num_condition])
         if len(series_to_add) == 1:
-            series_to_add = series_to_add.append([series_to_add]*(num_amplitudes-1), ignore_index=True)
+            series_to_add = series_to_add.append(
+                [series_to_add] * (num_amplitudes - 1), ignore_index=True
+            )
         if len(series_to_add) != num_amplitudes:
-            sys.exit('length of amplitudes not the same')
+            sys.exit("length of amplitudes not the same")
         else:
             self._parameters[num_condition][series_to_add.name] = series_to_add
 
@@ -306,12 +354,13 @@ class Stim(_EventData, _DioData, _ParameterData):
                 else:
                     event_indicators = new_data._event_indicators
 
-
             else:
                 if new_data._event_indicators is None:
                     event_indicators = self._event_indicators
                 else:
-                    event_indicators = self._event_indicators + new_data._event_indicators
+                    event_indicators = (
+                        self._event_indicators + new_data._event_indicators
+                    )
             dio = self._dio + new_data._dio
             if self._dio_indicators is None:
                 if new_data._dio_indicators is None:

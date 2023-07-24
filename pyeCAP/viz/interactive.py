@@ -11,7 +11,7 @@ def remote_jupyter_proxy_url(port):
     If port is None we're asking about the URL
     for the origin header.
     """
-    base_url = os.environ['EXTERNAL_URL']
+    base_url = os.environ["EXTERNAL_URL"]
     host = urllib.parse.urlparse(base_url).netloc
 
     # If port is None we're asking for the URL origin
@@ -19,8 +19,8 @@ def remote_jupyter_proxy_url(port):
     if port is None:
         return host
 
-    service_url_path = os.environ['JUPYTERHUB_SERVICE_PREFIX']
-    proxy_url_path = 'proxy/%d' % port
+    service_url_path = os.environ["JUPYTERHUB_SERVICE_PREFIX"]
+    proxy_url_path = "proxy/%d" % port
 
     user_url = urllib.parse.urljoin(base_url, service_url_path)
     full_url = urllib.parse.urljoin(user_url, proxy_url_path)

@@ -2,13 +2,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from .utils.numeric import _to_numeric_array, largest_triangle_three_buckets
-from .utils.visualization import _plt_setup_fig_axis, _plt_show_fig, _plt_ax_to_pix, _plt_add_ax_connected_top
+from .utils.visualization import (
+    _plt_setup_fig_axis,
+    _plt_show_fig,
+    _plt_ax_to_pix,
+    _plt_add_ax_connected_top,
+)
 
 
 class _DioData:
     """
     Class for stimulation start/stop data.
     """
+
     def __init__(self, dio, metadata, indicators=None):
         """
 
@@ -56,7 +62,7 @@ class _DioData:
         list
             List of channel names.
         """
-        ch_names = [tuple(meta['ch_names']) for meta in self._metadata]
+        ch_names = [tuple(meta["ch_names"]) for meta in self._metadata]
         if len(set(ch_names)) == 1:
             return list(ch_names[0])
         else:
@@ -72,7 +78,7 @@ class _DioData:
         list
             List of start times in seconds since epoch.
         """
-        start_times = [meta['start_time'] for meta in self.metadata]
+        start_times = [meta["start_time"] for meta in self.metadata]
         return start_times
 
     def dio(self, channel, start_times=None, reference=None, remove_gaps=False):
@@ -107,7 +113,7 @@ class _DioData:
                 start_times = self.start_times
             else:
                 if remove_gaps:
-                    start_times = reference.start_indices/reference.sample_rate
+                    start_times = reference.start_indices / reference.sample_rate
                 else:
                     start_times = reference.start_times
 
@@ -117,7 +123,9 @@ class _DioData:
                 events = [e[channel] + s for e, s in zip(self._dio, start_times)]
                 return np.concatenate(events)
         else:
-            raise TypeError("_EventData class can only be indexed using 'str' or 'int' types")
+            raise TypeError(
+                "_EventData class can only be indexed using 'str' or 'int' types"
+            )
 
     def dio_indicators(self, channel):
         """
@@ -140,8 +148,21 @@ class _DioData:
                 # TODO: Make work when there are multiple dio files
                 return self._dio_indicators[0][channel]
 
-    def plot_raster(self, *args, axis=None, start_times=None, reference=None, remove_gaps=False, ch_names=None,
-                    x_lim=None, fig_size=(10, 1.5), display='span', show=True, dio=None, **kwargs):
+    def plot_raster(
+        self,
+        *args,
+        axis=None,
+        start_times=None,
+        reference=None,
+        remove_gaps=False,
+        ch_names=None,
+        x_lim=None,
+        fig_size=(10, 1.5),
+        display="span",
+        show=True,
+        dio=None,
+        **kwargs
+    ):
         """
         Plots electrical stimulation time periods in a raster format.
 
@@ -194,22 +215,40 @@ class _DioData:
         def chunks(lst, n):
             """Yield successive n-sized chunks from lst."""
             for k in range(0, len(lst), n):
-                yield lst[k:k + n]
+                yield lst[k : k + n]
 
         # plot avx lines in appropriate places
         x_max = 0
         for i, key in enumerate(ch_names):
             if dio is None:
-                events = self.dio(key, start_times=start_times, reference=reference, remove_gaps=remove_gaps)
+                events = self.dio(
+                    key,
+                    start_times=start_times,
+                    reference=reference,
+                    remove_gaps=remove_gaps,
+                )
             else:
                 events = dio[key]
             if len(events) > 0:
-                if display == 'span':
+                if display == "span":
                     for event in chunks(events, 2):
-                        ax.axvspan(event[0], event[1], *args, ymin=i * 1 / channels, ymax=(i+1) * 1 / channels, **kwargs)
-                        ax.axvline(event[0], *args, ymin=i * 1 / channels, ymax=(i+1) * 1 / channels, **kwargs)
-                elif display == 'lines':
-                    ax.vlines(events[::2], i+0.5, i+1.5)
+                        ax.axvspan(
+                            event[0],
+                            event[1],
+                            *args,
+                            ymin=i * 1 / channels,
+                            ymax=(i + 1) * 1 / channels,
+                            **kwargs
+                        )
+                        ax.axvline(
+                            event[0],
+                            *args,
+                            ymin=i * 1 / channels,
+                            ymax=(i + 1) * 1 / channels,
+                            **kwargs
+                        )
+                elif display == "lines":
+                    ax.vlines(events[::2], i + 0.5, i + 1.5)
                 else:
                     raise ValueError("Unrecognized value of input 'display'")
                 if x_lim is None:
@@ -230,7 +269,7 @@ class _DioData:
         # set y_lims
         ax.set_ylim(0.5, len(ch_names) + 0.5)
 
-        ax.set_xlabel('time(s)')
+        ax.set_xlabel("time(s)")
         return _plt_show_fig(fig, ax, show)
 
     def append(self, new_data):
@@ -270,4 +309,6 @@ class _DioData:
                 # TODO: Make work when there are multiple dio files
                 return self.dio(item)
         else:
-            raise TypeError("_DioData class can only be indexed using 'str' or 'int' types")
+            raise TypeError(
+                "_DioData class can only be indexed using 'str' or 'int' types"
+            )

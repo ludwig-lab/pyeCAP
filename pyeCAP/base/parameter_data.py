@@ -5,6 +5,7 @@ class _ParameterData:
     """
     Class representing stimulation parameter data.
     """
+
     def __init__(self, parameters, metadata):
         """
         Constructor for stimulation parameter data class.

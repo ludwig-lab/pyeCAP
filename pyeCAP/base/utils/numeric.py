@@ -27,6 +27,7 @@ def _to_numeric_array(array, dtype=float):
     """
     return np.asarray(array).astype(dtype).flatten()
 
+
 @jit(nopython=True)
 def largest_triangle_three_buckets(data, threshold):
     """Return a downsampled version of data.
@@ -92,12 +93,13 @@ def largest_triangle_three_buckets(data, threshold):
 
         while range_offs < range_to:
             # Calculate triangle area over three buckets
-            area = math.fabs(
-                (point_ax - avg_x)
-                * (data[range_offs][1] - point_ay)
-                - (point_ax - data[range_offs][0])
-                * (avg_y - point_ay)
-            ) * 0.5
+            area = (
+                math.fabs(
+                    (point_ax - avg_x) * (data[range_offs][1] - point_ay)
+                    - (point_ax - data[range_offs][0]) * (avg_y - point_ay)
+                )
+                * 0.5
+            )
 
             if area > max_area:
                 max_area = area
@@ -105,12 +107,13 @@ def largest_triangle_three_buckets(data, threshold):
                 next_a = range_offs  # Next a is this b
             range_offs += 1
 
-        sampled[i+1] = max_area_point  # Pick this point from the bucket
+        sampled[i + 1] = max_area_point  # Pick this point from the bucket
         a = next_a  # This a is the next a (chosen b)
 
     sampled[-1] = data[-1]  # Always add last
 
     return sampled
+
 
 @jit(nopython=True)
 def find_first(item, vec):
@@ -120,6 +123,7 @@ def find_first(item, vec):
             return idx
     return -1
 
+
 def _group_consecutive(data, stepsize=1):
     # Groups consecutive chunks of integers from an integer array into subarrays
-    return np.split(data, np.where(np.diff(data) != stepsize)[0]+1)
+    return np.split(data, np.where(np.diff(data) != stepsize)[0] + 1)

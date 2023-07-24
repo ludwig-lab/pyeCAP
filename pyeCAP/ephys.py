@@ -18,8 +18,18 @@ class Ephys(_TsData):
     """
     Class for working with Ephys objects.
     """
-    def __init__(self, data, *args, stores=None, order=True, rz_sample_rate=None, si_sample_rate=None, sample_delay=None,
-                 **kwargs):
+
+    def __init__(
+        self,
+        data,
+        *args,
+        stores=None,
+        order=True,
+        rz_sample_rate=None,
+        si_sample_rate=None,
+        sample_delay=None,
+        **kwargs
+    ):
         """
         Ephys constructor.
 
@@ -58,10 +68,10 @@ class Ephys(_TsData):
             file_path = data
 
             # Read in Ripple data files
-            if file_path.endswith('.nev'):
+            if file_path.endswith(".nev"):
                 self.file_path = [file_path]
                 self.io = [RippleIO(file_path)]
-                data = RippleArray(self.io[0], type='ephys')
+                data = RippleArray(self.io[0], type="ephys")
                 chunks = data.chunks
                 metadata = data.metadata
                 daskify = True
@@ -69,23 +79,34 @@ class Ephys(_TsData):
             # Read in file types that point to a directory (i.e. tdt)
             elif os.path.isdir(file_path):
                 # Check if directory is for tdt data
-                tev_files = glob.glob(file_path + '/*.tev')  # There should only be one
+                tev_files = glob.glob(file_path + "/*.tev")  # There should only be one
                 if len(tev_files) == 0:
                     # Check if this is a folder of tanks, look for tev files one live deep
-                    tev_files = glob.glob(file_path + '/*/*.tev')
-                    if len (tev_files) == 0:
-                        raise FileNotFoundError("Could not located '*.tev' file expected for tdt tank.")
+                    tev_files = glob.glob(file_path + "/*/*.tev")
+                    if len(tev_files) == 0:
+                        raise FileNotFoundError(
+                            "Could not located '*.tev' file expected for tdt tank."
+                        )
                     else:
                         data = [os.path.split(f)[0] for f in tev_files]
-                        self.__init__(data, *args, stores=stores, rz_sample_rate=rz_sample_rate,
-                                            si_sample_rate=si_sample_rate, sample_delay=sample_delay, **kwargs)
+                        self.__init__(
+                            data,
+                            *args,
+                            stores=stores,
+                            rz_sample_rate=rz_sample_rate,
+                            si_sample_rate=si_sample_rate,
+                            sample_delay=sample_delay,
+                            **kwargs
+                        )
                         return
                 elif len(tev_files) > 1:
-                    raise FileExistsError("Multiple '*.tev' files found in tank, 1 expected.")
+                    raise FileExistsError(
+                        "Multiple '*.tev' files found in tank, 1 expected."
+                    )
                 else:
                     self.file_path = [file_path]
                     self.io = [TdtIO(file_path)]
-                    data_store = TdtArray(self.io[0], type='ephys', stores=stores)
+                    data_store = TdtArray(self.io[0], type="ephys", stores=stores)
                     chunks = data_store.chunks
                     data = data_store.data
                     metadata = data_store.metadata
@@ -94,15 +115,17 @@ class Ephys(_TsData):
                     if isinstance(sample_delay, list):
                         sample_delay = [-sd for sd in sample_delay]
                     elif sample_delay is not None:
-                        sample_delay = [-int(sample_delay)] * len(metadata['ch_names'])
+                        sample_delay = [-int(sample_delay)] * len(metadata["ch_names"])
 
                     # add in delays from rz and si sample rate
                     if rz_sample_rate is not None or si_sample_rate is not None:
                         if sample_delay is None:
                             sample_delay = 0
                         # set tdt delays based on rz and si sample rates
-                        rate_offsets = [-gather_sample_delay(rz_sample_rate, si_sample_rate)] * len(metadata['ch_names'])
-                        sample_delay = np.add(sample_delay, rate_offsets )
+                        rate_offsets = [
+                            -gather_sample_delay(rz_sample_rate, si_sample_rate)
+                        ] * len(metadata["ch_names"])
+                        sample_delay = np.add(sample_delay, rate_offsets)
 
             # File type not found
             else:
@@ -111,11 +134,21 @@ class Ephys(_TsData):
                         raise IOError('"' + file_path + '"  - is not a tdt tank.')
                     else:
                         _, file_extension = os.path.splitext(file_path)
-                        raise IOError('"' + file_extension + '" is not a supported file extension')
+                        raise IOError(
+                            '"' + file_extension + '" is not a supported file extension'
+                        )
                 else:
                     raise IOError('"' + file_path + '"  - is not a file or directory.')
 
-            super().__init__(data, metadata, *args, chunks=chunks, daskify=daskify, ch_offsets=sample_delay, **kwargs)
+            super().__init__(
+                data,
+                metadata,
+                *args,
+                chunks=chunks,
+                daskify=daskify,
+                ch_offsets=sample_delay,
+                **kwargs
+            )
 
         # Work with iterable of file paths
         elif _is_iterable(data, str):
@@ -123,17 +156,33 @@ class Ephys(_TsData):
             ephys_files = []
             for file in self.file_path:
                 if isinstance(file, str):
-                    ephys_data_set = type(self)(file, *args, stores=stores, rz_sample_rate=rz_sample_rate, si_sample_rate=si_sample_rate,
-                                                sample_delay=sample_delay, **kwargs)
+                    ephys_data_set = type(self)(
+                        file,
+                        *args,
+                        stores=stores,
+                        rz_sample_rate=rz_sample_rate,
+                        si_sample_rate=si_sample_rate,
+                        sample_delay=sample_delay,
+                        **kwargs
+                    )
                     ephys_files.append(ephys_data_set)
                 else:
                     raise IOError(
-                        'Input is expected to be either a string containing a file path, or a list of file paths.')
+                        "Input is expected to be either a string containing a file path, or a list of file paths."
+                    )
             self.io = [item for d in ephys_files for item in d.io]
             data = [item for d in ephys_files for item in d.data]
             metadata = [item for d in ephys_files for item in d.metadata]
             chunks = [item for d in ephys_files for item in d.chunks]
-            super().__init__(data, metadata, *args, chunks=chunks, daskify=False, order=order, **kwargs)
+            super().__init__(
+                data,
+                metadata,
+                *args,
+                chunks=chunks,
+                daskify=False,
+                order=order,
+                **kwargs
+            )
 
         else:
             super().__init__(data, *args, **kwargs)

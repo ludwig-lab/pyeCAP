@@ -1,4 +1,3 @@
-
 # scientific library imports
 import scipy.io as sio
 import numpy as np
@@ -10,7 +9,12 @@ import seaborn as sns
 # neuro base class imports
 from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
-from .base.utils.visualization import _plt_ax_to_pix, _plt_setup_fig_axis, _plt_show_fig, _plt_add_ax_connected_top
+from .base.utils.visualization import (
+    _plt_ax_to_pix,
+    _plt_setup_fig_axis,
+    _plt_show_fig,
+    _plt_add_ax_connected_top,
+)
 
 # pyeCAP io class imports
 from .io.adinstruments_io import AdInstrumentsIO, convert_time, ADInstrumentsBin
@@ -34,9 +38,9 @@ def pad_array(filename):
     """
     # read in data
     raw_dict = sio.loadmat(filename)
-    datastart = raw_dict['datastart']
-    data = raw_dict['data']
-    dataend = raw_dict['dataend']
+    datastart = raw_dict["datastart"]
+    data = raw_dict["data"]
+    dataend = raw_dict["dataend"]
 
     # find block lengths and account for any missing data
     num_channels, num_blocks = datastart.shape
@@ -53,7 +57,9 @@ def pad_array(filename):
     new_datastart = np.ones((num_channels, num_blocks))
     for c in range(num_channels):
         for b in range(num_blocks):
-            new_datastart[c, b] += num_channels * sum(block_lengths[:b]) + c * block_lengths[b]
+            new_datastart[c, b] += (
+                num_channels * sum(block_lengths[:b]) + c * block_lengths[b]
+            )
 
     new_dataend = np.zeros((num_channels, num_blocks))
     for c in range(num_channels):
@@ -74,16 +80,20 @@ def pad_array(filename):
     for m in missing_blocks:
         pad_arr = np.zeros((1, int(block_lengths[m[1]])))
         pad_arr[:] = np.nan
-        data_left = data[:, :int(new_datastart[m[0], m[1]]) - 1]
-        data_right = data[:, int(new_datastart[m[0], m[1]]) - 1:]
+        data_left = data[:, : int(new_datastart[m[0], m[1]]) - 1]
+        data_right = data[:, int(new_datastart[m[0], m[1]]) - 1 :]
         data = np.concatenate((data_left, pad_arr, data_right), axis=1)
 
     # replace old values in dictionary with new ones
-    raw_dict['data'] = data
-    raw_dict['datastart'] = new_datastart
-    raw_dict['dataend'] = new_dataend
-    raw_dict['unittext'] = np.append(raw_dict['unittext'], "N/A")
-    raw_dict['unittextmap'] = np.where(raw_dict['unittextmap'] == -1, len(raw_dict['unittext']), raw_dict['unittextmap'])
+    raw_dict["data"] = data
+    raw_dict["datastart"] = new_datastart
+    raw_dict["dataend"] = new_dataend
+    raw_dict["unittext"] = np.append(raw_dict["unittext"], "N/A")
+    raw_dict["unittextmap"] = np.where(
+        raw_dict["unittextmap"] == -1,
+        len(raw_dict["unittext"]),
+        raw_dict["unittextmap"],
+    )
 
     # write dictionary to a matlab file
     sio.savemat(filename.replace(".mat", "_padded.mat"), raw_dict, do_compression=True)
@@ -115,26 +125,26 @@ def get_comments(file, comtype=None):
     # initialize file reader
     raw = sio.loadmat(file)
     comdict = {}
-    ch_names = raw['titles']
+    ch_names = raw["titles"]
     for ch in ch_names:
         comdict[ch] = {}
 
     # return empty comment dictionary if there are no comments
-    if 'com' not in raw:
+    if "com" not in raw:
         return comdict
 
     # set up comments dictionary for each block in format {channel_name: {comment_name}: []}
-    com_array = raw['com']
-    com_names = raw['comtext'].flatten()
+    com_array = raw["com"]
+    com_names = raw["comtext"].flatten()
 
     # load data needed to determine comment timestamps
-    times_list = [convert_time(t) for t in raw['blocktimes'].flatten()]
-    sample = raw['tickrate'].flatten()
+    times_list = [convert_time(t) for t in raw["blocktimes"].flatten()]
+    sample = raw["tickrate"].flatten()
 
     # set up a list to filter comment types
-    types_key = {None: [1,2], "both": [1,2], "user": [1], "event": [2]}
+    types_key = {None: [1, 2], "both": [1, 2], "user": [1], "event": [2]}
     if comtype not in types_key:
-        raise(ValueError("Invalid comment type"))
+        raise (ValueError("Invalid comment type"))
     types = types_key[comtype]
 
     # loop over each comment and add it to comdict
@@ -145,11 +155,11 @@ def get_comments(file, comtype=None):
         try:
             name = com_names[int(arr[-1]) - 1]
         except IndexError:
-            name = 'unnamed'
+            name = "unnamed"
 
         for ch in comdict:
             if name not in comdict[ch]:
-                comdict[ch][name]= []
+                comdict[ch][name] = []
 
         if arr[3] in types:
             if channel_idx == -2:
@@ -168,6 +178,7 @@ def get_comments(file, comtype=None):
 
 class Phys(_TsData):
     """Class for physiological data"""
+
     def __init__(self, data, *args, mult_data=True, check=True, order=True, **kwargs):
         """
         Constructor for the Phys class
@@ -198,9 +209,16 @@ class Phys(_TsData):
 
         if isinstance(data, str):
             self.adinstruments = AdInstrumentsIO(data, mult_data, check)
-            super().__init__(self.adinstruments.array, self.adinstruments.metadata, daskify=False, chunks=self.adinstruments.chunks)
+            super().__init__(
+                self.adinstruments.array,
+                self.adinstruments.metadata,
+                daskify=False,
+                chunks=self.adinstruments.chunks,
+            )
         elif _is_iterable(data, str):
-            self.adinstruments = [AdInstrumentsIO(path, mult_data, check) for path in data]
+            self.adinstruments = [
+                AdInstrumentsIO(path, mult_data, check) for path in data
+            ]
             array = []
             metadata = []
             chunks = []
@@ -227,7 +245,7 @@ class Phys(_TsData):
         ________
         >>> phys_data.units # doctest: +SKIP
         """
-        return [dict(zip(self.ch_names, meta['units'])) for meta in self.metadata]
+        return [dict(zip(self.ch_names, meta["units"])) for meta in self.metadata]
 
     def select(self, datasets, select=True):
         """
@@ -261,9 +279,20 @@ class Phys(_TsData):
 
         return type(self)(new_data, new_metadata, chunks=chunks, daskify=False)
 
-    def plot(self, axis=None, channels=None, events=False, x_lim=None, y_lim='max', ch_labels=None,
-             colors=sns.color_palette(), fig_size=(15, 6), down_sample=True,
-             show=True, remove_gaps=True):
+    def plot(
+        self,
+        axis=None,
+        channels=None,
+        events=False,
+        x_lim=None,
+        y_lim="max",
+        ch_labels=None,
+        colors=sns.color_palette(),
+        fig_size=(15, 6),
+        down_sample=True,
+        show=True,
+        remove_gaps=True,
+    ):
         """
         Plotting method for Phys data. This method overrides the method in _TsData to provide better scaling for Phys
         objects.
@@ -310,7 +339,10 @@ class Phys(_TsData):
             channels = self.ch_names
         fig, ax = _plt_setup_fig_axis(axis, fig_size=fig_size)
         x_lim = self._time_lim_validate(x_lim, remove_gaps=remove_gaps)
-        x_index = (self._time_to_index(x_lim[0], remove_gaps=remove_gaps), self._time_to_index(x_lim[1], remove_gaps=remove_gaps)+1)
+        x_index = (
+            self._time_to_index(x_lim[0], remove_gaps=remove_gaps),
+            self._time_to_index(x_lim[1], remove_gaps=remove_gaps) + 1,
+        )
         plt.yticks([])
 
         # create a subplot for each channel
@@ -322,14 +354,19 @@ class Phys(_TsData):
             if ch_labels is not None:
                 channel_ax.set_ylabel(ch_labels[i])
             else:
-                channel_ax.set_ylabel("{} ({})".format(channel, self.units[-1][channel]))
+                channel_ax.set_ylabel(
+                    "{} ({})".format(channel, self.units[-1][channel])
+                )
             ch_slice = self._ch_to_index(channel)
-            plot_array = self.array[ch_slice, x_index[0]:x_index[1]].compute()
+            plot_array = self.array[ch_slice, x_index[0] : x_index[1]].compute()
             try:
                 if y_lim == "max":
                     datamax = np.nanmax(plot_array)
                     datamin = np.nanmin(plot_array)
-                    channel_ax.set_ylim(datamin - (datamax-datamin) * .1, datamax + (datamax-datamin) * .1)
+                    channel_ax.set_ylim(
+                        datamin - (datamax - datamin) * 0.1,
+                        datamax + (datamax - datamin) * 0.1,
+                    )
                 else:
                     channel_ax.set_ylim(y_lim[i])
             except ValueError:
@@ -337,10 +374,16 @@ class Phys(_TsData):
 
             # plot data on the axes
             px_width, _ = _plt_ax_to_pix(fig, channel_ax)
-            plot_data = self._to_plt_line_collection(x_lim, ch_slice, px_width, remove_gaps=remove_gaps)
+            plot_data = self._to_plt_line_collection(
+                x_lim, ch_slice, px_width, remove_gaps=remove_gaps
+            )
             for data in plot_data:
-                lines = LineCollection(data[0], linewidths=np.ones(plot_array.shape[0]), transOffset=None,
-                                       colors=colors[i % len(colors)])
+                lines = LineCollection(
+                    data[0],
+                    linewidths=np.ones(plot_array.shape[0]),
+                    transOffset=None,
+                    colors=colors[i % len(colors)],
+                )
                 channel_ax.add_collection(lines)
 
         return _plt_show_fig(fig, ax, show)

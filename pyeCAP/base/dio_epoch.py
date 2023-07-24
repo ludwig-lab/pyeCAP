@@ -16,8 +16,18 @@ from functools import lru_cache
 class _DioEpoch:
     """Class for analyzing data based on stimulation onset and offset times"""
 
-    def __init__(self, ts_data, dio_data, trigger_channel, parameter_data=None, threshold=1, time_difference=0,
-                 search=1, compute=True, trigger_offsets=None):
+    def __init__(
+        self,
+        ts_data,
+        dio_data,
+        trigger_channel,
+        parameter_data=None,
+        threshold=1,
+        time_difference=0,
+        search=1,
+        compute=True,
+        trigger_offsets=None,
+    ):
         """
         Constructor for the _DioEpoch class.
 
@@ -66,7 +76,9 @@ class _DioEpoch:
 
         if compute and trigger_channel is not None:
             t_o = self._initialize_all_pulses()
-            self._trigger_offsets = dict(zip(list(self.parameters.parameters.index), t_o))
+            self._trigger_offsets = dict(
+                zip(list(self.parameters.parameters.index), t_o)
+            )
         elif not compute and trigger_offsets is not None:
             self._trigger_offsets = trigger_offsets
         else:
@@ -162,7 +174,9 @@ class _DioEpoch:
         if parameters is None:
             return self._trigger_offsets
         else:
-            return {key: value for key, value in self._trigger_offsets if key in parameters}
+            return {
+                key: value for key, value in self._trigger_offsets if key in parameters
+            }
 
     def get_search(self):
         """
@@ -190,8 +204,14 @@ class _DioEpoch:
         _DioEpoch or subclass
             New class instance with a different trigger_channel and recomputed trigger offsets.
         """
-        return type(self)(self.ts_data, self.dio_data, new_channel, threshold=self._threshold,
-                          time_difference=self._time_difference, search=self._search)
+        return type(self)(
+            self.ts_data,
+            self.dio_data,
+            new_channel,
+            threshold=self._threshold,
+            time_difference=self._time_difference,
+            search=self._search,
+        )
 
     def set_threshold(self, new_threshold):
         """
@@ -213,8 +233,14 @@ class _DioEpoch:
         >>> # create a new object with a threshold of 3.
         >>> new_response_data = response_data.set_threshold(3)      # doctest: +SKIP
         """
-        return type(self)(self.ts_data, self.dio_data, self._trigger_channel, threshold=new_threshold,
-                          time_difference=self._time_difference, search=self._search)
+        return type(self)(
+            self.ts_data,
+            self.dio_data,
+            self._trigger_channel,
+            threshold=new_threshold,
+            time_difference=self._time_difference,
+            search=self._search,
+        )
 
     def set_time_difference(self, new_time_difference):
         """
@@ -231,8 +257,14 @@ class _DioEpoch:
         _DioEpoch or subclass
             New class instance with a different time_difference and recomputed trigger offsets.
         """
-        return type(self)(self.ts_data, self.dio_data, self._trigger_channel, threshold=self._threshold,
-                          time_difference=new_time_difference, search=self._search)
+        return type(self)(
+            self.ts_data,
+            self.dio_data,
+            self._trigger_channel,
+            threshold=self._threshold,
+            time_difference=new_time_difference,
+            search=self._search,
+        )
 
     @lru_cache(maxsize=None)
     def set_trigger_offsets(self, parameters, offsets):
@@ -260,9 +292,16 @@ class _DioEpoch:
         new_trigger_offsets = copy.deepcopy(self._trigger_offsets)
         for idx, p in enumerate(parameters):
             new_trigger_offsets[p] = offsets[idx]
-        return type(self)(self.ts_data, self.dio_data, self._trigger_channel, threshold=self._threshold,
-                          time_difference=self._time_difference, search=self._search, compute=False,
-                          trigger_offsets=new_trigger_offsets)
+        return type(self)(
+            self.ts_data,
+            self.dio_data,
+            self._trigger_channel,
+            threshold=self._threshold,
+            time_difference=self._time_difference,
+            search=self._search,
+            compute=False,
+            trigger_offsets=new_trigger_offsets,
+        )
 
     def set_search(self, new_window):
         """
@@ -280,8 +319,14 @@ class _DioEpoch:
         _DioEpoch or subclass
             New class instance with a different search and recomputed trigger offsets.
         """
-        return type(self)(self.ts_data, self.dio_data, self._trigger_channel, threshold=self._threshold,
-                          time_difference=self._time_difference, search=new_window)
+        return type(self)(
+            self.ts_data,
+            self.dio_data,
+            self._trigger_channel,
+            threshold=self._threshold,
+            time_difference=self._time_difference,
+            search=new_window,
+        )
 
     def parameter_time(self, parameter):
         """
@@ -308,9 +353,19 @@ class _DioEpoch:
         if np.isnan(trigger_offset):
             trigger_offset = 0
         phys_start_time = self.ts_data.start_times[0]
-        stim_start_time = self.dio_data.start_times[parameter[0]] + self._time_difference
-        onset_time = stim_start_time + self.parameters.parameters.loc[parameter, "onset time (s)"] - phys_start_time
-        offset_time = stim_start_time + self.parameters.parameters.loc[parameter, "offset time (s)"] - phys_start_time
+        stim_start_time = (
+            self.dio_data.start_times[parameter[0]] + self._time_difference
+        )
+        onset_time = (
+            stim_start_time
+            + self.parameters.parameters.loc[parameter, "onset time (s)"]
+            - phys_start_time
+        )
+        offset_time = (
+            stim_start_time
+            + self.parameters.parameters.loc[parameter, "offset time (s)"]
+            - phys_start_time
+        )
 
         # compute start/end indices and times
         start_index = self.ts_data._time_to_index(onset_time, remove_gaps=False)
@@ -385,12 +440,24 @@ class _DioEpoch:
             Array of time points in seconds corresponding to each data point starting at the onset time.
         """
         # get number of data points by calling the dio_array method
-        dio_length = self.array(parameter=parameter, onset=onset, offset=offset).shape[1]
+        dio_length = self.array(parameter=parameter, onset=onset, offset=offset).shape[
+            1
+        ]
         # return an array starting at the onset time, incremented by the time between samples
         return np.add(np.arange(0, dio_length) / self.ts_data.sample_rate, onset)
 
-    def plot_parameter(self, parameter, channels=None, onset=-1, offset=1, show=True, events=False, axis=None,
-                       fig_size=(10, 6), **kwargs):
+    def plot_parameter(
+        self,
+        parameter,
+        channels=None,
+        onset=-1,
+        offset=1,
+        show=True,
+        events=False,
+        axis=None,
+        fig_size=(10, 6),
+        **kwargs
+    ):
         """
         Plots a parameter with the given channels and onset and offset times.
 
@@ -432,21 +499,29 @@ class _DioEpoch:
         elapsed_time = end_time + offset - start_time - onset
         # call the _TsData plotting method, but return the axis instead of showing the plot
         fig, ax = _plt_setup_fig_axis(axis=axis, fig_size=fig_size)
-        self.ts_data.plot(axis=ax, channels=channels, x_lim=(start_time + onset, end_time + offset), y_lim='max',
-                          show=False, **kwargs)
+        self.ts_data.plot(
+            axis=ax,
+            channels=channels,
+            x_lim=(start_time + onset, end_time + offset),
+            y_lim="max",
+            show=False,
+            **kwargs
+        )
 
         # reset the tick labels to reflect time 0 being stimulation start time
         order = int(math.log10(elapsed_time))
         # ensure that the tick steps are of sufficient size based on elapsed time
         step_size = int(elapsed_time * 10 ** (-1 * order)) * 10 ** (order - 1)
-        ticklabels = np.round(np.arange(onset, onset + elapsed_time, step_size), decimals=-1 * order + 3)
+        ticklabels = np.round(
+            np.arange(onset, onset + elapsed_time, step_size), decimals=-1 * order + 3
+        )
         ticks = np.add(ticklabels, start_time)
         plt.xticks(ticks=ticks, labels=ticklabels)
 
         # handle event data plotting
         if events:
             top_ax = _plt_add_ax_connected_top(fig, fig.axes[1])
-            self.plot_dio(axis=top_ax, show=False, color='orange', zorder=-1)
+            self.plot_dio(axis=top_ax, show=False, color="orange", zorder=-1)
             top_ax.set_xlim((start_time + onset, end_time + offset))
 
         if show:
@@ -485,11 +560,18 @@ class _DioEpoch:
         # get array of data to compute baseline from, find and return the mean
         start_time, stop_time = self.parameter_time(parameter)
         elapsed_time = stop_time - start_time
-        data = self.array(parameter=parameter, onset=first_onset, offset=second_onset - elapsed_time, channels=channel)
+        data = self.array(
+            parameter=parameter,
+            onset=first_onset,
+            offset=second_onset - elapsed_time,
+            channels=channel,
+        )
         baseline = float(np.nanmean(data, axis=1))
         return baseline
 
-    def delta(self, parameter, channel, first_onset=-3, second_onset=0, offset=0, method=None):
+    def delta(
+        self, parameter, channel, first_onset=-3, second_onset=0, offset=0, method=None
+    ):
         """
         Calculates changes in values at the specified channels due to stimulation. First calculates a baseline from the
         onset times, then compares the baseline to a maximum or minimum value across the stimulation period.
@@ -527,7 +609,9 @@ class _DioEpoch:
 
         # create empty dictionary, fill in with baseline
         delta_dict = {}
-        data = self.array(parameter, channels=channel, onset=first_onset, offset=offset, delayed=True)
+        data = self.array(
+            parameter, channels=channel, onset=first_onset, offset=offset, delayed=True
+        )
         on_idx = self.ts_data._time_to_index(first_onset)
         start_idx = self.ts_data._time_to_index(second_onset)
         shift_idx = start_idx - on_idx
@@ -591,15 +675,27 @@ class _DioEpoch:
         if parameters is None:
             parameters = list(self.parameters.parameters.index)
 
-        stim_end_times = [self.parameter_time(p)[1] for p in self.parameters.parameters.index]
+        stim_end_times = [
+            self.parameter_time(p)[1] for p in self.parameters.parameters.index
+        ]
 
         for parameter in parameters:
             # find initial parameters
             start_time, end_time = self.parameter_time(parameter)
             phys_start_time = self.ts_data.start_times[0]
-            stim_start_time = self.dio_data.start_times[parameter[0]] + self._time_difference
-            onset_time = stim_start_time + self.parameters.parameters.loc[parameter, "onset time (s)"] - phys_start_time
-            offset_time = stim_start_time + self.parameters.parameters.loc[parameter, "offset time (s)"] - phys_start_time
+            stim_start_time = (
+                self.dio_data.start_times[parameter[0]] + self._time_difference
+            )
+            onset_time = (
+                stim_start_time
+                + self.parameters.parameters.loc[parameter, "onset time (s)"]
+                - phys_start_time
+            )
+            offset_time = (
+                stim_start_time
+                + self.parameters.parameters.loc[parameter, "offset time (s)"]
+                - phys_start_time
+            )
 
             # check for trigger pulse
             if np.isnan(self._trigger_offsets[parameter]):
@@ -608,8 +704,12 @@ class _DioEpoch:
             # check for block start/end time interruption
             in_block = False
             for i in range(self.ts_data.ndata):
-                if self.ts_data.start_times[i] - self.ts_data.start_times[0] < onset_time < offset_time < \
-                        self.ts_data.end_times[i] - self.ts_data.start_times[0]:
+                if (
+                    self.ts_data.start_times[i] - self.ts_data.start_times[0]
+                    < onset_time
+                    < offset_time
+                    < self.ts_data.end_times[i] - self.ts_data.start_times[0]
+                ):
                     in_block = True
             if not in_block:
                 block_interruptions.append(parameter)
@@ -623,19 +723,39 @@ class _DioEpoch:
                     baseline_overlap.append(parameter)
 
         # generate warnings
-        warnings.warn("Missing trigger pulse in parameters : {}".format(missing_triggers))
-        warnings.warn("Stimulation period interruption by start/end of block in parameters: {}".format(block_interruptions))
-        warnings.warn("Baseline period interruption by start/end of block in parameters: {}".format(baseline_interruptions))
-        warnings.warn("Baseline period overlap with other stimulation in parameters: {}".format(baseline_overlap))
+        warnings.warn(
+            "Missing trigger pulse in parameters : {}".format(missing_triggers)
+        )
+        warnings.warn(
+            "Stimulation period interruption by start/end of block in parameters: {}".format(
+                block_interruptions
+            )
+        )
+        warnings.warn(
+            "Baseline period interruption by start/end of block in parameters: {}".format(
+                baseline_interruptions
+            )
+        )
+        warnings.warn(
+            "Baseline period overlap with other stimulation in parameters: {}".format(
+                baseline_overlap
+            )
+        )
 
-        warnings_dict = {"Missing Triggers": missing_triggers, "Stimulation Interruption": block_interruptions,
-                         "Baseline Interruptions": baseline_interruptions, "Stim During Baseline": baseline_overlap}
+        warnings_dict = {
+            "Missing Triggers": missing_triggers,
+            "Stimulation Interruption": block_interruptions,
+            "Baseline Interruptions": baseline_interruptions,
+            "Stim During Baseline": baseline_overlap,
+        }
 
         # return dictionary of parameter information
         if plot:
             warnings_dict["Plot Figures"] = []
             for p in parameters:
-                fig, ax = self.plot_parameter(p, onset=(-1 * baseline), offset=5, show=False, events=True)
+                fig, ax = self.plot_parameter(
+                    p, onset=(-1 * baseline), offset=5, show=False, events=True
+                )
                 plt.title(p)
                 warnings_dict["Plot Figures"].append(fig)
             return warnings_dict
@@ -660,7 +780,7 @@ class _DioEpoch:
         See Also
         ________
         pyCAP.base.dio_data._DioData.dio
-         """
+        """
         # TODO: test this method on data with multiple channels
         indicators = self.dio_data.dio_indicators(channel)
         new_dio = np.ndarray((0,))
@@ -670,8 +790,17 @@ class _DioEpoch:
                 new_dio = np.append(new_dio, [start_time, end_time])
         return new_dio
 
-    def plot_dio(self, *args, axis=None, ch_names=None, x_lim=None, fig_size=(10, 1.5), display='span', show=True,
-                 **kwargs):
+    def plot_dio(
+        self,
+        *args,
+        axis=None,
+        ch_names=None,
+        x_lim=None,
+        fig_size=(10, 1.5),
+        display="span",
+        show=True,
+        **kwargs
+    ):
         """
         Plots electrical stimulation time periods in a raster format with start/stop times relative to the start of the
         time series data set with no gaps.
@@ -716,8 +845,17 @@ class _DioEpoch:
             new_dio[channel] = self.dio(channel)
 
         # plot the data using the dio data raster plot method
-        self.dio_data.plot_dio(*args, axis=axis, ch_names=ch_names, x_lim=x_lim, fig_size=fig_size, display=display,
-                               show=show, dio=new_dio, **kwargs)
+        self.dio_data.plot_dio(
+            *args,
+            axis=axis,
+            ch_names=ch_names,
+            x_lim=x_lim,
+            fig_size=fig_size,
+            display=display,
+            show=show,
+            dio=new_dio,
+            **kwargs
+        )
 
     def create_all_phys_dataframe(self, calc_type=min):
 
@@ -725,14 +863,35 @@ class _DioEpoch:
         for idx in self.dio_data.parameters.index.to_list():
             for chan in self.ts_data.ch_names:
                 columns = self.dio_data.parameters.columns
-                unique_columns = [c for c in columns if len(self.data_phys_response.dio_data.parameters[c].unique()) > 1]
+                unique_columns = [
+                    c
+                    for c in columns
+                    if len(self.data_phys_response.dio_data.parameters[c].unique()) > 1
+                ]
                 key_vals = self.dio_data.parameters.loc[idx, unique_columns]
 
-                if key_vals['pulse amplitude (μA)'] < 0:
-                    key_vals['pulse amplitude (μA)'] *= -1
-                master_list.append([self.delta(parameter=idx, channel=chan, method='maximum')['absolute change'], chan,
-                                    *key_vals])
-        self.master_df = pd.DataFrame(master_list, columns=['delta', "Recording Channel", "Stimulation Amplitude", "Stimulation Channel", "Condition", "Stimulation Configuration"])
+                if key_vals["pulse amplitude (μA)"] < 0:
+                    key_vals["pulse amplitude (μA)"] *= -1
+                master_list.append(
+                    [
+                        self.delta(parameter=idx, channel=chan, method="maximum")[
+                            "absolute change"
+                        ],
+                        chan,
+                        *key_vals,
+                    ]
+                )
+        self.master_df = pd.DataFrame(
+            master_list,
+            columns=[
+                "delta",
+                "Recording Channel",
+                "Stimulation Amplitude",
+                "Stimulation Channel",
+                "Condition",
+                "Stimulation Configuration",
+            ],
+        )
         # bag = da.bag.from_delayed(self.master_df['delta'].tolist())
         # deltas = bag.compute()
         # self.master_df.drop(columns='delta')
@@ -741,24 +900,33 @@ class _DioEpoch:
     def _expected_indices(self, parameter):
         # returns the expected indices for the phys data array to search for a stimulation
         phys_start_time = self.ts_data.start_times[0]
-        stim_start_time = self.dio_data.start_times[parameter[0]] + self._time_difference
-        onset_time = stim_start_time + self.parameters.parameters.loc[parameter, "onset time (s)"] - phys_start_time
+        stim_start_time = (
+            self.dio_data.start_times[parameter[0]] + self._time_difference
+        )
+        onset_time = (
+            stim_start_time
+            + self.parameters.parameters.loc[parameter, "onset time (s)"]
+            - phys_start_time
+        )
 
         start_index = self.ts_data._time_to_index(onset_time, remove_gaps=False)
-        return start_index - int(self.ts_data.sample_rate * self._search), start_index + int(
-            self.ts_data.sample_rate * self._search)
+        return start_index - int(
+            self.ts_data.sample_rate * self._search
+        ), start_index + int(self.ts_data.sample_rate * self._search)
 
     def _verify_pulse(self, parameter):
         # check for a stimulation pulse in the phys data set
         i1, i2 = self._expected_indices(parameter)
         data = self.ts_data.remove_ch(self._trigger_channel, invert=True)
-        array = data.array[0, i1:i2 + 1].compute()
+        array = data.array[0, i1 : i2 + 1].compute()
         expected_index = int((i1 + i2) / 2) - i1
 
         # find the index of the trigger pulse that is the closest to the estimated stimulation period
         smallest_offset = i2 - i1
         for idx, point in enumerate(array):
-            if point > self._threshold and abs(idx - expected_index) < abs(smallest_offset):
+            if point > self._threshold and abs(idx - expected_index) < abs(
+                smallest_offset
+            ):
                 smallest_offset = idx - expected_index
 
         # convert this trigger pulse to seconds of offset or NaN if no pulse is found.
@@ -774,9 +942,12 @@ class _DioEpoch:
         for p in parameters_list:
             offset = self._verify_pulse(p)
             if np.isnan(offset):
-                warnings.warn("No trigger pulse found for stimulation parameter {}".format(p))
+                warnings.warn(
+                    "No trigger pulse found for stimulation parameter {}".format(p)
+                )
             offsets.append(offset)
         return offsets
+
 
 # TODO: steps to make this class better:
 # implement the remove_gaps parameter similarly to the _TsData class

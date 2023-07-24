@@ -27,14 +27,26 @@ from ipywidgets import interact, AppLayout, FloatSlider, VBox, Button, Output
 # neuro base class imports
 from .dio_data import _DioData
 from .event_data import _EventData
-from .utils.numeric import _to_numeric_array, largest_triangle_three_buckets, _group_consecutive
-from .utils.visualization import _plt_setup_fig_axis, _plt_show_fig, _plt_ax_to_pix, _plt_add_ax_connected_top, \
-    _plt_check_interactive
+from .utils.numeric import (
+    _to_numeric_array,
+    largest_triangle_three_buckets,
+    _group_consecutive,
+)
+from .utils.visualization import (
+    _plt_setup_fig_axis,
+    _plt_show_fig,
+    _plt_ax_to_pix,
+    _plt_add_ax_connected_top,
+    _plt_check_interactive,
+)
 
 from multiprocessing.pool import ThreadPool
-dask.config.set(scheduler='threads', pool=ThreadPool(8))
 
-sns.set_context("paper", font_scale=1.4, rc={"lines.linewidth": 2.5, "axes.linewidth": 2.0})
+dask.config.set(scheduler="threads", pool=ThreadPool(8))
+
+sns.set_context(
+    "paper", font_scale=1.4, rc={"lines.linewidth": 2.5, "axes.linewidth": 2.0}
+)
 sns.set_style("ticks")
 
 cache = Cache(2e9)  # Leverage two gigabytes of memory
@@ -45,8 +57,18 @@ class _TsData:
     """
     Class for time series data. Contains many of the methods for the pyCAP.Ephys child class.
     """
-    def __init__(self, data, metadata, chunks=None, daskify=True, thread_safe=True, fancy_index=True, order=True,
-                 ch_offsets=None):
+
+    def __init__(
+        self,
+        data,
+        metadata,
+        chunks=None,
+        daskify=True,
+        thread_safe=True,
+        fancy_index=True,
+        order=True,
+        ch_offsets=None,
+    ):
         """
         Constructor for time series data objects.
 
@@ -93,24 +115,34 @@ class _TsData:
 
         # Setup data, converting to dask if required
         if daskify:
-            self.data = [da.from_array(d, lock=thread_safe, fancy=fancy_index) for d in data]
+            self.data = [
+                da.from_array(d, lock=thread_safe, fancy=fancy_index) for d in data
+            ]
         else:
             self.data = data
         if ch_offsets is not None:
             for meta in metadata:
-                if 'ch_offsets' not in meta.keys():
-                    meta['ch_offsets'] = ch_offsets
-                meta['stream_lengths'] = meta['stream_lengths'] - min([min(ch_offsets), 0]) - max([min(ch_offsets), 0])
+                if "ch_offsets" not in meta.keys():
+                    meta["ch_offsets"] = ch_offsets
+                meta["stream_lengths"] = (
+                    meta["stream_lengths"]
+                    - min([min(ch_offsets), 0])
+                    - max([min(ch_offsets), 0])
+                )
             self.orig_data = data
-            if len(ch_offsets) != self.orig_data[0].shape[0]:       # check for channel offsets of incorrect length
-                raise ValueError("Channel offsets must be the same length as the number of channels")
+            if (
+                len(ch_offsets) != self.orig_data[0].shape[0]
+            ):  # check for channel offsets of incorrect length
+                raise ValueError(
+                    "Channel offsets must be the same length as the number of channels"
+                )
             # rechunk and rearrange arrays to account for channel offsets if necessary
             self.data = self._introduce_offsets(ch_offsets)
 
         # sort all data sets by start time, place in chronological order
         if order:
             unsorted = [(a, m) for a, m in zip(self.data, self.metadata)]
-            srted = sorted(unsorted, key=lambda x: x[1]['start_time'])
+            srted = sorted(unsorted, key=lambda x: x[1]["start_time"])
             self.data = [s[0] for s in srted]
             self.metadata = [s[1] for s in srted]
 
@@ -324,7 +356,7 @@ class _TsData:
         ['RawE 1', 'RawE 2', 'RawE 3', 'RawE 4', 'RawG 1', 'RawG 2', 'RawG 3', 'RawG 4', 'LIFt 1', 'LIFt 2', 'LIFt 3', 'LIFt 4', 'EMGt 1', 'EMGt 2', 'EMGt 3', 'EMGt 4']
 
         """
-        ch_names = [tuple(meta['ch_names']) for meta in self.metadata]
+        ch_names = [tuple(meta["ch_names"]) for meta in self.metadata]
         if len(set(ch_names)) == 1:
             return list(ch_names[0])
         else:
@@ -357,13 +389,17 @@ class _TsData:
         """
         # TODO: make this accept a dictionary with channel mask which is more convenient for large ch counts
         if len(ch_names) != len(self.ch_names):
-            raise ValueError("Number of channels in input 'types' does not match number of channels in data array.")
+            raise ValueError(
+                "Number of channels in input 'types' does not match number of channels in data array."
+            )
         if len(set(ch_names)) != len(self.ch_names):
-            raise ValueError("Multiple channels can not be assigned the same channel name.")
+            raise ValueError(
+                "Multiple channels can not be assigned the same channel name."
+            )
 
         metadata = copy.deepcopy(self.metadata)
         for m in metadata:
-            m['ch_names'] = ch_names
+            m["ch_names"] = ch_names
         return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
 
     @property
@@ -385,7 +421,10 @@ class _TsData:
         >>> sorted(ephys_data.types)     # sort this list to ensure the order is always the same
         ['L','L','L','L','E','E','E','E','L','L','L','L','E','E','E','E']
         """
-        ch_types = [tuple(meta['types']) if 'types' in meta.keys() else tuple() for meta in self.metadata]
+        ch_types = [
+            tuple(meta["types"]) if "types" in meta.keys() else tuple()
+            for meta in self.metadata
+        ]
         if len(set(ch_types)) == 1:
             return list(set(ch_types[0]))
         else:
@@ -410,7 +449,10 @@ class _TsData:
         >>> sorted(ephys_data.types)     # sort this list to ensure the order is always the same
         ['L','E']
         """
-        ch_types = [tuple(meta['types']) if 'types' in meta.keys() else tuple() for meta in self.metadata]
+        ch_types = [
+            tuple(meta["types"]) if "types" in meta.keys() else tuple()
+            for meta in self.metadata
+        ]
         if len(set(ch_types)) == 1:
             return ch_types[0]
         else:
@@ -445,9 +487,15 @@ class _TsData:
         # TODO: make this accept a dictionary with channel mask which is more convenient for large ch counts
         metadata = copy.deepcopy(self.metadata)
         if len(ch_types) != len(self.ch_names):
-            raise ValueError("Number of channels in input 'types'", len(ch_types), "does not match number of channels in data array", len(self.ch_names), ".")
+            raise ValueError(
+                "Number of channels in input 'types'",
+                len(ch_types),
+                "does not match number of channels in data array",
+                len(self.ch_names),
+                ".",
+            )
         for m in metadata:
-            m['types'] = ch_types
+            m["types"] = ch_types
         if rename:
             ch_names = ch_types.copy()
             for t in set(ch_types):
@@ -456,7 +504,9 @@ class _TsData:
                     if ch == t:
                         ch_names[i] = ch_names[i] + " " + str(int(t_count))
                         t_count += 1
-            return type(self)(self.data, metadata, chunks=self.chunks, daskify=False).set_ch_names(ch_names)
+            return type(self)(
+                self.data, metadata, chunks=self.chunks, daskify=False
+            ).set_ch_names(ch_names)
         else:
             return type(self)(self.data, metadata, chunks=self.chunks, daskify=False)
 
@@ -476,7 +526,7 @@ class _TsData:
         24414.0625
         """
         # returns single value if all data sets have the same sampling rate, otherwise returns list
-        rates = [meta['sample_rate'] for meta in self.metadata]
+        rates = [meta["sample_rate"] for meta in self.metadata]
         if len(set(rates)) == 1:
             return rates[0]
         else:
@@ -497,7 +547,7 @@ class _TsData:
         >>> ephys_data.start_times
         [1576541104.999999]
         """
-        start_times = [meta['start_time'] for meta in self.metadata]
+        start_times = [meta["start_time"] for meta in self.metadata]
         return start_times
 
     @property
@@ -544,7 +594,9 @@ class _TsData:
         >>> ephys_data.end_times
         [1576541111.3753412]
         """
-        return [t + (s[1] / self.sample_rate) for t, s in zip(self.start_times, self.shapes)]
+        return [
+            t + (s[1] / self.sample_rate) for t, s in zip(self.start_times, self.shapes)
+        ]
 
     @property
     def ndata(self):
@@ -584,14 +636,21 @@ class _TsData:
 
         """
         # Chunk size is arbitrary
-        time_points = [da.arange(d.shape[1], chunks=c[1]*10) for d, c in zip(self.data, self.chunks)]
+        time_points = [
+            da.arange(d.shape[1], chunks=c[1] * 10)
+            for d, c in zip(self.data, self.chunks)
+        ]
         sample_rates = self.sample_rate
         for i in range(1, self.ndata):
-            time_points[i] = time_points[i] + time_points[i-1][-1] + 1
+            time_points[i] = time_points[i] + time_points[i - 1][-1] + 1
             if not remove_gaps and isinstance(sample_rates, list):
-                time_points[i] = time_points[i] + sample_rates[i] * (self.start_times[i] - self.end_times[i - 1])
+                time_points[i] = time_points[i] + sample_rates[i] * (
+                    self.start_times[i] - self.end_times[i - 1]
+                )
             elif not remove_gaps:
-                time_points[i] = time_points[i] + sample_rates * (self.start_times[i] - self.end_times[i - 1])
+                time_points[i] = time_points[i] + sample_rates * (
+                    self.start_times[i] - self.end_times[i - 1]
+                )
         if isinstance(sample_rates, list):
             return da.concatenate([t / s for t, s in zip(time_points, sample_rates)])
         else:
@@ -633,18 +692,30 @@ class _TsData:
                 for ch in ch_type:
                     if isinstance(ch, str):
                         if ch in self.types:
-                            channels = np.logical_or(self._ch_type_to_index(ch)[:, None], channels)
+                            channels = np.logical_or(
+                                self._ch_type_to_index(ch)[:, None], channels
+                            )
                         else:
                             raise Warning(ch + " not found in types")
                     else:
-                        raise ValueError("Input 'ch_type' is expected to be list of str, not " + type(ch))
+                        raise ValueError(
+                            "Input 'ch_type' is expected to be list of str, not "
+                            + type(ch)
+                        )
             else:
-                raise ValueError("Input 'ch_type' is expected to be of type str, list, or numpy array")
-            data = [d - d[channel, :].repeat(d.shape[0], axis=0) * channels for d in self.data]
+                raise ValueError(
+                    "Input 'ch_type' is expected to be of type str, list, or numpy array"
+                )
+            data = [
+                d - d[channel, :].repeat(d.shape[0], axis=0) * channels
+                for d in self.data
+            ]
             # Both return and remove channel used as reference.
-        return type(self)(data, self.metadata, chunks=self.chunks, daskify=False).remove_ch(channel)
+        return type(self)(
+            data, self.metadata, chunks=self.chunks, daskify=False
+        ).remove_ch(channel)
 
-    def common_reference(self, ch_type=None, method='mean'):
+    def common_reference(self, ch_type=None, method="mean"):
         """
         Creates a new object with specified channel types re-referenced to a common mean or median.
 
@@ -667,10 +738,14 @@ class _TsData:
 
         """
         if ch_type is None:
-            if method == 'mean':
-                data = [(d - da.mean(d, axis=0)[None, :] + d / d.shape[0]) * d.shape[0] / (d.shape[0] - 1) for d in
-                        self.data]
-            elif method == 'median':
+            if method == "mean":
+                data = [
+                    (d - da.mean(d, axis=0)[None, :] + d / d.shape[0])
+                    * d.shape[0]
+                    / (d.shape[0] - 1)
+                    for d in self.data
+                ]
+            elif method == "median":
                 data = []
                 for d in self.data:
                     d_array = []
@@ -678,13 +753,18 @@ class _TsData:
                         median_idx = np.ones(d.shape[0], dtype=bool)
                         median_idx[i] = 0
                         new_chunks = (sum(median_idx), d.chunks[1])
-                        median_data = da.map_blocks(lambda x: np.median(x, axis=0)[None, :],
-                                                    da.rechunk(d[median_idx, :], new_chunks), chunks=(1, new_chunks[1]))
+                        median_data = da.map_blocks(
+                            lambda x: np.median(x, axis=0)[None, :],
+                            da.rechunk(d[median_idx, :], new_chunks),
+                            chunks=(1, new_chunks[1]),
+                        )
                         d_array.append(d[i, :] - median_data[0, :])
 
                     data.append(da.stack(d_array))
             else:
-                raise ValueError(str(method) + " is not a valid option for input 'method'")
+                raise ValueError(
+                    str(method) + " is not a valid option for input 'method'"
+                )
         else:
             if isinstance(ch_type, str):
                 if ch_type in self.types:
@@ -696,21 +776,42 @@ class _TsData:
                 for ch in ch_type:
                     if isinstance(ch, str):
                         if ch in self.types:
-                            channels = np.logical_or(self._ch_type_to_index(ch)[:, None], channels)
+                            channels = np.logical_or(
+                                self._ch_type_to_index(ch)[:, None], channels
+                            )
                         else:
                             raise Warning(ch + " not found in types")
                     else:
-                        raise ValueError("Input 'ch_type' is expected to be list of str, not " + type(ch))
+                        raise ValueError(
+                            "Input 'ch_type' is expected to be list of str, not "
+                            + type(ch)
+                        )
             else:
-                raise ValueError("Input 'ch_type' is expected to be of type str, list, tuple, or numpy array")
-            if method == 'mean':
+                raise ValueError(
+                    "Input 'ch_type' is expected to be of type str, list, tuple, or numpy array"
+                )
+            if method == "mean":
                 ch_num = sum(channels)[0]
 
                 data = []
                 for d in self.data:
-                    d_mean = da.repeat(da.mean(d[channels[:, 0], :], axis=0)[None, :], d.shape[0], axis=0) * channels
-                    data.append(d - (d_mean + (d * channels / d.shape[0]) * (channels * ch_num / (ch_num - 1))))
-            elif method == 'median':
+                    d_mean = (
+                        da.repeat(
+                            da.mean(d[channels[:, 0], :], axis=0)[None, :],
+                            d.shape[0],
+                            axis=0,
+                        )
+                        * channels
+                    )
+                    data.append(
+                        d
+                        - (
+                            d_mean
+                            + (d * channels / d.shape[0])
+                            * (channels * ch_num / (ch_num - 1))
+                        )
+                    )
+            elif method == "median":
                 data = []
                 for d in self.data:
                     d_array = []
@@ -720,18 +821,22 @@ class _TsData:
                             median_idx[i] = 0
                             median_idx[np.logical_not(channels[:, 0])] = 0
                             new_chunks = (sum(median_idx), d.chunks[1])
-                            median_data = da.map_blocks(lambda x: np.median(x, axis=0)[None, :],
-                                                        da.rechunk(d[median_idx, :], new_chunks),
-                                                        chunks=(1, new_chunks[1]))
+                            median_data = da.map_blocks(
+                                lambda x: np.median(x, axis=0)[None, :],
+                                da.rechunk(d[median_idx, :], new_chunks),
+                                chunks=(1, new_chunks[1]),
+                            )
                             d_array.append(d[i, :] - median_data[0, :])
                         else:
                             d_array.append(d[i, :])
                     data.append(da.stack(d_array))
             else:
-                raise ValueError(str(method) + " is not a valid option for input 'method'")
+                raise ValueError(
+                    str(method) + " is not a valid option for input 'method'"
+                )
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_iir(self, Wn, rp=None, rs=None, btype='band', order=1, ftype='butter'):
+    def filter_iir(self, Wn, rp=None, rs=None, btype="band", order=1, ftype="butter"):
         """
         Filters the data with an infinite impulse response (iir) filter with the scipy.signal.iirfilter method.
 
@@ -756,13 +861,29 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
-        sos = signal.iirfilter(order, Wn, rp=rp, rs=rs, btype=btype, ftype=ftype, output='sos', fs=self.sample_rate)
+        sos = signal.iirfilter(
+            order,
+            Wn,
+            rp=rp,
+            rs=rs,
+            btype=btype,
+            ftype=ftype,
+            output="sos",
+            fs=self.sample_rate,
+        )
         a, b = signal.sos2tf(sos)
         overlap = max(len(a), len(b))
-        data = [da.map_overlap(d, lambda x: signal.sosfiltfilt(sos, x), (0, overlap), dtype=d.dtype) for d in self.data]
+        data = [
+            da.map_overlap(
+                d, lambda x: signal.sosfiltfilt(sos, x), (0, overlap), dtype=d.dtype
+            )
+            for d in self.data
+        ]
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_fir(self, cutoff, width=None, filter_length='auto', window='hamming', pass_zero=True):
+    def filter_fir(
+        self, cutoff, width=None, filter_length="auto", window="hamming", pass_zero=True
+    ):
         """
         Filters the frequencies specified in the 'cutoff' parameter with a finite impulse response (fir) filter.
 
@@ -789,13 +910,23 @@ class _TsData:
 
         def convfft(x):
             conv1 = np.flip(
-                signal.fftconvolve(np.flip(signal.fftconvolve(x[0, :], filter_weights, mode='same')), filter_weights,
-                                   mode='same'))[None, :]
+                signal.fftconvolve(
+                    np.flip(signal.fftconvolve(x[0, :], filter_weights, mode="same")),
+                    filter_weights,
+                    mode="same",
+                )
+            )[None, :]
             return conv1
 
         numtaps = int((3.3 * self.sample_rate) / (2 * width)) * 2 + 1
-        filter_weights = signal.firwin(numtaps, cutoff, width=width, window=window, pass_zero=pass_zero,
-                                       fs=self.sample_rate)
+        filter_weights = signal.firwin(
+            numtaps,
+            cutoff,
+            width=width,
+            window=window,
+            pass_zero=pass_zero,
+            fs=self.sample_rate,
+        )
         min_chunk_size = min([min(d.chunks[1]) for d in self.data])
         chunk_size = min([d.chunks[1][0] for d in self.data])
         data = []
@@ -806,15 +937,36 @@ class _TsData:
                 c_chunks = [n_chunk_size] * (int(d.shape[1] // n_chunk_size) - 1)
                 last_chunk = int(n_chunk_size + (d.shape[1] % n_chunk_size))
                 c_chunks = tuple(c_chunks + [last_chunk])
-                data.append(da.map_overlap(da.rechunk(d, (r_chunks, c_chunks)), convfft, (0, numtaps), dtype=d.dtype))
+                data.append(
+                    da.map_overlap(
+                        da.rechunk(d, (r_chunks, c_chunks)),
+                        convfft,
+                        (0, numtaps),
+                        dtype=d.dtype,
+                    )
+                )
 
         else:
-            data = [da.map_overlap(d, lambda x: np.flip(
-                signal.fftconvolve(np.flip(signal.fftconvolve(x[0, :], filter_weights, mode='same')), filter_weights,
-                                   mode='same'))[None, :], (0, numtaps), dtype=d.dtype) for d in self.data]
+            data = [
+                da.map_overlap(
+                    d,
+                    lambda x: np.flip(
+                        signal.fftconvolve(
+                            np.flip(
+                                signal.fftconvolve(x[0, :], filter_weights, mode="same")
+                            ),
+                            filter_weights,
+                            mode="same",
+                        )
+                    )[None, :],
+                    (0, numtaps),
+                    dtype=d.dtype,
+                )
+                for d in self.data
+            ]
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_median(self, kernel_size=201, btype='lowpass'):
+    def filter_median(self, kernel_size=201, btype="lowpass"):
         """
         Filters the channels using a median filter. The median filter slides across the data set and replaces each data
         point with the median of surrounding entries using the scipy.ndimage.median_filter method. The median filter is
@@ -833,18 +985,31 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
-        if btype in ('lowpass', 'low'):
-            data = [da.map_overlap(d, lambda x: scipy.ndimage.median_filter(x, size=(1, kernel_size)), (0, kernel_size),
-                                   dtype=d.dtype) for d in self.data]
-        elif btype in ('highpass', 'high'):
+        if btype in ("lowpass", "low"):
             data = [
-                da.map_overlap(d, lambda x: x - scipy.ndimage.median_filter(x, size=(1, kernel_size)), (0, kernel_size),
-                               dtype=d.dtype) for d in self.data]
+                da.map_overlap(
+                    d,
+                    lambda x: scipy.ndimage.median_filter(x, size=(1, kernel_size)),
+                    (0, kernel_size),
+                    dtype=d.dtype,
+                )
+                for d in self.data
+            ]
+        elif btype in ("highpass", "high"):
+            data = [
+                da.map_overlap(
+                    d,
+                    lambda x: x - scipy.ndimage.median_filter(x, size=(1, kernel_size)),
+                    (0, kernel_size),
+                    dtype=d.dtype,
+                )
+                for d in self.data
+            ]
         else:
             raise ValueError("Value of input 'btype'")
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_gaussian(self, Wn, btype='lowpass', order=0, truncate=4.0):
+    def filter_gaussian(self, Wn, btype="lowpass", order=0, truncate=4.0):
         """
         Filters the channels using a gaussian filter using the scipy.ndimage.guassian_filter1d method.
 
@@ -869,18 +1034,36 @@ class _TsData:
         s_c = Wn / self.sample_rate
         sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
         lw = int(truncate * sigma + 0.5)
-        if btype in ('lowpass', 'low'):
-            data = [da.map_overlap(d, lambda x: scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order), (0, lw),
-                                   dtype=d.dtype) for d in self.data]
-        elif btype in ('highpass', 'high'):
+        if btype in ("lowpass", "low"):
             data = [
-                da.map_overlap(d, lambda x: x - scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order), (0, lw),
-                               dtype=d.dtype) for d in self.data]
+                da.map_overlap(
+                    d,
+                    lambda x: scipy.ndimage.gaussian_filter1d(
+                        x, sigma, axis=1, order=order
+                    ),
+                    (0, lw),
+                    dtype=d.dtype,
+                )
+                for d in self.data
+            ]
+        elif btype in ("highpass", "high"):
+            data = [
+                da.map_overlap(
+                    d,
+                    lambda x: x
+                    - scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order),
+                    (0, lw),
+                    dtype=d.dtype,
+                )
+                for d in self.data
+            ]
         else:
             raise ValueError("Value of input 'btype'")
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_powerline(self, frequencies=[60, 120, 180], notch_width=None, trans_bandwidth=1.0):
+    def filter_powerline(
+        self, frequencies=[60, 120, 180], notch_width=None, trans_bandwidth=1.0
+    ):
         """Filter powerline noise from time series data.
 
         This function filters data with a series of notch filters at defined frequencies. Filtering frequencies
@@ -917,14 +1100,25 @@ class _TsData:
             if len(widths) == 1:
                 widths = np.repeat(widths, len(frequencies))
             else:
-                raise ValueError("Number of notch_widths must match number of frequencies in powerline notch filter.")
+                raise ValueError(
+                    "Number of notch_widths must match number of frequencies in powerline notch filter."
+                )
         cutoffs = []
         for f, w in zip(frequencies, widths):
             cutoffs.append(f - (w / 2.0) - (trans_bandwidth / 2.0))
             cutoffs.append(f + (w / 2.0) + (trans_bandwidth / 2.0))
         return self.filter_fir(cutoffs, width=trans_bandwidth)
-    
-    def plot_times(self, *args, axis=None, events=None, x_lim=None, fig_size=(10, 2), show=True, **kwargs):
+
+    def plot_times(
+        self,
+        *args,
+        axis=None,
+        events=None,
+        x_lim=None,
+        fig_size=(10, 2),
+        show=True,
+        **kwargs
+    ):
         """
         Plots the times when experiments represented by the data sets were conducted.
         Useful for visualizing experiment duration and experiment timing relative to other experiments.
@@ -973,9 +1167,9 @@ class _TsData:
         # Handle event data if passed to plot function
         if isinstance(events, (_DioData, _EventData)):
             if isinstance(events, _DioData):
-                events.plot_dio(axis=ax, show=False, color='grey', zorder=-1)
+                events.plot_dio(axis=ax, show=False, color="grey", zorder=-1)
             if isinstance(events, _EventData):
-                events.plot_events(axis=ax, show=False, color='orange', lw=1)
+                events.plot_events(axis=ax, show=False, color="orange", lw=1)
         else:
             ax.yaxis.set_visible(False)
 
@@ -983,9 +1177,20 @@ class _TsData:
 
         return _plt_show_fig(fig, ax, show)
 
-    def plot(self, axis=None, channels=None, events=None, x_lim=None, y_lim='auto', ch_labels=None,
-             colors=sns.color_palette(), fig_size=(10, 6), down_sample=True,
-             show=True, remove_gaps=True):
+    def plot(
+        self,
+        axis=None,
+        channels=None,
+        events=None,
+        x_lim=None,
+        y_lim="auto",
+        ch_labels=None,
+        colors=sns.color_palette(),
+        fig_size=(10, 6),
+        down_sample=True,
+        show=True,
+        remove_gaps=True,
+    ):
         """Method for plotting time series data.
 
         Method for plotting time series data using matplotlib. Also allows for interactive plots within a jupyter
@@ -1039,8 +1244,10 @@ class _TsData:
         show = _plt_check_interactive(show)
 
         # Set up figure and axis for plotting
-        if show == 'notebook':
-            fig, axes = _plt_setup_fig_axis(axis, fig_size, subplots=(2, 1), gridspec_kw={'height_ratios': [29, 1]})
+        if show == "notebook":
+            fig, axes = _plt_setup_fig_axis(
+                axis, fig_size, subplots=(2, 1), gridspec_kw={"height_ratios": [29, 1]}
+            )
             ax = axes[0]
             scroll_ax = axes[1]
         else:
@@ -1056,13 +1263,16 @@ class _TsData:
         # x_limits are expected to be received in terms of time
         x_lim = self._time_lim_validate(x_lim, remove_gaps=remove_gaps)
 
-        x_index = (self._time_to_index(x_lim[0], remove_gaps=remove_gaps), self._time_to_index(x_lim[1], remove_gaps=remove_gaps)+1)
-        plot_array = self.array[channels, x_index[0]:x_index[1]].compute()
+        x_index = (
+            self._time_to_index(x_lim[0], remove_gaps=remove_gaps),
+            self._time_to_index(x_lim[1], remove_gaps=remove_gaps) + 1,
+        )
+        plot_array = self.array[channels, x_index[0] : x_index[1]].compute()
 
         # get plot data
         ax.set_xlim(x_lim)
 
-        if y_lim is not None and y_lim != 'auto' and y_lim != 'max':
+        if y_lim is not None and y_lim != "auto" and y_lim != "max":
             y_lim = _to_numeric_array(y_lim)
             if len(y_lim) == 1:
                 d_r = y_lim[0]
@@ -1076,7 +1286,8 @@ class _TsData:
                 y_lim = (y_lim[0], y_lim[2])
             else:
                 raise AttributeError(
-                    "Input y_lim is expected to be None, 'auto', 'max', or iterable with length less than 3.")
+                    "Input y_lim is expected to be None, 'auto', 'max', or iterable with length less than 3."
+                )
         else:
             # plot +- 6 standard deviation of the median std.dev in the dataset
             d_r = np.median(np.std(plot_array, axis=1), axis=0) * 6
@@ -1084,10 +1295,10 @@ class _TsData:
         offsets = np.zeros((plot_array.shape[0], 2), dtype=float)
         offsets[:, 1] = tick_locations
 
-        if y_lim == 'auto' or y_lim is None:
+        if y_lim == "auto" or y_lim is None:
             d_min = tick_locations[0] - d_r
             d_max = tick_locations[-1] + d_r
-        elif y_lim == 'max':
+        elif y_lim == "max":
             d_min = np.min(np.min(plot_array, axis=1) + tick_locations)
             d_max = np.max(da.max(plot_array, axis=1) + tick_locations)
         else:
@@ -1097,12 +1308,20 @@ class _TsData:
 
         px_width, _ = _plt_ax_to_pix(fig, ax)
 
-        plot_data = self._to_plt_line_collection(x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps)
+        plot_data = self._to_plt_line_collection(
+            x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps
+        )
         for data in plot_data:
             # TODO: Matplotlib 3.5.0 has changed how offsets work. The easy solution for right now is to exclude
             #  matplotlib version > 3.5 from the install list, however the best long-term solution is likely to shift
             #  this to use matplotlibs transforms instead which should be compatible across versions.
-            lines = LineCollection(data[0], offsets=offsets, colors=colors, linewidths=np.ones(plot_array.shape[0]), transOffset=None)
+            lines = LineCollection(
+                data[0],
+                offsets=offsets,
+                colors=colors,
+                linewidths=np.ones(plot_array.shape[0]),
+                transOffset=None,
+            )
             current_lines = ax.add_collection(lines)
 
         ax.set_yticks(tick_locations)
@@ -1110,29 +1329,54 @@ class _TsData:
             ax.set_yticklabels(np.asarray(ch_labels))
         else:
             ax.set_yticklabels(np.asarray(self.ch_names)[channels])
-        ax.set_xlabel('time (s)')
+        ax.set_xlabel("time (s)")
 
         # Handle event data if passed to plot function
         if isinstance(events, (_DioData, _EventData)):
             top_ax = _plt_add_ax_connected_top(fig, ax)
             if isinstance(events, _DioData):
-                events.plot_dio(axis=top_ax, reference=self, remove_gaps=remove_gaps, show=False, color='grey', zorder=-1)
+                events.plot_dio(
+                    axis=top_ax,
+                    reference=self,
+                    remove_gaps=remove_gaps,
+                    show=False,
+                    color="grey",
+                    zorder=-1,
+                )
             if isinstance(events, _EventData):
-                events.plot_events(axis=top_ax, reference=self, remove_gaps=remove_gaps, show=False, color='orange', lw=1)
+                events.plot_events(
+                    axis=top_ax,
+                    reference=self,
+                    remove_gaps=remove_gaps,
+                    show=False,
+                    color="orange",
+                    lw=1,
+                )
             top_ax.set_xlim(x_lim)
 
         # show the plot if appropriate
         if show == "notebook":
             # Handle event data if passed to plot function
             if isinstance(events, _DioData):
-                events.plot_dio(axis=scroll_ax, reference=self, remove_gaps=remove_gaps, show=False, color='orange', zorder=-1)
+                events.plot_dio(
+                    axis=scroll_ax,
+                    reference=self,
+                    remove_gaps=remove_gaps,
+                    show=False,
+                    color="orange",
+                    zorder=-1,
+                )
             scroll_ax.set_xlim(self._time_lim_validate(None))
             ax.set_xlabel(None)
-            scroll_ax.set_xlabel('Time (s)')
+            scroll_ax.set_xlabel("Time (s)")
             scroll_ax.get_yaxis().set_ticks([])
             scroll_ax.get_yaxis().set_visible(False)
-            scroll_span = scroll_ax.axvspan(x_lim[0], x_lim[1], color='green', zorder=11, alpha=0.7)
-            scroll_line = scroll_ax.axvline(x_lim[0],  color='green', zorder=11, alpha=0.7)
+            scroll_span = scroll_ax.axvspan(
+                x_lim[0], x_lim[1], color="green", zorder=11, alpha=0.7
+            )
+            scroll_line = scroll_ax.axvline(
+                x_lim[0], color="green", zorder=11, alpha=0.7
+            )
             # Add data set start points to the scrollbar axis
 
             if remove_gaps:
@@ -1141,33 +1385,42 @@ class _TsData:
                 start_times = [st - self.start_times[0] for st in self.start_times]
 
             for ts in start_times:
-                scroll_ax.axvline(ts, lw=2, color='black', zorder=10)
+                scroll_ax.axvline(ts, lw=2, color="black", zorder=10)
 
             # display data gaps on scrollbar axis if applicable
             if not remove_gaps:
-                gaps = [self.start_times[i] - self.end_times[i-1] for i in range(1, len(self.start_times))]
+                gaps = [
+                    self.start_times[i] - self.end_times[i - 1]
+                    for i in range(1, len(self.start_times))
+                ]
                 for g in range(len(gaps)):
-                    scroll_ax.axvspan(self.end_times[g] - self.start_times[0], self.end_times[g]+gaps[g] - self.start_times[0], color='red', zorder=9, alpha=0.5)
+                    scroll_ax.axvspan(
+                        self.end_times[g] - self.start_times[0],
+                        self.end_times[g] + gaps[g] - self.start_times[0],
+                        color="red",
+                        zorder=9,
+                        alpha=0.5,
+                    )
 
             plt.ioff()
             fig.tight_layout()
             slider = FloatSlider(
-                orientation='horizontal',
-                description='Start Time:',
+                orientation="horizontal",
+                description="Start Time:",
                 value=x_lim[0],
                 min=self.time(remove_gaps=remove_gaps)[0],
-                max=self.time(remove_gaps=remove_gaps)[-1]
+                max=self.time(remove_gaps=remove_gaps)[-1],
             )
             debug_view = Output()
 
-            slider.layout.margin = '0px 0% 0px 0%'
-            slider.layout.width = '100%'
+            slider.layout.margin = "0px 0% 0px 0%"
+            slider.layout.width = "100%"
 
             # fig.canvas.toolbar_visible = False
             fig.canvas.header_visible = False
             fig.canvas.footer_visible = False
-            fig.canvas.layout.min_height = '400px'
-            fig.canvas.layout.min_width = '400px'
+            fig.canvas.layout.min_height = "400px"
+            fig.canvas.layout.min_width = "400px"
 
             @debug_view.capture(clear_output=True)
             def update_lines(change):
@@ -1179,7 +1432,13 @@ class _TsData:
 
                 # Calculate new line segments
                 px_width_n, _ = _plt_ax_to_pix(fig, ax)
-                plot_data_n = self._to_plt_line_collection(x_lim_n, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps)
+                plot_data_n = self._to_plt_line_collection(
+                    x_lim_n,
+                    channels,
+                    px_width,
+                    down_sample=down_sample,
+                    remove_gaps=remove_gaps,
+                )
 
                 # Create line collection and add to plot.
                 current_lines.remove()
@@ -1188,32 +1447,53 @@ class _TsData:
                 down_sampled_n = []
                 for data_n in plot_data_n:
                     down_sampled_n.append(data_n[1])
-                    lines_n = LineCollection(data_n[0], offsets=offsets, colors=colors, linewidths=np.ones(plot_array.shape[0]), transOffset=None)
+                    lines_n = LineCollection(
+                        data_n[0],
+                        offsets=offsets,
+                        colors=colors,
+                        linewidths=np.ones(plot_array.shape[0]),
+                        transOffset=None,
+                    )
                     current_lines = ax.add_collection(lines_n)
-                scroll_span = scroll_ax.axvspan(x_lim_n[0], x_lim_n[1], color='green', zorder=11, alpha=0.7)
-                scroll_line = scroll_ax.axvline(x_lim_n[0],  color='green', zorder=11, alpha=0.7)
+                scroll_span = scroll_ax.axvspan(
+                    x_lim_n[0], x_lim_n[1], color="green", zorder=11, alpha=0.7
+                )
+                scroll_line = scroll_ax.axvline(
+                    x_lim_n[0], color="green", zorder=11, alpha=0.7
+                )
 
                 # Set new x_limits
                 ax.set_xlim(x_lim_n)
                 print((x_lim_n, down_sampled_n))
                 fig.canvas.draw()
                 fig.canvas.flush_events()
+
             # TODO: make sure this function is called less often so the slider can move faster
-            slider.observe(update_lines, names='value')
+            slider.observe(update_lines, names="value")
 
             app = AppLayout(
                 header=debug_view,
                 center=fig.canvas,
                 footer=slider,
-                pane_heights=[0.3, 6, 0.5]
+                pane_heights=[0.3, 6, 0.5],
             )
 
             return app
         else:
             return _plt_show_fig(fig, ax, show)
 
-    def plot_psd(self, axis=None, x_lim=None, y_lim=None, show=True, *args, fig_size=(10, 3), nperseg=None,
-                 colors=sns.color_palette(), **kwargs):
+    def plot_psd(
+        self,
+        axis=None,
+        x_lim=None,
+        y_lim=None,
+        show=True,
+        *args,
+        fig_size=(10, 3),
+        nperseg=None,
+        colors=sns.color_palette(),
+        **kwargs
+    ):
         """
         Plots Power Spectral Density (PSD) (V**2/Hz) vs. Frequency (Hz) using the Welch method and 50 percent overlap.
 
@@ -1253,11 +1533,22 @@ class _TsData:
         if nperseg is None:
             nperseg = int(self.sample_rate)
 
-        psd = da.apply_along_axis(signal.welch, 1, self.array, self.sample_rate, *args, shape=(2, nperseg),
-                                  dtype=np.float64, nperseg=nperseg, **kwargs)
+        psd = da.apply_along_axis(
+            signal.welch,
+            1,
+            self.array,
+            self.sample_rate,
+            *args,
+            shape=(2, nperseg),
+            dtype=np.float64,
+            nperseg=nperseg,
+            **kwargs
+        )
         psd = da.swapaxes(psd, 1, 2).compute()
 
-        lines = LineCollection(psd, linewidths=np.ones(psd.shape[0]), colors=colors, transOffset=None)
+        lines = LineCollection(
+            psd, linewidths=np.ones(psd.shape[0]), colors=colors, transOffset=None
+        )
         ax.add_collection(lines)
         # ax.semilogy(psd[0,:,0], psd[0,:,1])
 
@@ -1282,29 +1573,40 @@ class _TsData:
             ax.set_ylim(y_min, y_max)
         else:
             ax.set_ylim(y_lim[0], y_lim[1])
-        ax.set_yscale('log')
-        ax.set_xlabel('frequency [Hz]')
-        ax.set_ylabel('PSD [V**2/Hz]')
+        ax.set_yscale("log")
+        ax.set_xlabel("frequency [Hz]")
+        ax.set_ylabel("PSD [V**2/Hz]")
 
         ax.set_title(None)
         return _plt_show_fig(fig, ax, show)
 
-    def save(self, path, *args, scale=1, dtype=None, store='data', compression='gzip', method='hdf5', **kwargs):
+    def save(
+        self,
+        path,
+        *args,
+        scale=1,
+        dtype=None,
+        store="data",
+        compression="gzip",
+        method="hdf5",
+        **kwargs
+    ):
         data = self.array
         if scale != 1:
             data = da.multiply(self.array, scale)
         if dtype is not None:
             data = data.astype(dtype)
-        if method == 'hdf5':
+        if method == "hdf5":
             if not (path.endswith(".h5") or path.endswith(".hdf5")):
-                path = os.path.splitext(path)[0] + '.h5'
-        elif method == 'mat':
+                path = os.path.splitext(path)[0] + ".h5"
+        elif method == "mat":
             if not (path.endswith(".mat")):
-                path = os.path.splitext(path)[0] + '.mat'
+                path = os.path.splitext(path)[0] + ".mat"
             data = data.transpose()
 
             import h5py
-            h5py.File(path, mode='x', userblock_size=512)
+
+            h5py.File(path, mode="x", userblock_size=512)
 
             ### The follwoing 43 lines of code are reproduced form the hdf5storage library, which can be found here:
             # https://github.com/frejanordsiek/hdf5storage/blob/main/COPYING.txt
@@ -1346,34 +1648,36 @@ class _TsData:
             # version is just gotten from sys.version_info, which is a class
             # for Python >= 2.7, but a tuple before that.
             import sys
+
             v = sys.version_info
             if sys.hexversion >= 0x02070000:
-                v = {'major': v.major, 'minor': v.minor, 'micro': v.micro}
+                v = {"major": v.major, "minor": v.minor, "micro": v.micro}
             else:
-                v = {'major': v[0], 'minor': v[1], 'micro': v[1]}
+                v = {"major": v[0], "minor": v[1], "micro": v[1]}
 
-            s = 'MATLAB 7.3 MAT-file, Platform: CPython ' \
-                + '{0}.{1}.{2}'.format(v['major'], v['minor'], v['micro']) \
-                + ', Created on: ' \
-                + now.strftime('%a %b %d %H:%M:%S %Y') \
-                + ' HDF5 schema 1.00 .'
+            s = (
+                "MATLAB 7.3 MAT-file, Platform: CPython "
+                + "{0}.{1}.{2}".format(v["major"], v["minor"], v["micro"])
+                + ", Created on: "
+                + now.strftime("%a %b %d %H:%M:%S %Y")
+                + " HDF5 schema 1.00 ."
+            )
 
             # Make the bytearray while padding with spaces up to 128-12
             # (the minus 12 is there since the last 12 bytes are special.
 
-            b = bytearray(s + (128-12-len(s))*' ', encoding='utf-8')
+            b = bytearray(s + (128 - 12 - len(s)) * " ", encoding="utf-8")
 
             # Add 8 nulls (0) and the magic number (or something) that
             # MATLAB uses. Lengths must be gone to to make sure the argument
             # to fromhex is unicode because Python 2.6 requires it.
 
-            b.extend(bytearray.fromhex(
-                b'00000000 00000000 0002494D'.decode()))
+            b.extend(bytearray.fromhex(b"00000000 00000000 0002494D".decode()))
 
             # Now, write it to the beginning of the file.
 
             try:
-                fd = open(path, 'r+b')
+                fd = open(path, "r+b")
                 fd.write(b)
             except:
                 raise
@@ -1381,12 +1685,13 @@ class _TsData:
                 fd.close()
             ### This is the end of the reproduced section of code for modifying hdf5 files to be read as .mat files.
         else:
-            raise ValueError("Save mehtod '{}' is not recognized. Implemented save methods include 'hdf5'.".format(method))
+            raise ValueError(
+                "Save mehtod '{}' is not recognized. Implemented save methods include 'hdf5'.".format(
+                    method
+                )
+            )
         with ProgressBar():
-            data.to_hdf5(path, "/"+store, *args, compression=compression, **kwargs)
-
-
-
+            data.to_hdf5(path, "/" + store, *args, compression=compression, **kwargs)
 
     def _ch_type_to_index(self, ch_type):
         """
@@ -1406,7 +1711,7 @@ class _TsData:
         --------
         ch_names
         """
-        ch_types = [tuple(meta['types']) for meta in self.metadata]
+        ch_types = [tuple(meta["types"]) for meta in self.metadata]
         if len(set(ch_types)) == 1:
             return np.array((ch_types[0])) == ch_type
         else:
@@ -1436,7 +1741,9 @@ class _TsData:
             if len(ch) == len(self.ch_names):
                 return ch
             else:
-                raise ValueError("Length of boolean np.ndarray does not match length of channels")
+                raise ValueError(
+                    "Length of boolean np.ndarray does not match length of channels"
+                )
         else:
             if ch.dtype.type is np.str_:
                 ch_compare = np.asarray(self.ch_names)
@@ -1445,7 +1752,10 @@ class _TsData:
                 ch_compare = np.arange(0, len(self.ch_names))
             extra_ch = np.isin(ch, ch_compare, invert=True)
             if np.any(extra_ch):
-                warnings.warn(str(ch[extra_ch]) + " not found in channel list or is outside range.")
+                warnings.warn(
+                    str(ch[extra_ch])
+                    + " not found in channel list or is outside range."
+                )
             return np.isin(ch_compare, ch)
 
     def _time_lim_validate(self, x_lim, remove_gaps=True):
@@ -1470,30 +1780,46 @@ class _TsData:
         if x_lim is None:
             # TODO: Check if speed for this is important, this requires calculating chunks of the time array and
             #  would be slower than directly calculating.
-            x_lim = (self.time(remove_gaps=remove_gaps)[0], self.time(remove_gaps=remove_gaps)[-1])
+            x_lim = (
+                self.time(remove_gaps=remove_gaps)[0],
+                self.time(remove_gaps=remove_gaps)[-1],
+            )
             x_lim = _to_numeric_array(x_lim)
         else:
             x_lim = _to_numeric_array(x_lim)
             # Check x_lim values are positive
             if np.any(x_lim < 0):
-                raise ValueError("Time limits for time series data cannot be negative. Received limits: "
-                                 + str(x_lim))
+                raise ValueError(
+                    "Time limits for time series data cannot be negative. Received limits: "
+                    + str(x_lim)
+                )
             # Check of x_lim[0] is less than x_lim[1]
             elif x_lim[1] <= x_lim[0]:
-                raise ValueError("End time cannot precede start time limit. Received limits: " + str(x_lim))
+                raise ValueError(
+                    "End time cannot precede start time limit. Received limits: "
+                    + str(x_lim)
+                )
             # Check if both time limits are greater than end time of recording
             elif np.all(x_lim > self.time(remove_gaps=remove_gaps)[-1]):
-                raise ValueError("Time limits are not within expected limits of (" + str(self.time(remove_gaps=remove_gaps)[0]) + ", "
-                                 + str(self.time(remove_gaps=remove_gaps)[-1]) + "). Received limits: " + str(x_lim))
+                raise ValueError(
+                    "Time limits are not within expected limits of ("
+                    + str(self.time(remove_gaps=remove_gaps)[0])
+                    + ", "
+                    + str(self.time(remove_gaps=remove_gaps)[-1])
+                    + "). Received limits: "
+                    + str(x_lim)
+                )
             # Check if x_lim[1] is greater than end time of recording. Based on previous checks x_lim[0] is already known to be within time bounds for recording.
             elif x_lim[1] > self.time(remove_gaps=remove_gaps)[-1]:
-                x_lim[1] = self.time(remove_gaps=remove_gaps)[-1] # replace x_lim[1] with end time of array.
+                x_lim[1] = self.time(remove_gaps=remove_gaps)[
+                    -1
+                ]  # replace x_lim[1] with end time of array.
             # All checks have passed return time limits as received.
             else:
                 pass
         return tuple(x_lim)
 
-    def _time_to_index(self, time, units='seconds', remove_gaps=True):
+    def _time_to_index(self, time, units="seconds", remove_gaps=True):
         # TODO: calculate index accounting for
         """
         Converts an elapsed time into an index. This index corresponds to the array index of the data point at the
@@ -1521,9 +1847,9 @@ class _TsData:
 
         """
         # recording gaps - also allow for different time formats
-        if units == 'milliseconds':
+        if units == "milliseconds":
             time = time / 1e3
-        elif units == 'microseconds':
+        elif units == "microseconds":
             time = time / 1e6
 
         if not remove_gaps:
@@ -1533,13 +1859,31 @@ class _TsData:
             sr = self.sample_rate
 
             # converts each time to an index that takes gaps into account
-            def tti_with_gaps(elapsed_time, start_times=sts, end_times=ets, start_indices=sis, sample_rate=sr):
+            def tti_with_gaps(
+                elapsed_time,
+                start_times=sts,
+                end_times=ets,
+                start_indices=sis,
+                sample_rate=sr,
+            ):
                 for t in range(len(start_times)):
                     if start_times[t] <= elapsed_time <= end_times[t]:
-                        return round(start_indices[t] + sample_rate * (elapsed_time - start_times[t]))
-                    elif end_times[t-1] <= elapsed_time <= start_times[t]:
-                        return start_indices[t] - 1 + round((elapsed_time - end_times[t-1])/(start_times[t] - end_times[t-1]))
-                return round(start_indices[-1] + sample_rate * (elapsed_time - start_times[-1]))
+                        return round(
+                            start_indices[t]
+                            + sample_rate * (elapsed_time - start_times[t])
+                        )
+                    elif end_times[t - 1] <= elapsed_time <= start_times[t]:
+                        return (
+                            start_indices[t]
+                            - 1
+                            + round(
+                                (elapsed_time - end_times[t - 1])
+                                / (start_times[t] - end_times[t - 1])
+                            )
+                        )
+                return round(
+                    start_indices[-1] + sample_rate * (elapsed_time - start_times[-1])
+                )
 
             if isinstance(time, Iterable):
                 return np.array([tti_with_gaps(t) for t in time]).astype(int)
@@ -1559,11 +1903,17 @@ class _TsData:
             Mne array of the raw data set.
 
         """
-        info = mne.create_info(ch_names=self.data[0].shape[0], sfreq=self.sample_rate, ch_types='ecog')
+        info = mne.create_info(
+            ch_names=self.data[0].shape[0], sfreq=self.sample_rate, ch_types="ecog"
+        )
         with ProgressBar():
-            return mne.io.RawArray(np.asarray(self.array.compute()), info, verbose=False)
+            return mne.io.RawArray(
+                np.asarray(self.array.compute()), info, verbose=False
+            )
 
-    def _to_plt_line_collection(self, x_lim, channels, d_l, down_sample=True, remove_gaps=True):
+    def _to_plt_line_collection(
+        self, x_lim, channels, d_l, down_sample=True, remove_gaps=True
+    ):
         """
 
         Converts raw data into an array that can be used to create a matplotlib line collection. With gaps removed, the
@@ -1599,19 +1949,25 @@ class _TsData:
         # 8x sampling is arbitrary but found to have a good tradeoff between visual appearance and speed
 
         def to_line_array(plot_array, time):
-            if down_sample and len(time) > d_l*8:
-                plot_data = np.zeros((plot_array.shape[0], d_l*4, 2))
+            if down_sample and len(time) > d_l * 8:
+                plot_data = np.zeros((plot_array.shape[0], d_l * 4, 2))
                 # Simultaneously down_sample data and reshape array to the correct shape for a matplotlib LineCollection
                 for channel in range(plot_array.shape[0]):
                     full_sampled = np.stack([plot_array[channel], time]).T
-                    down_sampled = largest_triangle_three_buckets(full_sampled, d_l*4)
+                    down_sampled = largest_triangle_three_buckets(full_sampled, d_l * 4)
                     plot_data[channel, :, :] = np.flip(down_sampled, axis=1)
                 down_sampled_bool = True  # indicate that the data has been down sampled
             else:
                 # Reshape array to the correct shape for a matplotlib LineCollection
-                time_array = time[np.newaxis, :, np.newaxis].repeat(plot_array.shape[0], 0)
-                plot_data = np.concatenate([time_array, plot_array[:, :, np.newaxis]], axis=2)
-                down_sampled_bool = False  # indicate that the data has not been down sampled
+                time_array = time[np.newaxis, :, np.newaxis].repeat(
+                    plot_array.shape[0], 0
+                )
+                plot_data = np.concatenate(
+                    [time_array, plot_array[:, :, np.newaxis]], axis=2
+                )
+                down_sampled_bool = (
+                    False  # indicate that the data has not been down sampled
+                )
             return plot_data, down_sampled_bool
 
         if remove_gaps:
@@ -1619,10 +1975,16 @@ class _TsData:
         else:
             # TODO: investigate down_sampled_bool and effects of downsampling some data sets but not others
             # split arrays up by data sets and make a list of linecollection arrays
-            splitters = [i - x_index[0] for i in self.start_indices if i > x_index[0] and i < x_index[1]]
+            splitters = [
+                i - x_index[0]
+                for i in self.start_indices
+                if i > x_index[0] and i < x_index[1]
+            ]
             plot_arr = np.split(plot_arr, splitters, axis=1)
             time_arr = np.split(time_arr, splitters, axis=0)
-            return [to_line_array(plot_arr[i], time_arr[i]) for i in range(len(plot_arr))]
+            return [
+                to_line_array(plot_arr[i], time_arr[i]) for i in range(len(plot_arr))
+            ]
 
     @property
     def _ch_num_mask_by_type(self):
@@ -1635,7 +1997,7 @@ class _TsData:
         vals = self.types
         d = {}
         for val in vals:
-            count = [ch_type == val for ch_type in self.metadata[0]['types']]
+            count = [ch_type == val for ch_type in self.metadata[0]["types"]]
             d[val] = count
         return d
 
@@ -1647,7 +2009,9 @@ class _TsData:
         data_lengths = [d.shape[1] for d in self.data]
 
         low_channel = []  # create empty array for storing info on reordering arrays
-        temp_data = [[] for d in self.data]  # create empty arrays for reordering data and stacking to dask arrays
+        temp_data = [
+            [] for d in self.data
+        ]  # create empty arrays for reordering data and stacking to dask arrays
         min_offset = min(unique_offsets)
         for o in unique_offsets:
             ch_pos = ch_offsets == o
@@ -1656,8 +2020,10 @@ class _TsData:
             for c in ch_pos:
                 low_channel.append(c)
                 for i, d in enumerate(self.data):
-                    data_chunk = d[c[0]:c[1], -o:data_lengths[i] + (min_offset - o)]
-                    temp_data[i].append((data_chunk, c[0]))   # appends a tuple to keep track of the original position
+                    data_chunk = d[c[0] : c[1], -o : data_lengths[i] + (min_offset - o)]
+                    temp_data[i].append(
+                        (data_chunk, c[0])
+                    )  # appends a tuple to keep track of the original position
 
         # sorting function to reorder arrays for concatenation
         def orderpos(row):

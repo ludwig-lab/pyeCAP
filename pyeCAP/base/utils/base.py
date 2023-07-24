@@ -11,6 +11,7 @@ def _is_iterable(obj, type=None):
     else:
         return all([isinstance(o, type) for o in obj])
 
+
 def _to_array(array, dtype=None):
     if dtype is None:
         return np.asarray(array).flatten()

@@ -6,6 +6,7 @@ import sys, os
 import requests
 import zipfile
 
+
 def download_data(url, filename, directory=os.getcwd()):
     # warning: make sure that the url links to raw data, otherwise this function will download in an unreadable format.
     """
@@ -26,7 +27,7 @@ def download_data(url, filename, directory=os.getcwd()):
         Absolute path name of downloaded file.
     """
     r = requests.get(url)
-    with open(complete_pathname, 'wb') as f:
+    with open(complete_pathname, "wb") as f:
         f.write(r.content)
     complete_pathname = os.path.join(directory, filename)
     if complete_pathname.endswith(".zip"):
@@ -35,7 +36,6 @@ def download_data(url, filename, directory=os.getcwd()):
         return complete_pathname[:-4]
     else:
         return complete_pathname
-
 
 
 def concatenate(input_data):
@@ -48,16 +48,19 @@ def concatenate(input_data):
         return type(input_data[0])(data, metadata, chunks=chunks, daskify=False)
     else:
         if _is_iterable(input):
-            raise NotImplementedError('pyCAP.concatenate not yet implemented for data type "'
-                                      + str(type(input_data[0])) + '"')
+            raise NotImplementedError(
+                'pyCAP.concatenate not yet implemented for data type "'
+                + str(type(input_data[0]))
+                + '"'
+            )
         else:
-            raise ValueError('Input expected to be an iterable of pyCAP data classes')
+            raise ValueError("Input expected to be an iterable of pyCAP data classes")
 
-class hide_print():
 
+class hide_print:
     def __enter__(self):
         self.out = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
+        sys.stdout = open(os.devnull, "w")
 
     def __exit__(self, a, b, c):
         sys.stdout.close()

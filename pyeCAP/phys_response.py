@@ -4,7 +4,17 @@ from .base.dio_epoch import _DioEpoch
 
 class PhysResponse(_DioEpoch):
     """Class for indexing physiological data with stimulation parameters and viewing the response to stimulation."""
-    def __init__(self, phys_data, stim_data, trigger_channel, threshold=1, time_difference=0, search=1, **kwargs):
+
+    def __init__(
+        self,
+        phys_data,
+        stim_data,
+        trigger_channel,
+        threshold=1,
+        time_difference=0,
+        search=1,
+        **kwargs
+    ):
         """
         Constructor for the PhysResponse class.
 
@@ -34,5 +44,13 @@ class PhysResponse(_DioEpoch):
         >>> # Set up a PhysResponse object with trigger as "Channel 6" and default parameters.
         >>> response_data = pyeCAP.PhysResponse(phys_data, stim_data, "Channel 6")    # doctest: +SKIP
         """
-        _DioEpoch.__init__(self, phys_data, stim_data, trigger_channel, threshold=threshold,
-                           time_difference=time_difference, search=search, **kwargs)
+        _DioEpoch.__init__(
+            self,
+            phys_data,
+            stim_data,
+            trigger_channel,
+            threshold=threshold,
+            time_difference=time_difference,
+            search=search,
+            **kwargs
+        )

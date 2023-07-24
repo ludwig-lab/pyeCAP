@@ -65,8 +65,13 @@ def create_experimental_log(file_path):
     ws = wb.active
 
     # We'll create some headers in the log
-    headers = ["Location", "Stimulation Contact", "Stimulation Description", "Experimental Condition",
-               "Distances: Recording to Stimulating Electrode (cm)"]
+    headers = [
+        "Location",
+        "Stimulation Contact",
+        "Stimulation Description",
+        "Experimental Condition",
+        "Distances: Recording to Stimulating Electrode (cm)",
+    ]
     for idx, val in enumerate(headers):
         _cell = ws.cell(row=1, column=idx + 1, value=val)
         _cell.font = openpyxl.styles.Font(bold=True)
@@ -79,7 +84,9 @@ def create_experimental_log(file_path):
     for row in ws.rows:
         for cell in row:
             if cell.value:
-                dims[cell.column_letter] = max((dims.get(cell.column_letter, 0), len(str(cell.value))))
+                dims[cell.column_letter] = max(
+                    (dims.get(cell.column_letter, 0), len(str(cell.value)))
+                )
     for col, value in dims.items():
         ws.column_dimensions[col].width = value
 
