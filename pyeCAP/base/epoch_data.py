@@ -320,6 +320,21 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
+    def plot_binned_traces(self, channel, parameter, bin, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
+                     colors=sns.color_palette(), fig_size=(10, 3), show=True, show_window=False, window_labels=False,  fig_title=None,
+                     vlines=None,**kwargs):
+
+        fig, ax = _plt_setup_fig_axis(axis, fig_size)
+        calc_y_lim = [0, 0]
+        print(_to_parameters(parameter))
+        print(bin[0])
+        print(bin[1])
+
+        #Creates numpy array of binned traces for plotting
+        bin_data = self.array(parameter, channel)[bin[0]:bin[1],:,:].compute()
+
+        return bin_data
+
     def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
                   fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, vlines=None, **kwargs):
 
@@ -785,6 +800,79 @@ class _EpochData:
         fig.update_yaxes(title_text='Voltage (V)')
         fig.show(renderer='browser')
         return
+
+    def plot_heatmap(self, channels, parameters, *args, method='mean', x_lim=None,
+                     fig_size=(10,3), show=True, show_window=None, fig_title=None, sort='ascending', save=False, vlines=None, **kwargs):
+
+        #If a string is passed because the user only specified a single channel, will convert to list before proceeding
+        if isinstance(channels, str):
+            channels = [channels]
+
+        # If multiple channels and parameters are passed raise exception
+        if len(channels) > 1 and len(parameters) > 1:
+            raise Exception("Multiple channels and parameters passed. Heatmap plots can only contain a single channel "
+                            "with multiple parameters or a single parameter across multiple channels.")
+
+        if show_window == True and len(channels) > 1:
+            warnings.warn("Multiple channels passed. Neural fiber window displays with respect to first channel only.")
+
+        if sort == 'ascending':
+            sorted_params = self.parameters.parameters.loc[parameters].sort_values('pulse amplitude (μA)', ascending=False).index
+        elif sort == 'descending':
+            sorted_params = self.parameters.parameters.loc[parameters].sort_values('pulse amplitude (μA)', ascending=True).index
+        else:
+            raise Exception("Sort argument must be 'ascending' or 'descending'. Default is 'ascending'.")
+
+        fig, ax = plt.subplots(figsize=fig_size)
+        fig.suptitle(fig_title, fontsize='medium')
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.95, hspace=0.25, wspace=0.15)
+
+        print('Channels: ' + str(channels))
+
+        #Construct data array for heatmap plotting
+        dataLIST = []
+        currentLIST = []
+
+        time = self.time((0,0))  # Pulls time values into sorted ndarray from first parameter.  Assumes that pulse count/frequency of stim trains within TDT kept constant
+        if x_lim is not None:
+            # Convert any input x_lim time values to sample #'s
+            x_lim_idx = np.searchsorted(time, [x_lim[0], x_lim[1]])
+
+            extSTART = x_lim_idx[0] / self.fs * 1e3
+            extSTOP = x_lim_idx[1] / self.fs * 1e3
+        else:
+            extSTART = 0
+            extSTOP = len(time) / self.fs * 1e3
+
+        #Iterates through parameter(s) and channel(s) to create a list of ndarrays containing the data from each parameter/channel combination
+        for param in sorted_params:
+            currentLIST.append(self.parameters.parameters['pulse amplitude (μA)'][param])
+
+            for chan in channels:
+                if x_lim is None:
+                    dataLIST.append(self.mean(param, chan).compute()[0])
+                else:
+                    dataLIST.append(self.mean(param, chan).compute()[0, x_lim_idx[0]:x_lim_idx[1]])
+        print(currentLIST)
+
+        dataARRAY = np.stack(dataLIST, axis=0)
+        print(dataARRAY.shape)
+        im = ax.imshow(dataARRAY, aspect='auto', origin='lower', extent=[extSTART, extSTOP, 0, len(currentLIST)], cmap='viridis')#, vmin=-0.0005, vmax=0.0005)
+        ax.set_yticks(np.arange(len(currentLIST)))
+        ax.set_yticklabels(currentLIST)
+        ax.set_xlabel('Time (ms)')
+        ax.set_ylabel('Current Amplitude (uA)')
+        ax.set_title(fig_title)
+        fig.colorbar(im)
+        return _plt_show_fig(fig,ax,show)
+    @lru_cache(maxsize=None)
+    def re_ref(self, chan_A, chan_B, parameter, *args, method='mean'):
+        """
+        Return a re-referenced channel based on channel1 - channel2
+        """
+        signal = self.mean(parameter, channels=chan_A) - self.mean(parameter, channels=chan_B)
+        return signal
 
     @lru_cache(maxsize=None)
     def array(self, parameter, channels=None):
