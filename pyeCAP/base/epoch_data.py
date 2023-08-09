@@ -802,7 +802,7 @@ class _EpochData:
         return
 
     def plot_heatmap(self, channels, parameters, *args, method='mean', x_lim=None,
-                     fig_size=(10,3), show=True, show_window=None, fig_title=None, sort='ascending', save=False, vlines=None, **kwargs):
+                     fig_size=(10,3), show=True, show_window=None, fig_title=None, sort='ascending', colormap = 'viridis', save=False, vlines=None, **kwargs):
 
         #If a string is passed because the user only specified a single channel, will convert to list before proceeding
         if isinstance(channels, str):
@@ -858,7 +858,7 @@ class _EpochData:
 
         dataARRAY = np.stack(dataLIST, axis=0)
         print(dataARRAY.shape)
-        im = ax.imshow(dataARRAY, aspect='auto', origin='lower', extent=[extSTART, extSTOP, 0, len(currentLIST)], cmap='viridis')#, vmin=-0.0005, vmax=0.0005)
+        im = ax.imshow(dataARRAY, aspect='auto', origin='lower', extent=[extSTART, extSTOP, 0, len(currentLIST)], cmap=colormap)#, vmin=-0.0005, vmax=0.0005)
         ax.set_yticks(np.arange(len(currentLIST)))
         ax.set_yticklabels(currentLIST)
         ax.set_xlabel('Time (ms)')
