@@ -874,6 +874,30 @@ class _EpochData:
         signal = self.mean(parameter, channels=chan_A) - self.mean(parameter, channels=chan_B)
         return signal
 
+    def save_processed_data_to_file(self, channel, parameters=None,file_name=None, index='sample', method='mean'):
+
+        dataLIST =[]
+
+        if parameters is None:
+            params = self.parameters.parameters.index
+        else:
+            params = parameters
+
+        for param in params:
+            if method == 'mean':
+                dataLIST.append(self.mean(param, channels=channel).compute()[0])
+            if method == 'median':
+                dataLIST.append(self.median(param, channels=channel).compute()[0])
+
+        dataARRAY = np.stack(dataLIST,axis=1)
+        dataDF = pd.DataFrame(dataARRAY, columns=[p for p in params])
+
+        if index == 'time':
+            dataDF = dataDF.set_index(self.time((0,0))*1e3)
+
+        dataDF.to_csv(file_name)
+        return dataDF
+
     @lru_cache(maxsize=None)
     def array(self, parameter, channels=None):
         """
