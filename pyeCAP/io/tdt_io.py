@@ -1,22 +1,24 @@
+# Standard library imports
 import sys
-import tdt
-from tdt import read_block, epoc_filter
 import os
 import glob  # for file and directory handling
 import io
 from contextlib import redirect_stdout
-import pprint
+import itertools
+import threading  # to lock file for thread safe reading
+import warnings
+from typing import List, Optional
+import functools
+from collections import defaultdict
+
+# Third party imports
+import tdt
+from tdt import read_block, epoc_filter
 import numpy as np
 import pandas as pd
 import dask
 import dask.array as da
 from dask.cache import Cache
-import itertools
-import threading  # to lock file for thread safe reading
-import warnings
-
-# This can be removed in python 3.8 as they are adding cached properties as a built-in decorator
-from cached_property import threaded_cached_property
 
 cache = Cache(0.5e9)  # Leverage 500mb of memory for fast access to data
 
@@ -44,31 +46,51 @@ def gather_sample_delay(rz_sample_rate, si_sample_rate):
 
 
 class TdtIO:
-    def __init__(self, file_path):
+    """
+    This class is responsible for handling TDT data files.
+    It reads the data, handles errors, and extracts metadata.
+    """
+    def __init__(self, file_path: str):
+        """
+        Initialize TdtIO with a file path.
+        
+        :param file_path: The path to the TDT data file.
+        :type file_path: str
+        :raises TypeError: If the file path is not a string.
+        :raises FileNotFoundError: If the file path does not point to a directory.
+        :raises IOError: If the file path is not accessible or does not appear to be a TDT tank.
+        """
         self.file_path = file_path
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()  # Lock for thread-safe reading
 
-        if isinstance(self.file_path, str):
-            if os.path.isdir(self.file_path):
-                # This catches the print output from read_block that can't be disabled.
-                try:
-                    with io.StringIO() as buf, redirect_stdout(buf):
-                        # 'headers' var, set to 1 to return only the headers for the block. This enables fast
-                        # consecutive calls to read_block
-                        self.tdt_block = read_block(self.file_path, headers=1)
-                        output = buf.getvalue()
-                except IOError:
-                    print(self.file_path + " is not accessible.")
-                if self.tdt_block is None:
-                    raise IOError("File path does not appear to be a TDT tank.")
-            else:
-                raise IOError("File path not found")
-        else:
-            raise IOError("Path was not formatted as a string.")
+        # Check if the file path is a string and if it points to a directory
+        if not isinstance(self.file_path, str):
+            raise TypeError("Path was not formatted as a string.")
+        if not os.path.isdir(self.file_path):
+            raise FileNotFoundError("File path not found")
 
-    @threaded_cached_property  # We can cache this because none of this metadata will change after being read in.
-    def metadata(self):
-        # read in StoresListing file to get more metadata
+        # Redirect print output from read_block to buffer
+        try:
+            with io.StringIO() as buf, redirect_stdout(buf):
+                # 'headers' var, set to 1 to return only the headers for the block. 
+                # This enables fast consecutive calls to read_block
+                self.tdt_block = read_block(self.file_path, headers=1)
+                output = buf.getvalue()
+        except IOError as e:
+            raise IOError(f"{self.file_path} is not accessible. {str(e)}")
+
+        if self.tdt_block is None:
+            raise IOError("File path does not appear to be a TDT tank.")
+
+    @functools.cached_property  
+    def metadata(self) -> dict:
+        """
+        Extract metadata from the StoresListing file.
+        This method is cached for efficiency as the metadata won't change after being read in.
+        
+        :return: A dictionary containing the metadata.
+        :rtype: dict
+        """
         metadata = {}
         gizmo_dict = {}
         obj_id = {}
@@ -81,12 +103,10 @@ class TdtIO:
                 "No StoresListing file found, pyeCAP will assume default store names"
             )
 
-        # parse StoresListing file
-        # TODO: This parsing is not great it is hastily modified from a previous version to account for differences in
-        #  the StoresListing.txt file between versions of TDT's software. It should be generalized and cleaned up to
-        #  better accout for all possible variations
+        # Parse StoresListing file
+        # This parsing is not ideal and should be improved to better account for all possible variations
         for n, txtblock in enumerate(txt.split("\n\n")):
-            # read in experiment metadata text block
+            # Read in experiment metadata text block
             if (
                 n == 0 and "Experiment" in txtblock
             ):  # The first block of text should be the experiment information
@@ -97,7 +117,7 @@ class TdtIO:
                     }
                 )
                 metadata.pop("Time")
-            # read in storage data from each tdtgizmo
+            # Read in storage data from each tdtgizmo
             elif txtblock.startswith("Object ID") or txtblock.startswith("ObjectID"):
                 store_ids = []
                 for txt_line in txtblock.split("\n"):
@@ -118,16 +138,32 @@ class TdtIO:
         return metadata
 
     @property
-    def stores(self):
+    def stores(self) -> list:
+        """
+        Return a list of keys from the tdt_block stores.
+        
+        :return: A list of keys from the tdt_block stores.
+        :rtype: list
+        """
         return list(self.tdt_block.stores.keys())
 
 
 class TdtStim:
-    def __init__(self, tdt_io, type="stim"):
-        if isinstance(tdt_io, TdtIO):
-            self.tdt_io = tdt_io
-        else:
-            raise TypeError("input expected to be of type TdtIO")
+    """
+    Class for handling TDT stimulation data.
+    """
+    def __init__(self, tdt_io: TdtIO, type: str = "stim"):
+        """
+        Initialize TdtStim object.
+
+        :param tdt_io: TdtIO object
+        :type tdt_io: TdtIO
+        :param type: Type of stimulation, defaults to "stim"
+        :type type: str, optional
+        """
+        if not isinstance(tdt_io, TdtIO):
+            raise TypeError("Input expected to be of type TdtIO")
+        self.tdt_io = tdt_io
         self.type = type
 
         # check for stimulation stores
@@ -136,29 +172,39 @@ class TdtStim:
         self.parameter_stores = []
 
         for key, value in self.tdt_io.metadata["Gizmo Name"].items():
-            if key in self.tdt_io.stores and value in (
+            if (key in self.tdt_io.stores or '_'+key in self.tdt_io.stores) and value in (
                 "Electrical Stim Driver",
                 "Electrical Stimulation",
             ):
                 # TODO: Use the data types instead of assumptions about defualt naming conventions to check if the keys are stim parameter or stream data.
                 # TODO: Fallback to searching based on default names and giving warning.
-                if "p" in key:
-                    self.parameter_stores.append(key)
-                elif "r" in key:
-                    self.raw_stores.append(key)
-                else:
-                    warnings.warn(
-                        "Parameter data stored by the electrical stim driver could not be found."
-                    )
+                if key in self.tdt_io.stores:
+                    if "p" in key:
+                        self.parameter_stores.append(key)
+                    elif "r" in key:
+                        self.raw_stores.append(key)
+                    else:
+                        warnings.warn(
+                            "Parameter data stored by the electrical stim driver could not be found."
+                        )
+                if '_'+key in self.tdt_io.stores:
+                    if "p" in key:
+                        self.parameter_stores.append('_'+key)
+                    elif "r" in key:
+                        self.raw_stores.append('_'+key)
+                    else:
+                        warnings.warn(
+                            "Parameter data stored by the electrical stim driver could not be found."
+                        )
             elif (
                 key == "MonA"
             ):  # TODO: check if any other monitoring channels exist and for new data use the IV10 or other stimulator to check if monitoring data is there
                 self.raw_stores.append(key)
-
+        
         # raise errors/warnings for certain data
-        if len(self.parameter_stores) == 0 and len(self.raw_stores) == 0:
-            raise (ValueError("No electrical stimulation detected"))
-        elif len(self.parameter_stores) == 0:
+        if not self.parameter_stores and not self.raw_stores:
+            raise ValueError("No electrical stimulation detected")
+        elif not self.parameter_stores:
             warnings.warn("No electrical stimulation parameters detected")
 
         # get parameter data into recognizable format
@@ -178,8 +224,14 @@ class TdtStim:
         for k in self.parameter_stores:
             self.voices[k] = []
 
-    @threaded_cached_property
-    def metadata(self):
+    @functools.cached_property
+    def metadata(self) -> dict:
+        """
+        Get metadata for the TdtStim object.
+
+        :return: Metadata dictionary
+        :rtype: dict
+        """
         metadata = self.tdt_io.metadata
         metadata.update(
             {
@@ -202,8 +254,14 @@ class TdtStim:
         metadata["ch_names"] = ["Stim " + str(ch) for ch in metadata["channels"]]
         return metadata
 
-    @property
-    def parameters(self):
+    @functools.cached_property
+    def parameters(self) -> pd.DataFrame:
+        """
+        Get stimulation parameters.
+
+        :return: DataFrame of stimulation parameters
+        :rtype: pd.DataFrame
+        """
         stim_stores = []
 
         for k in self.parameter_stores:
@@ -309,37 +367,67 @@ class TdtStim:
 
         return pd.concat(stim_stores).reset_index(drop=True)
 
-    def dio(self, indicators=False):
-        dio = {}
+    def dio(self, indicators: bool = False) -> dict:
+        """
+        Get digital input/output data.
+
+        :param indicators: If True, return indicators, defaults to False
+        :type indicators: bool, optional
+        :return: Dictionary of digital input/output data
+        :rtype: dict
+        """
+        # defaultdict is used here to automatically create lists for keys that do not yet exist in the dictionary.
+        # This is useful when we want to append items to lists for certain keys in a loop, 
+        # and we don't know in advance what the keys will be.
+        dio = defaultdict(list)
         params = self.parameters
         for ch, name in zip(self.metadata["channels"], self.metadata["ch_names"]):
             ch_params = params[params["channel"] == ch]
+            # Preallocate an array of zeros for the digital input/output data. 
+            # The size of the array is twice the length of the channel parameters, 
+            # because for each parameter, we will store both an onset and an offset.
+            dio_data = np.zeros((len(ch_params) * 2,), dtype=float)
             if indicators:
-                dio_data = np.repeat(ch_params.index, 2)
+                dio_data[:] = np.repeat(ch_params.index, 2)
             else:
-                dio_data = np.zeros((len(ch_params) * 2,), dtype=float)
                 onsets = np.array(ch_params["onset time (s)"])
                 offsets = np.array(ch_params["offset time (s)"])
+                # Fill the preallocated array with the onset and offset times. 
+                # The onset times are stored at even indices, and the offset times are stored at odd indices.
                 dio_data[0::2] = onsets
                 dio_data[1::2] = offsets
+            # Here, we append the dio_data to the list associated with the key 'name'. 
+            # If 'name' does not yet exist in the dictionary, defaultdict automatically creates a new list for it.
+            dio[name].extend(dio_data)
+        # Convert the defaultdict back to a regular dictionary before returning.
+        return dict(dio)
 
-            if name not in dio:
-                dio[name] = dio_data
-            else:
-                dio[name] = np.concatenate((dio[name], dio_data))
-        return dio
+    def events(self, indicators: bool = False) -> dict:
+        """
+        Get stimulation events. If indicators is True, the function will return an array of 
+        integers where each integer corresponds to the index of the stimulation within the 
+        the stimulation parameter DataFrame returned by the parameters method.
 
-    def events(self, indicators=False):
+        :param indicators: If True, return indicators, defaults to False
+        :type indicators: bool, optional
+        :return: Dictionary of stimulation events
+        :rtype: dict
+        """
         events = {}
         params = self.parameters
         for ch, name in zip(self.metadata["channels"], self.metadata["ch_names"]):
             ch_params = params[params["channel"] == ch]
-            ch_events = np.array([])
+            total_events = ch_params["pulse count"].sum()
+            # Preallocate an array of the required size for the stimulation events. 
+            # This is done for efficiency reasons, as it is faster to allocate memory for an array once, 
+            # rather than dynamically resizing the array every time we add an event.
+            ch_events = np.empty(total_events, dtype=int if indicators else float)
+            event_idx = 0
             if indicators:
                 for index, row in ch_params.iterrows():
                     num_stim_events = int(row["pulse count"])
-                    stim_indicators = np.ones((num_stim_events,)) * index
-                    ch_events = np.concatenate((ch_events, stim_indicators))
+                    ch_events[event_idx : event_idx + num_stim_events] = index
+                    event_idx += num_stim_events
             else:
                 for index, row in ch_params.iterrows():
                     stim_events = (
@@ -347,11 +435,10 @@ class TdtStim:
                         + np.arange(0, row["pulse count"]) * row["period (ms)"] / 1000
                     )
                     stim_events += row["delay (ms)"] / 1000
-                    ch_events = np.concatenate((ch_events, stim_events))
-            if name not in events:
-                events[name] = ch_events
-            else:
-                events[name] = np.concatenate((events[name], ch_events))
+                    num_stim_events = len(stim_events)
+                    ch_events[event_idx : event_idx + num_stim_events] = stim_events
+                    event_idx += num_stim_events
+            events[name] = ch_events
         return events
 
 
@@ -376,14 +463,24 @@ class TdtStim:
 
 
 class TdtArray:
-    """Stores data in  an array by channel and index
-    Default: All data from all stores and channels
+    def __init__(self, tdt_io: TdtIO, type: str = "ephys", stores: Optional[List] = None, chunk_size: int = 2040800):
+        """
+        Stores data in an array by channel and index.
+        Streams are alphanumerically iterated through and stored accordingly in metadata['streams'].
 
-    Streams are alphanumerically iterated through and stored accordingly in metadata['streams']
+        Args:
+            tdt_io (TdtIO): An instance of TdtIO class.
+            type (str, optional): Type of data to be pulled. Defaults to "ephys".
+            stores (list, optional): List of stores to be used. Defaults to None.
+            chunk_size (int, optional): Size of the chunk to be used. Defaults to 2040800.
 
-    """
-
-    def __init__(self, tdt_io, type="ephys", stores=None, chunk_size=2040800):
+        Raises:
+            TypeError: If tdt_io is not an instance of TdtIO class.
+            AttributeError: If type is not "ephys" or "stim".
+            IOError: If selected stores contain arrays with different sampling rates or different numbers of samples.
+            FileNotFoundError: If '*.tev' file expected for tdt tank is not found.
+            FileExistsError: If multiple '*.tev' files are found in tank.
+        """
 
         # Check and handle inputs
         # Validate tdt_io input
@@ -561,13 +658,28 @@ class TdtArray:
             self.chunks = (1, chunk_size)
 
     @dask.delayed
-    def load_block(self, offset):
+    def load_block(self, offset: int) -> np.ndarray:
+        """
+        Load a block of data from the file.
+
+        Args:
+            offset (int): The offset to start reading from.
+
+        Returns:
+            np.ndarray: The block of data read from the file.
+        """
         return np.fromfile(
             self.tev_file, dtype=self.np_dtype, count=self.block_size, offset=offset
         )
 
-    @property
-    def metadata(self):
+    @functools.cached_property
+    def metadata(self) -> dict:
+        """
+        Get the metadata of the TdtArray.
+
+        Returns:
+            dict: The metadata of the TdtArray.
+        """
         metadata = self.tdt_io.metadata
         metadata.update(
             {
@@ -644,13 +756,34 @@ class TdtArray:
 
         return metadata
 
-    @threaded_cached_property
-    def dtype(self):
+    @functools.cached_property
+    def dtype(self) -> np.dtype:
+        """
+        Get the data type of the TdtArray.
+
+        Returns:
+            np.dtype: The data type of the TdtArray.
+        """
         return self.np_dtype
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
+        """
+        Get the number of dimensions of the TdtArray.
+
+        Returns:
+            int: The number of dimensions of the TdtArray.
+        """
         return 2
 
     def __getitem__(self, items):
+        """
+        Get the item(s) from the TdtArray using array-like indexing.
+
+        Args:
+            items: The index or slice to get from the TdtArray.
+
+        Returns:
+            The item(s) from the TdtArray.
+        """
         return self.data[items]

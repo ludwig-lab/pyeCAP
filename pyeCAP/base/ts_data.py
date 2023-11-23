@@ -3,7 +3,12 @@ import os.path
 import warnings
 from datetime import datetime
 import copy
-from collections import Iterable
+# deal with importing collections across versions due to deprication of collections in python 3.10
+try:
+    from collections.abc import Iterable # For python >=3.10
+except ImportError:
+    from collections import Iterable # For python <3.10
+from distutils.version import LooseVersion
 
 # scientific computing library imports
 import dask.array as da
@@ -16,6 +21,7 @@ from scipy import signal
 import mne
 
 # plotting and figure generation
+from matplotlib import __version__ as mpl_version
 from matplotlib import get_backend as plt_get_backend
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
@@ -1169,7 +1175,7 @@ class _TsData:
             if isinstance(events, _DioData):
                 events.plot_dio(axis=ax, show=False, color="grey", zorder=-1)
             if isinstance(events, _EventData):
-                events.plot_events(axis=ax, show=False, color="orange", lw=1)
+                events.plot_raster(axis=ax, show=False, color="orange", lw=1)
         else:
             ax.yaxis.set_visible(False)
 
@@ -1312,16 +1318,23 @@ class _TsData:
             x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps
         )
         for data in plot_data:
-            # TODO: Matplotlib 3.5.0 has changed how offsets work. The easy solution for right now is to exclude
-            #  matplotlib version > 3.5 from the install list, however the best long-term solution is likely to shift
-            #  this to use matplotlibs transforms instead which should be compatible across versions.
-            lines = LineCollection(
-                data[0],
-                offsets=offsets,
-                colors=colors,
-                linewidths=np.ones(plot_array.shape[0]),
-                transOffset=None,
-            )
+
+            if LooseVersion(mpl_version) > LooseVersion("3.5.0"):
+                # Matplotlib version > 3.5.0: Apply transforms using offsets
+                lines = LineCollection(
+                    [line + np.array([0, offset[1]]) for line, offset in zip(data[0], offsets)],
+                    colors=colors,
+                    linewidths=np.ones(plot_array.shape[0]),
+                )
+            else:
+                # Matplotlib version <= 3.5.0: Use offsets
+                lines = LineCollection(
+                    data[0],
+                    offsets=offsets,
+                    colors=colors,
+                    linewidths=np.ones(plot_array.shape[0]),
+                    transOffset=None,
+                )
             current_lines = ax.add_collection(lines)
 
         ax.set_yticks(tick_locations)
@@ -1846,21 +1859,24 @@ class _TsData:
         122070
 
         """
-        # recording gaps - also allow for different time formats
+        # Convert time units once at the beginning.
         if units == "milliseconds":
             time = time / 1e3
         elif units == "microseconds":
             time = time / 1e6
 
         if not remove_gaps:
-            sts = [st - self.start_times[0] for st in self.start_times]
-            ets = [et - self.start_times[0] for et in self.end_times]
-            sis = self.start_indices
+            # Pre-compute as much as possible outside of the loop or vectorized function.
+            sts = np.array(self.start_times) - self.start_times[0]
+            ets = np.array(self.end_times) - self.start_times[0]
+            sis = np.array(self.start_indices)
             sr = self.sample_rate
 
             # converts each time to an index that takes gaps into account
             def tti_with_gaps(
                 elapsed_time,
+
+
                 start_times=sts,
                 end_times=ets,
                 start_indices=sis,
@@ -1886,6 +1902,7 @@ class _TsData:
                 )
 
             if isinstance(time, Iterable):
+                # Apply the vectorized function to each element in 'time'.
                 return np.array([tti_with_gaps(t) for t in time]).astype(int)
             else:
                 return int(tti_with_gaps(time))

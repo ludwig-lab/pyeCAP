@@ -12,4 +12,7 @@
 *.ttf
 .idea/pyeCAP.iml
 *.egg
+~*.py
 examples/.ipynb_checkpoints/*
+.vscode/settings.json
+poetry.lock

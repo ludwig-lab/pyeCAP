@@ -1,6 +1,9 @@
-import numpy as np
-import matplotlib.pyplot as plt
+from typing import Union
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Importing necessary functions from the utility modules
 from .utils.numeric import _to_numeric_array, largest_triangle_three_buckets
 from .utils.visualization import (
     _plt_setup_fig_axis,
@@ -10,13 +13,16 @@ from .utils.visualization import (
 )
 
 
+# _EventData class is used for handling stimulation event data.
 class _EventData:
     """
-    Class for stimulation event data.
+    Class for handling stimulation event data.
     """
 
-    def __init__(self, events, metadata, indicators=None):
+    # Initialization of _EventData with events, metadata and indicators.
+    def __init__(self, events: list, metadata: list, indicators: list = None):
         """
+        Initialize _EventData with events, metadata and indicators.
 
         Parameters
         ----------
@@ -24,11 +30,12 @@ class _EventData:
             List of dictionaries containing  name and an array with stimulation event times.
         metadata : list
             List of dictionaries containing stimulation experiment metadata.
-        indicators : None, list
+        indicators : list, optional
             List of dictionaries containing channel name and a pandas integer array relating each stimulation event to
-            the stimulation parameter.
+            the stimulation parameter. Default is None.
         """
         # TODO: deal with properly incrementing even indicators if there are multiple files
+        # Ensuring events, metadata and indicators are in list format
         if not isinstance(events, list):
             events = [events]
         if not isinstance(metadata, list):
@@ -40,8 +47,10 @@ class _EventData:
         self._metadata = metadata
         self._event_indicators = indicators
 
+    # Property getter method for metadata for the data sets including start and stop time, channel names, number of
+    # stimulation times, and more.
     @property
-    def metadata(self):
+    def metadata(self) -> list:
         """
         Property getter method for metadata for the data sets including start and stop time, channel names, number of
         stimulation times, and more.
@@ -53,8 +62,9 @@ class _EventData:
         """
         return self._metadata
 
+    # Property getter method for viewing channel names.
     @property
-    def ch_names(self):
+    def ch_names(self) -> list:
         """
         Property getter method for viewing channel names.
 
@@ -69,8 +79,9 @@ class _EventData:
         else:
             raise ValueError("Import data sets do not have consistent channel names.")
 
+    # Property getter method for experiment start times of stimulation data sets.
     @property
-    def start_times(self):
+    def start_times(self) -> list:
         """
         Property getter method for experiment start times of stimulation data sets.
 
@@ -82,7 +93,10 @@ class _EventData:
         start_times = [meta["start_time"] for meta in self.metadata]
         return start_times
 
-    def events(self, channel, start_times=None, reference=None, remove_gaps=False):
+    # Outputs a one dimensional array of elapsed times corresponding to stimulation pulses from the specified channel.
+    # Times are in seconds and the first recorded data set is assumed to start at 0 seconds while other data sets
+    # start times are specified with the start_times argument.
+    def events(self, channel: str, start_times: list = None, reference = None, remove_gaps: bool = False) -> np.ndarray:
         """
         Outputs a one dimensional array of elapsed times corresponding to stimulation pulses from the specified channel.
         Times are in seconds and the first recorded data set is assumed to start at 0 seconds while other data sets
@@ -92,12 +106,12 @@ class _EventData:
         ----------
         channel : str
             Channel name.
-        start_times : None, list
+        start_times : list, optional
             Specify a list of start times or specify None to use the start_times property method default.
-        reference : None, pyCAP.base.ts_data._TsData or subclass
+        reference : None, pyCAP.base.ts_data._TsData or subclass, optional
             If start_times is None, specify a reference object to match start times. This is useful when removing gaps
             between data sets.
-        remove_gaps: bool
+        remove_gaps: bool, optional
             Uses the object specified in the 'reference' parameter to take gaps in the data into account. Set to True to
             remove time gaps in the data.
 
@@ -111,6 +125,7 @@ class _EventData:
         else:
             offset = 0.0
 
+        # If start_times is None, use the start_times property method default or specify a reference object to match start times.
         if start_times is None:
             if reference is None:
                 start_times = self.start_times
@@ -120,6 +135,7 @@ class _EventData:
                 else:
                     start_times = reference.start_times
 
+        # If channel is a string and exists in the channel names, return the events for that channel.
         if isinstance(channel, str):
             if channel in self.ch_names:
                 start_times = [s + offset - start_times[0] for s in start_times]
@@ -130,7 +146,8 @@ class _EventData:
                 "_EventData class can only be indexed using 'str' or 'int' types"
             )
 
-    def event_indicators(self, channel):
+    # Outputs a numpy array of stimulation parameters for each pulse given a channel name.
+    def event_indicators(self, channel: str) -> np.ndarray:
         """
         Outputs a numpy array of stimulation parameters for each pulse given a channel name.
 
@@ -157,43 +174,44 @@ class _EventData:
                 "_DioData class can only be indexed using 'str' or 'int' types"
             )
 
+    # Plots stimulation data showing the time periods with and without stimulation in raster format.
     def plot_raster(
         self,
         axis=None,
-        start_times=None,
-        reference=None,
-        remove_gaps=False,
-        x_lim=None,
-        fig_size=(10, 1.5),
-        show=True,
-        lw=1,
+        start_times: list = None,
+        reference = None,
+        remove_gaps: bool = False,
+        x_lim: list = None,
+        fig_size: tuple = (10, 1.5),
+        show: bool = True,
+        lw: int = 1,
         **kwargs
-    ):
+    ) -> None:
         """
         Plots stimulation data showing the time periods with and without stimulation in raster format.
 
         Parameters
         ----------
-        axis : None, matplotlib.axis.Axis
+        axis : None, matplotlib.axis.Axis, optional
             Either None to use a new axis or matplotlib axis to plot on.
-        start_times : None, list
+        start_times : list, optional
             List of start times for each data set in timestamp format (seconds since epoch). Leaving this as None will
             default to start times stored in the metadata.
-        reference : None, pyCAP.base.ts_data._TsData or subclass
+        reference : None, pyCAP.base.ts_data._TsData or subclass, optional
             If start_times is None, specify a reference object to match start times. This is useful when removing gaps
             between data sets.
-        remove_gaps: bool
+        remove_gaps: bool, optional
             Uses the object specified in the 'reference' parameter to take gaps in the data into account. Set to True to
             remove time gaps in the data.
-        x_lim : None, list, tuple, np.ndarray
+        x_lim : list, optional
             None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
             end times for data to plot.
-        fig_size : list, tuple, np.ndarray
+        fig_size : tuple, optional
             The size of the matplotlib figure to plot axis on if axis=None.
-        show : bool
+        show : bool, optional
             Set to True to display the plot and return nothing, set to False to return the plotting axis and display
             nothing.
-        lw : int
+        lw : int, optional
             Line width.
         **kwargs : KeywordArguments
             See `mpl.axes.Axes.vlines <https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.vlines.html>`_ for more
@@ -201,8 +219,8 @@ class _EventData:
 
         Returns
         -------
-        matplotlib.axis.Axis, None
-            If show is False, returns a matplotlib axis. Otherwise, plots the figure and returns None.
+        None
+            If show is True, plots the figure and returns None. Otherwise, returns a matplotlib axis.
 
         """
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
@@ -238,18 +256,19 @@ class _EventData:
         ax.set_xlabel("time(s)")
         return _plt_show_fig(fig, ax, show)
 
-    def append(self, new_data):
+    # Creates a new class instance with new data added to the original data.
+    def append(self, new_data) -> '_EventData':
         """
         Creates a new class instance with new data added to the original data.
 
         Parameters
         ----------
-        new_data : _EventData or subclass
+        new_data : _EventData
             New data to be added.
 
         Returns
         -------
-        _EventData or subclass
+        _EventData
             Class instance with new data included.
         """
         if isinstance(new_data, type(self)):
@@ -269,11 +288,28 @@ class _EventData:
         else:
             raise TypeError("Appended data is not of the same type.")
 
-    def __getitem__(self, item):
+    # Get the item(s) from the _EventData using either a string that is the channel name or a number that is the channel number.
+    def __getitem__(self, item: Union[str, int]) -> np.ndarray:
+        """
+        Get the item(s) from the _EventData using either a string that is the channel name or a number that is the channel number.
+
+        Parameters
+        ----------
+        item : Union[str, int]
+            The channel name (str) or channel number (int) to get from the _EventData.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of elapsed times.
+        """
         if isinstance(item, str):
             if item in self.ch_names:
                 # TODO: Make work when there are multiple dio files
                 return self.events[item]
+        elif isinstance(item, int):
+            if item < len(self.ch_names):
+                return self.events[self.ch_names[item]]
         else:
             raise TypeError(
                 "_DioData class can only be indexed using 'str' or 'int' types"

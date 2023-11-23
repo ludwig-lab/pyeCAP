@@ -1,5 +1,6 @@
 # python standard library imports
 import math
+from typing import Union
 
 # scientific computing library imports
 import numpy as np
@@ -7,7 +8,8 @@ from numba import jit
 
 
 def _to_numeric_array(array, dtype=float):
-    """Convert python objects to a 1D numeric array.
+    """
+    Convert python objects to a 1D numeric array.
 
     Converts a python object into a numeric numpy array. Utilizes numpy's np.asarray and np.astype in order to
     gracefully handle different object types as well as raise appropriate error messages. Always flattens result to
@@ -24,8 +26,26 @@ def _to_numeric_array(array, dtype=float):
     -------
     np.ndarray
         A 1D numeric array with type given by 'dtype'.
+
+    Raises
+    ------
+    ValueError
+        If the conversion to a numpy array or the dtype conversion fails.
     """
-    return np.asarray(array).astype(dtype).flatten()
+    try:
+        np_array = np.asarray(array)
+
+        # Convert type if necessary
+        if np_array.dtype != dtype:
+            np_array = np_array.astype(dtype)
+
+        # Flatten the array if it's not already 1D
+        if np_array.ndim != 1:
+            np_array = np_array.flatten()
+
+        return np_array
+    except Exception as e:
+        raise ValueError(f"Conversion to numeric array failed: {e}")
 
 
 @jit(nopython=True)
@@ -115,15 +135,70 @@ def largest_triangle_three_buckets(data, threshold):
     return sampled
 
 
-@jit(nopython=True)
-def find_first(item, vec):
-    """return the index of the first occurence of item in vec"""
-    for idx, v in enumerate(vec):
-        if item == v:
-            return idx
-    return -1
+def find_first_true(vec: np.ndarray) -> int:
+    """
+    Return the index of the first occurrence of True in a boolean numpy array.
+
+    Parameters:
+    vec (np.ndarray): Boolean Numpy array in which to find the first occurrence of True.
+
+    Returns:
+    int: The index of the first True in the array, or -1 if no True value is found.
+    """
+    # This was tested in dev\speed_tests_speed_test_find_first.py 
+    # and found to beat previously used numba based versions. 
+    true_indices = np.where(vec)[0]
+    return true_indices[0] if true_indices.size > 0 else -1
 
 
-def _group_consecutive(data, stepsize=1):
-    # Groups consecutive chunks of integers from an integer array into subarrays
+def find_first(array: np.ndarray, value: Union[int, float, str]) -> int:
+    """
+    Return the index of the first occurrence of a specified value in a numpy array.
+
+    Parameters:
+    array (np.ndarray): Numpy array in which to find the value.
+    value (int, float, str): Value to find in the array.
+
+    Returns:
+    int: The index of the first occurrence of the value in the array, or -1 if not found.
+    """
+    # This was tested in dev\speed_tests_speed_test_find_first.py 
+    # and found to beat previously used numba based versions. 
+    indices = np.where(array == value)[0]
+    return indices[0] if indices.size > 0 else -1
+
+
+def _group_consecutive(data: np.ndarray, stepsize: int = 1) -> list:
+    """
+    Groups consecutive chunks of integers from an integer array into subarrays.
+
+    This function takes an array of integers and groups consecutive integers into subarrays.
+    The consecutive integers are defined based on a specified step size. By default, consecutive
+    integers are those which differ by 1. The function returns a list of numpy arrays, each 
+    containing a chunk of consecutive integers.
+
+    Parameters:
+    -----------
+    data : np.ndarray
+        An array of integers which will be grouped into consecutive chunks.
+    
+    stepsize : int, optional
+        The step size to define consecutiveness. Consecutive integers are those which differ 
+        by the step size. The default is 1.
+
+    Returns:
+    --------
+    list of np.ndarray
+        A list containing subarrays of the input array. Each subarray consists of consecutive 
+        integers as defined by the stepsize.
+
+    Examples:
+    ---------
+    >>> _group_consecutive(np.array([1, 2, 3, 5, 6, 7]))
+    [array([1, 2, 3]), array([5, 6, 7])]
+
+    >>> _group_consecutive(np.array([10, 20, 30, 50]), stepsize=10)
+    [array([10, 20, 30]), array([50])]
+
+    """
     return np.split(data, np.where(np.diff(data) != stepsize)[0] + 1)

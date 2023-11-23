@@ -172,20 +172,31 @@ class _EpochData:
         ________
         >>> ecap_data.dask_array((0,0)) # doctest: +SKIP
         """
+        # Initialize a list to store event times for each channel.
         event_times = []
         # ToDo: modify so data continues to be pulled out across channels if channels are equal between event_data
         #  and ephys data but if channels match between the two datasets then pull out on a perchannel basis
+
+        # Iterate over each channel in the event data.
         for ch in self.event_data.ch_names:
+            # Get events for the current channel based on start times.
             events = self.event_data.events(
                 ch, start_times=self.ts_data.start_indices / self.ts_data.sample_rate
             )
+            # Get event indicators for the current channel.
             event_indicators = self.event_data.event_indicators(ch)
+            # Filter events based on the provided stimulation parameter.
             event_indices = np.logical_and(
                 event_indicators[:, 0] == parameter[0],
                 event_indicators[:, 1] == parameter[1],
             )
+            # Append the filtered events to the event times list.
             event_times.append(events[event_indices])
+
+        # Concatenate event times from all channels into a single array.
         event_times = np.concatenate(event_times, axis=0)
+
+        # Determine the length of each sample based on settings or automatically.
         if self.x_lim is None or self.x_lim == "auto":
             min_event_time = np.min(np.diff(event_times))
             sample_len = np.round(min_event_time * self.ts_data.sample_rate)
@@ -194,31 +205,41 @@ class _EpochData:
             sample_len = int(
                 np.round((self.x_lim[1] - self.x_lim[0]) * self.ts_data.sample_rate)
             )
+
+        # Convert event times to indices.
         event_times = self.ts_data._time_to_index(event_times)
 
+        # Create a boolean mask to select relevant times from the time series data.
         indices = np.zeros(self.ts_data.shape[1], dtype=bool)
         for ts in event_times:
             te = int(ts + sample_len)
             indices[ts:te] = True
 
+        # Find the indices of the first and last onset in the boolean mask.
         first_onset_idx = find_first(True, indices)
         last_onset_idx = len(indices) - find_first(True, np.flip(indices)) - 1
+
+        # Determine indices to remove from the data.
         removal_idx = np.logical_not(
             indices[first_onset_idx : last_onset_idx + 1]
         ).nonzero()
 
+        # Extract the relevant event data.
         event_data = self.ts_data.array[:, first_onset_idx : last_onset_idx + 1]
+        # Create a mask to filter the event data.
         idx_mask = np.repeat(
             indices[first_onset_idx : last_onset_idx + 1][np.newaxis, :],
             self.ts_data.shape[0],
             axis=0,
         )
 
+        # If there are data points to remove, compute chunk sizes for the Dask array.
         # ToDo: Create Heuristic model with best way to extract data if it is tightly packed or not
         if len(removal_idx[0]) > 0:
             # ToDo: rewrite so that this happens blockwise in dask as opposed to all at once to speed up.
             event_data = event_data[idx_mask].compute_chunk_sizes()
 
+        # Reshape the event data and rearrange axes for the final output.
         event_data_reshaped = da.reshape(
             event_data, (self.ts_data.shape[0], len(event_times), int(sample_len))
         )
@@ -226,56 +247,104 @@ class _EpochData:
 
     def plot(
         self,
+        channels,
+        parameters,
+        *args,
+        parameter_label=None,
+        method="mean",
         axis=None,
-        channels=None,
         x_lim=None,
         y_lim="auto",
-        ch_labels=None,
         colors=sns.color_palette(),
-        fig_size=(12, 3),
+        fig_size=(10, 5),
         show=True,
+        spread_parameters=False,
+        spread_factor=3.0,
+        **kwargs
     ):
-        """
-        Plotting method for ECAP data.
-
-        Parameters
-        ----------
-        axis : None, matplotlib.axis.Axis
-            Either None to use a new axis, or a matplotlib axis to plot on.
-        channels :  int, str, list, tuple, np.ndarray
-            Channels to plot. Can be a boolean numpy array with the same length as the number of channels, an integer
-            array, or and array of strings containing channel names.
-        x_lim : None, list, tuple, np.ndarray
-            None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
-            end times for data to plot.
-        y_lim : None, str, list, tuple, np.ndarray
-            None or 'auto' to automatically calculate reasonable bounds based on standard deviation of data. 'max' to
-            plot y axis limits encompassing all accessible data. Otherwise tuple, list, or numpy array of length 2
-            containing limits for the y axis.
-        ch_labels : list, tuple, np.ndarray
-            Stings to use as channel labels in the plot. Must match length of channels being displayed.
-        colors : list
-            Color palette or list of colors to use for channels.
-        fig_size : list, tuple, np.ndarray
-            The size of the matplotlib figure to plot axis on if axis=None.
-        show : bool, str
-            String 'notebook' to plot interactively in a jupyter notebook or boolean value indicating if the plot should
-            be displayed.
-
-        Returns
-        -------
-        matplotlib.axis.Axis, None
-            If show is False, returns a matplotlib axis. Otherwise, plots the figure and returns None.
-        """
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
-        # Get channels to plot
-        if channels is None:
-            channels = slice(None, None, None)
+        calc_y_lim = [0, 0]
+        
+        if spread_parameters:
+            channels = tuple(channels)
         else:
-            channels = self._ch_to_index(channels)
+            channels = channels[0]
 
-        return _plt_show_fig(fig, ax, show)
+        spread_accumulator = 0
+        max_std_data = 0
+        std_data = 0
+        custom_y_ticks = []
+        custom_y_labels = []
+
+        for p, c in zip(_to_parameters(parameters), colors):
+            if parameter_label is not None:
+                parameter_label_value = self.event_data.parameters.loc[p, parameter_label] if parameter_label in self.event_data.parameters.columns else None
+
+            if method == "mean":
+                plot_data = self.mean(p, channels=channels)
+            elif method == "median":
+                plot_data = self.median(p, channels=channels)
+            else:
+                raise ValueError(
+                    "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
+                    "and 'median'."
+                )
+            plot_time = self.time(p)
+
+            if spread_parameters:
+                std_data = np.std(plot_data)
+                if std_data > max_std_data:
+                    max_std_data = std_data
+                adjusted_plot_data = plot_data + (np.ones_like(plot_data) * spread_accumulator)
+                for i, ch in enumerate(channels):
+                    ax.plot(plot_time, adjusted_plot_data[i, :], *args, color=colors[i], **kwargs)
+
+                # Save the position and label for the custom tick
+                custom_y_ticks.append(spread_accumulator)
+                custom_y_labels.append(parameter_label_value)
+
+                spread_accumulator += std_data * spread_factor
+            else:
+                ax.plot(plot_time, plot_data[0, :], *args, color=c, **kwargs)
+        spread_accumulator -= std_data * spread_factor
+
+        # compute appropriate y_limits
+        if y_lim is None or y_lim == "auto":
+            std_data = np.std(plot_data)
+            calc_y_lim = [
+                np.min([-std_data * 6, calc_y_lim[0]]),
+                np.max([std_data * 6, calc_y_lim[1]]),
+            ]
+        elif y_lim == "max":
+            calc_y_lim = None
+        else:
+            calc_y_lim = _to_numeric_array(y_lim)
+
+        ax.set_xlabel("time (s)")
+        ax.set_ylabel("amplitude (V)")  # Label for the left y-axis
+        ax.set_ylim(_to_numeric_array([calc_y_lim[0], calc_y_lim[1] + spread_accumulator]))
+
+        if spread_parameters:
+            ax2 = ax.twinx()
+            ax.set_ylabel(parameter_label)
+            ax2.set_ylabel("amplitude (V)")  # Label for the right y-axis
+            ax2.set_ylim(_to_numeric_array([calc_y_lim[0], calc_y_lim[1] + spread_accumulator]))
+
+            # Remove existing left y-axis ticks and set custom ticks
+            ax.set_yticks(custom_y_ticks)
+            ax.set_yticklabels(custom_y_labels)
+
+            for i, ch in enumerate(channels):
+                ax.plot([], [], color=colors[i], label=ch)  # Dummy plot for legend entry
+            ax.legend(loc='lower right')
+
+        if x_lim is None:
+            ax.set_xlim(plot_time[0], plot_time[-1])
+        else:
+            ax.set_xlim(x_lim)
+
+        return _plt_show_fig(fig, [ax, ax2], show)
 
     def plot_channel(
         self,
@@ -339,7 +408,7 @@ class _EpochData:
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
         calc_y_lim = [0, 0]
-        print(_to_parameters(parameters))
+        
         for p, c in zip(_to_parameters(parameters), colors):
             if method == "mean":
                 plot_data = self.mean(p, channels=channel)

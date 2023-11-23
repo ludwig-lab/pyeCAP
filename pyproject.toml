@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyecap"
-version = "0.0.0"
+version = "0.1.0"
 description = "pyeCAP is a python package for the analysis of evoked compound action potentials (CAPs) in elecytrophysiology data sets."
 authors = ["James Trevathan"]
 license = "LGPL 2.1"
@@ -21,7 +21,6 @@ cachey = "^0.2.1"
 zarr = "^2.12.0"
 xarray = "^2022.6.0"
 matplotlib = "^3.5.2"
-pyneurobase  = { git = "https://github.com/ludwig-lab/pyNeuroBase" }
 tdt = "^0.5.4"
 h5py = "^3.8.0"
 ipympl = "^0.9.2"
