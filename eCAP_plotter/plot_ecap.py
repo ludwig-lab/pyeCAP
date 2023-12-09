@@ -4,6 +4,18 @@ Created on Thu Mar 23 16:08:52 2023
 
 @author: SPARC_PSOCT_MGH
 """
+from Code_Blocks import preprocess_data, compute_traces, plot_traces
+import pyeCAP as pyCAP
+import numpy as np
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import itertools
+import matplotlib.cm as cm
+import sys
+import os
+import itertools
+import scipy.io
 
 def plot_ecap(**kwargs):
     # import pdb; pdb.set_trace()
@@ -134,3 +146,144 @@ def plot_ecap(**kwargs):
             plt.show()
     if PlotAggreConds:    
         plt.show()
+        
+        
+        
+        
+def plot_multi_cond_para_chs(settings):
+    fileCnt = -1
+    figCnt = 0
+    for fileind in settings.filelist1:
+        fileCnt = fileCnt + 1
+        ecap_data_CAP_filt, Amp, pulse_counts = preprocess_data(
+            settings.Dir,
+            fileind,
+            settings.ExpNo,
+            common_ref=settings.common_ref,
+            pl_on=settings.pl_on,
+            hp_on=settings.hp_on,
+            lp_on=settings.lp_on,
+            hp_ks=settings.hp_ks,
+            lpff=settings.lpff,
+            sample_delay=settings.sample_delay,
+            stores=settings.stores,
+            filter_hp_type=settings.filter_hp_type,
+            filter_lp_type=settings.filter_lp_type
+        )
+        stim_data = pyCAP.Stim(settings.Dir[settings.ExpNo-1, fileind])
+        print(fileind);display(stim_data.parameters)
+        Cnt_par = -1
+        Amp_arr_sz = np.shape(Amp)
+
+        if not settings.PlotAggrePara:
+            par_list1 = [settings.par_list1_[fileCnt]]
+        else:
+            par_list1 = par_list1_
+
+        y_shift = 0        
+        # Create a new figure for each condition when PlotAggreConds = 0
+        if not settings.PlotAggreConds and settings.ax_sub is None:
+            fig, ax = plt.subplots(figsize=settings.figsz)
+        else:
+            ax = settings.ax_sub
+        
+        for par_ind in par_list1:
+            Cnt_par = Cnt_par + 1
+            index_ar = (0, par_ind)
+            # Compute traces
+            traces = compute_traces(ecap_data_CAP_filt, index_ar, settings.Pulse_Ind, settings.ch_eCAP, settings.flip_polarity, settings.recording_type, settings.Subtract_SA, settings.SA_ch)
+
+            # Convert traces to a NumPy array
+            traces = np.array(traces)
+
+            # Define time_vector
+            time_vector = ecap_data_CAP_filt.time(index_ar) * 1e3
+
+            # Determine the maximum and minimum amplitude values for each channel in the specified time window
+            start_index = np.searchsorted(time_vector, settings.t_ylim[0])
+            end_index = np.searchsorted(time_vector, settings.t_ylim[1])
+
+            min_values = np.min(traces[:, :, start_index:end_index], axis=1)
+            max_values = np.max(traces[:, :, start_index:end_index], axis=1)
+
+            y_shift_step = np.max(max_values - min_values) * 1.2
+
+            # Increment y_shift for next parameter set
+            if settings.PlotAggrePara and Cnt_par > 0:
+                y_shift += y_shift_step
+
+            # Plot the traces
+            if settings.custom_titles is not None:
+                title = settings.custom_titles[fileCnt]
+            else:
+                title = settings.Subtitle
+                if settings.use_status:
+                    title += ' ' + settings.Status[settings.ExpNo - 1, fileind]
+            legend_labels = [f'{settings.recording_type} Ch {i + 1}' for i in range(len(settings.ch_eCAP))]
+             # Add suffix to the filename
+            if settings.save_figure:
+                figCnt += 1
+                figname = f'{settings.name_of_figure}_{figCnt}.{settings.file_format}'
+            else:
+                figname = None
+
+            # plot_traces(ax, traces, time_vector, t_ylim, t_xlim, auto_ylim=auto_ylim, y_lim_range=y_lim_range, y_shift=y_shift, use_median=use_median, plot_individual_traces=plot_individual_traces, title=title, legend_labels=legend_labels, recording_type=recording_type, trace_alpha=trace_alpha, lc=lc)
+            plot_traces(ax, traces, time_vector, settings.t_ylim, settings.t_xlim, auto_ylim=settings.auto_ylim,
+                        y_lim_range=settings.y_lim_range, y_shift=y_shift, use_median=settings.use_median, 
+                        plot_individual_traces=settings.plot_individual_traces, title=title, 
+                        legend_labels=legend_labels, recording_type=settings.recording_type, 
+                        trace_alpha=settings.trace_alpha, lc=settings.lc, show_legend=settings.show_legend)
+            # Add text to the right side of each parameter's dashed line
+            text_x = settings.t_xlim[1]  # Right end of the x-axis range
+            text_y = y_shift
+            if not settings.use_broken_axes:
+                ax.text(text_x * 1.01, text_y, str(Amp[par_ind][0]) + "uA", fontsize=settings.lgfnt, va='center', ha='left')
+
+            # Reset the legend labels for the next condition when PlotAggrePara = 0
+            if not settings.PlotAggrePara:
+                legend_labels = [None] * len(settings.ch_eCAP)
+
+            # Save the figure if save_figure is True and individual figures are being saved
+            if settings.save_figure and figname is not None:
+                fig = plt.gcf()
+                fig.savefig(figname, dpi=600, bbox_inches='tight')
+                # plt.close()
+
+        # Show the plot when PlotAggreConds = 0
+        if not settings.PlotAggreConds:
+            plt.show()
+
+    # Show the plot when PlotAggreConds = 1
+    if settings.PlotAggreConds:
+        plt.show()
+    # if save_figure:
+    #     fig = plt.gcf()
+    #     fig.savefig(f'{name_of_figure}.{file_format}', dpi=300, bbox_inches='tight')
+    # if save_figure:
+    #     fig = plt.gcf()
+    #     if custom_titles:
+    #         for i, title in enumerate(custom_titles):
+    #             if use_status:
+    #                 fig_title = f"{name_of_figure}_{title}_{status[i]}"
+    #             else:
+    #                 fig_title = f"{name_of_figure}_{title}"
+    #             fig.savefig(f"{fig_title}.{file_format}")
+    #     else:
+    #         if use_status:
+    #             for i, s in enumerate(status):
+    #                 fig_title = f"{name_of_figure}_Cond{i}_{s}"
+    #                 fig.savefig(f"{fig_title}.{file_format}")
+    #         else:
+    #             fig_title = f"{name_of_figure}"
+    #             fig.savefig(f"{fig_title}.{file_format}")
+def average_traces(traces, method='median'):
+    if method == 'mean':
+        avg_traces = [np.mean(trace, axis=0) for trace in traces]
+    elif method == 'median':
+        avg_traces = [np.median(trace, axis=0) for trace in traces]
+    elif method == 'std':
+        avg_traces = [np.std(trace, axis=0) for trace in traces]    
+    else:
+        raise ValueError("Invalid method. Use 'mean' or 'median'.")
+
+    return np.stack(avg_traces, axis=0)
