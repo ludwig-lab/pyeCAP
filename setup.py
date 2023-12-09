@@ -2,19 +2,19 @@ from setuptools import setup, find_packages
 
 # TODO: find a way to include the neuroshare package from github
 # TODO: update requirements.txt
-version_reqs = ['pandas',
+version_reqs = ['pandas==2.0.3',
                 'numpy<1.21,>=1.17',
-                'scipy',
+                'scipy==1.10',
                 'matplotlib<3.5.0',
                 'seaborn',
-                'numba',
+                'numba==0.56.4',
                 'pytest',
                 'tdt',
-                'mne',
+                'mne==1.5.1',
                 'ipywidgets',
                 'cachey',
                 'cached_property',
-                'dask[complete]',
+                'dask[complete]==2022.12.1',
                 'ipympl',
                 'sphinx-rtd-theme',
                 'h5py',
@@ -23,6 +23,9 @@ version_reqs = ['pandas',
                 'pillow>=7.1.0',
                 'cycler>=0.10',
                 'tqdm', # Only used in example notebooks at this point
+                'ipykernel',
+                'plotly==5.15.0',
+                'plotly_resampler==0.8.3.2',
                 ]
 
 setup(
