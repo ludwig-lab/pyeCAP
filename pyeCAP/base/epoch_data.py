@@ -326,6 +326,7 @@ class _EpochData:
 
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
         calc_y_lim = [0, 0]
+        plot_time = self.time(parameter)
         print(_to_parameters(parameter))
         print(bin[0])
         print(bin[1])
@@ -333,7 +334,14 @@ class _EpochData:
         #Creates numpy array of binned traces for plotting
         bin_data = self.array(parameter, channel)[bin[0]:bin[1],:,:].compute()
 
-        return bin_data
+
+        for data in bin_data:
+            ax.plot(plot_time, data[0,:])
+
+        ax.set_ylim(y_lim)
+        ax.set_xlim(x_lim)
+
+        return  _plt_show_fig(fig, ax, show)
 
     def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
                   fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, vlines=None, **kwargs):
@@ -536,7 +544,7 @@ class _EpochData:
         ax.set_ylim(calc_y_lim)
         ax.set_xlabel('time (s)')
         ax.set_ylabel('amplitude (V)')
-        ax.legend(loc=0)
+        ax.legend(loc='upper right')
         if fig_title is not None:
             ax.set_title(fig_title)
 
@@ -642,7 +650,8 @@ class _EpochData:
             else:
                 calc_y_lim = _to_numeric_array(y_lim)
 
-            ax.plot(plot_time, plot_data[0, :],label=self.parameters.parameters.loc[param]['pulse amplitude (μA)'], *args, **kwargs)
+            plotLABEL = str(self.parameters.parameters.loc[param]['pulse amplitude (μA)']) + ' (Ch. ' + str(self.parameters.parameters.loc[param]['channel']) + ')'
+            ax.plot(plot_time, plot_data[0, :],label=plotLABEL, *args, **kwargs)
 
         ax.set_ylim(calc_y_lim)
         ax.set_xlabel('time (s)')
@@ -798,7 +807,8 @@ class _EpochData:
         fig = px.line(plotDF, x = plotDF.index, y = nameLIST, title = plotNAME, hover_data=['Time (ms)']) #, hover_data='Time (ms)') plotDF.index
         fig.update_xaxes(title_text='Sample #')
         fig.update_yaxes(title_text='Voltage (V)')
-        fig.show(renderer='browser')
+        fig.show()
+        #fig.show(renderer='notebook_connected')
         return
 
     def plot_heatmap(self, channels, parameters, *args, method='mean', x_lim=None,

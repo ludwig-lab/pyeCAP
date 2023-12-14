@@ -212,10 +212,10 @@ class ECAP(_EpochData):
         #print("Begin Averaging Data")
         if method == 'mean':
             print('Begin averaging data by mean.')
-            self.AUC_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.mean(x, axis=0)).compute()))
+            self.AUC_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.nanmean(x, axis=0)).compute()))
         elif method == 'median':
             print('Begin averaging data by median.')
-            self.AUC_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.median(x, axis=0)).compute()))
+            self.AUC_traces = np.squeeze(dask.compute(bag_params.map(lambda x: np.nanmedian(x, axis=0)).compute()))
         print("Finished Averaging Data")
         #toc = time.perf_counter()
         #print(toc - tic, "seconds elapsed")
