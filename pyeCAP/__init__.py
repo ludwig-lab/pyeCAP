@@ -1,4 +1,4 @@
-__version__ = "0.0.3-post.2+19b006a"
+__version__ = "0.0.3-post.4+00dbe83"
 
 from .ecap import ECAP
 from .ephys import Ephys
