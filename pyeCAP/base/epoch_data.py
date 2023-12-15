@@ -46,7 +46,7 @@ sns.set_style("ticks")
 def _to_parameters(parameters):
     if isinstance(parameters, tuple) and len(parameters) == 2:
         return [parameters]
-    elif _is_iterable(parameters, type=tuple):
+    elif _is_iterable(parameters, element_type=tuple):
         return parameters
     else:
         return _to_array(parameters, dtype="int,int")

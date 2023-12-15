@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -103,11 +105,8 @@ class _DioData:
         numpy.ndarray
             Array containing start and stop times of the stimulation data.
         """
-        if hasattr(self, "TDT_delay") and reference is not None:
-            offset = self.TDT_delay / reference.sample_rate
-        else:
-            offset = 0.0
 
+        # If start_times is None, use the start_times property method default or specify a reference object to match start times.
         if start_times is None:
             if reference is None:
                 start_times = self.start_times
@@ -117,14 +116,14 @@ class _DioData:
                 else:
                     start_times = reference.start_times
 
+        # If channel is a string and exists in the channel names, return the events for that channel.
         if isinstance(channel, str):
             if channel in self.ch_names:
-                start_times = [s + offset - start_times[0] for s in start_times]
                 events = [e[channel] + s for e, s in zip(self._dio, start_times)]
                 return np.concatenate(events)
         else:
             raise TypeError(
-                "_EventData class can only be indexed using 'str' or 'int' types"
+                "_DioData class can only be indexed using 'str' or 'int' types"
             )
 
     def dio_indicators(self, channel):
@@ -148,7 +147,10 @@ class _DioData:
                 # TODO: Make work when there are multiple dio files
                 return self._dio_indicators[0][channel]
 
-    def plot_raster(
+    def plot_raster(self, *args, **kwargs):
+        self.plot_dio(*args, **kwargs)
+
+    def plot_dio(
         self,
         *args,
         axis=None,
@@ -218,7 +220,6 @@ class _DioData:
                 yield lst[k : k + n]
 
         # plot avx lines in appropriate places
-        x_max = 0
         for i, key in enumerate(ch_names):
             if dio is None:
                 events = self.dio(
@@ -232,35 +233,45 @@ class _DioData:
             if len(events) > 0:
                 if display == "span":
                     for event in chunks(events, 2):
-                        ax.axvspan(
-                            event[0],
-                            event[1],
-                            *args,
-                            ymin=i * 1 / channels,
-                            ymax=(i + 1) * 1 / channels,
-                            **kwargs
-                        )
-                        ax.axvline(
-                            event[0],
-                            *args,
-                            ymin=i * 1 / channels,
-                            ymax=(i + 1) * 1 / channels,
-                            **kwargs
-                        )
+                        if remove_gaps:
+                            ax.axvspan(
+                                event[0],
+                                event[1],
+                                *args,
+                                ymin=i * 1 / channels,
+                                ymax=(i + 1) * 1 / channels,
+                                **kwargs
+                            )
+                        else:
+                            ax.axvspan(
+                                datetime.fromtimestamp(event[0]),
+                                datetime.fromtimestamp(event[1]),
+                                *args,
+                                ymin=i * 1 / channels,
+                                ymax=(i + 1) * 1 / channels,
+                                **kwargs
+                            )
+                        # ax.axvline(
+                        #     event[0],
+                        #     *args,
+                        #     ymin=i * 1 / channels,
+                        #     ymax=(i + 1) * 1 / channels,
+                        #     **kwargs
+                        # )
                 elif display == "lines":
-                    ax.vlines(events[::2], i + 0.5, i + 1.5)
+                    if remove_gaps:
+                        ax.vlines(events[::2], i + 0.5, i + 1.5)
+                    else:
+                        ax.vlines(datetime.fromtimestamp(events[::2]), i + 0.5, i + 1.5)
                 else:
                     raise ValueError("Unrecognized value of input 'display'")
-                if x_lim is None:
-                    max_ = events[-1]  # assumes events are in order but does not check
-                    if max_ > x_max:
-                        x_max = max_
 
         # set x_lims via either user defined limits of 0 to last event
-        if x_lim is None:
-            ax.set_xlim(0, x_max)
-        else:
+        if x_lim is not None:
             ax.set_xlim(x_lim[0], x_lim[1])
+
+        if remove_gaps:
+            ax.set_xlabel("time(s)")
 
         # set channel names
         ax.set_yticks(np.arange(len(ch_names)) + 1)
@@ -269,7 +280,6 @@ class _DioData:
         # set y_lims
         ax.set_ylim(0.5, len(ch_names) + 0.5)
 
-        ax.set_xlabel("time(s)")
         return _plt_show_fig(fig, ax, show)
 
     def append(self, new_data):

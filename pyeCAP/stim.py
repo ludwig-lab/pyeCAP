@@ -239,7 +239,7 @@ class Stim(_EventData, _DioData, _ParameterData):
         ________
         >>> stim_data.plot_dio()        # doctest: +SKIP
         """
-        _DioData.plot_raster(self, *args, **kwargs)
+        _DioData.plot_dio(self, *args, **kwargs)
 
     def plot_events(self, *args, **kwargs):
         """

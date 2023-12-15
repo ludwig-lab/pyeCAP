@@ -1168,15 +1168,16 @@ class _TsData:
         for ts, te in zip(self.start_times, self.end_times):
             ts = datetime.fromtimestamp(ts)
             te = datetime.fromtimestamp(te)
-            ax.axvspan(ts, te, *args, **kwargs)
-            ax.axvline(ts, *args, **kwargs)
+            ax.axvspan(ts, te, *args, zorder=-1, **kwargs)
 
         # Handle event data if passed to plot function
         if isinstance(events, (_DioData, _EventData)):
             if isinstance(events, _DioData):
-                events.plot_dio(axis=ax, show=False, color="grey", zorder=-1)
+                events.plot_dio(axis=ax, show=False, color="grey", zorder=0)
             if isinstance(events, _EventData):
-                events.plot_raster(axis=ax, show=False, color="orange", lw=1)
+                events.plot_raster(
+                    axis=ax, show=False, color="orange", lw=0.5, zorder=1
+                )
         else:
             ax.yaxis.set_visible(False)
 

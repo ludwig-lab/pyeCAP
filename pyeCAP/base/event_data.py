@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Union
 
 import matplotlib.pyplot as plt
@@ -126,10 +127,6 @@ class _EventData:
         numpy.ndarray
             Array of elapsed times.
         """
-        if hasattr(self, "TDT_delay") and reference is not None:
-            offset = self.TDT_delay / reference.sample_rate
-        else:
-            offset = 0.0
 
         # If start_times is None, use the start_times property method default or specify a reference object to match start times.
         if start_times is None:
@@ -144,7 +141,6 @@ class _EventData:
         # If channel is a string and exists in the channel names, return the events for that channel.
         if isinstance(channel, str):
             if channel in self.ch_names:
-                start_times = [s + offset - start_times[0] for s in start_times]
                 events = [e[channel] + s for e, s in zip(self._events, start_times)]
                 return np.concatenate(events)
         else:
@@ -240,16 +236,26 @@ class _EventData:
                 reference=reference,
                 remove_gaps=remove_gaps,
             )
-            ax.vlines(events, i + 0.5, i + 1.5, lw=lw, **kwargs)
+            if remove_gaps:
+                ax.vlines(events, i + 0.5, i + 1.5, lw=lw, **kwargs)
+            else:
+                ax.vlines(
+                    [datetime.fromtimestamp(e) for e in events],
+                    i + 0.5,
+                    i + 1.5,
+                    lw=lw,
+                    **kwargs
+                )
             if x_lim is None:
                 max_ = events[-1]  # assumes events are in order but does not check
                 if max_ > x_max:
                     x_max = max_
 
-        # set x_lims via either user defined limits of 0 to last event
-        if x_lim is None:
-            ax.set_xlim(0, x_max)
-        else:
+        if remove_gaps:
+            # set x_lims via either user defined limits of 0 to last event
+            ax.set_xlabel("time(s)")
+
+        if x_lim is not None:
             ax.set_xlim(x_lim[0], x_lim[1])
 
         # set channel names
@@ -259,7 +265,6 @@ class _EventData:
         # set y_lims
         ax.set_ylim(0.5, len(self.ch_names) + 0.5)
 
-        ax.set_xlabel("time(s)")
         return _plt_show_fig(fig, ax, show)
 
     # Creates a new class instance with new data added to the original data.
