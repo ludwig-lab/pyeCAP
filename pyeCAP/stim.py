@@ -26,7 +26,6 @@ class Stim(_EventData, _DioData, _ParameterData):
     Class for working with stimulation data.
     """
 
-
     def __init__(
         self,
         file_path,
@@ -79,13 +78,17 @@ class Stim(_EventData, _DioData, _ParameterData):
             if not all(isinstance(e, dict) for e in events):
                 raise TypeError("All elements in 'events' must be dictionaries")
             if not all(isinstance(ei, dict) for ei in event_indicators):
-                raise TypeError("All elements in 'event_indicators' must be dictionaries")
+                raise TypeError(
+                    "All elements in 'event_indicators' must be dictionaries"
+                )
             if not all(isinstance(d, dict) for d in dio):
                 raise TypeError("All elements in 'dio' must be dictionaries")
             if not all(isinstance(di, dict) for di in dio_indicators):
                 raise TypeError("All elements in 'dio_indicators' must be dictionaries")
             if not all(isinstance(p, pd.DataFrame) for p in parameters):
-                raise TypeError("All elements in 'parameters' must be pandas DataFrames")
+                raise TypeError(
+                    "All elements in 'parameters' must be pandas DataFrames"
+                )
             if not all(isinstance(m, dict) for m in metadata):
                 raise TypeError("All elements in 'metadata' must be dictionaries")
 
