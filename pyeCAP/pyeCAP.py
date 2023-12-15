@@ -1,10 +1,12 @@
 # neuro base class imports
+import os
+import sys
+import zipfile
+
+import requests
+
 from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
-
-import sys, os
-import requests
-import zipfile
 
 
 def download_data(url, filename, directory=os.getcwd()):

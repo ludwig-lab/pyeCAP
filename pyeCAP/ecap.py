@@ -1,36 +1,37 @@
 # neuro base class imports
-from .base.epoch_data import _EpochData
-from .base.utils.numeric import _to_numeric_array
-from .utilities.ancillary_functions import check_make_dir
+import os
+import sys
+import time
+import warnings
+
+import dask
 
 # other imports
 import dask.bag as db
-import openpyxl
+import matplotlib.pyplot as plt
 import numpy as np
-import warnings
+import openpyxl
 import pandas as pd
 from scipy import ndimage
-from scipy.signal import medfilt, find_peaks, savgol_filter
-import matplotlib.pyplot as plt
-import sys
-import dask
-import os
-import time
+from scipy.signal import find_peaks, medfilt, savgol_filter
+
+from .base.epoch_data import _EpochData
+from .base.event_data import _EventData
+from .base.parameter_data import _ParameterData
 
 # pyCAP imports
 from .base.ts_data import _TsData
-from .base.event_data import _EventData
-from .base.parameter_data import _ParameterData
-from .base.utils.base import _to_array, _is_iterable
+from .base.utils.base import _is_iterable, _to_array
 from .base.utils.numeric import _to_numeric_array, find_first
 from .base.utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_add_cbar_axis,
+    _plt_ax_aspect,
+    _plt_ax_to_pix,
     _plt_setup_fig_axis,
     _plt_show_fig,
-    _plt_ax_to_pix,
-    _plt_add_ax_connected_top,
-    _plt_ax_aspect,
-    _plt_add_cbar_axis,
 )
+from .utilities.ancillary_functions import check_make_dir
 
 
 # TODO: edit docstrings

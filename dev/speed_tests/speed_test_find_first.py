@@ -1,11 +1,13 @@
+import random
+import timeit
+from typing import Union
+
 import numpy as np
 from numba import jit
-import timeit
 from tqdm import tqdm
-from typing import Union
-import random
 
 # Function definitions
+
 
 def find_first_true(vec: np.ndarray) -> int:
     """
@@ -19,6 +21,7 @@ def find_first_true(vec: np.ndarray) -> int:
     """
     true_indices = np.where(vec)[0]
     return true_indices[0] if true_indices.size > 0 else -1
+
 
 @jit(nopython=True)
 def find_first_true_numba(vec: np.ndarray) -> int:
@@ -39,6 +42,7 @@ def find_first_true_numba(vec: np.ndarray) -> int:
             return idx
     return -1
 
+
 def find_first_general(array: np.ndarray, value: Union[int, float, str]) -> int:
     """
     Return the index of the first occurrence of a specified value in a numpy array.
@@ -52,6 +56,7 @@ def find_first_general(array: np.ndarray, value: Union[int, float, str]) -> int:
     """
     indices = np.where(array == value)[0]
     return indices[0] if indices.size > 0 else -1
+
 
 @jit(nopython=True)
 def find_first_general_numba(array: np.ndarray, value: Union[int, float, str]) -> int:
@@ -73,11 +78,13 @@ def find_first_general_numba(array: np.ndarray, value: Union[int, float, str]) -
             return idx
     return -1
 
+
 def create_boolean_array(size, num_true, true_positions):
     arr = np.zeros(size, dtype=bool)
     for pos in true_positions:
         arr[pos] = True
     return arr
+
 
 # Parameters to test
 array_lengths = [10000, 100000, 1000000, 10000000]
@@ -109,23 +116,47 @@ with tqdm(total=total_steps, desc="Benchmarking Functions") as pbar:
             numba_time = general_numba_time = general_time = find_first_true_time = 0
 
             for _ in range(iterations):
-                numba_time += timeit.timeit(lambda: find_first_true_numba(test_array), number=1)
+                numba_time += timeit.timeit(
+                    lambda: find_first_true_numba(test_array), number=1
+                )
                 pbar.update(1)
-                general_numba_time += timeit.timeit(lambda: find_first_general_numba(test_array, True), number=1)
+                general_numba_time += timeit.timeit(
+                    lambda: find_first_general_numba(test_array, True), number=1
+                )
                 pbar.update(1)
-                general_time += timeit.timeit(lambda: find_first_general(test_array, True), number=1)
+                general_time += timeit.timeit(
+                    lambda: find_first_general(test_array, True), number=1
+                )
                 pbar.update(1)
-                find_first_true_time += timeit.timeit(lambda: find_first_true(test_array), number=1)
+                find_first_true_time += timeit.timeit(
+                    lambda: find_first_true(test_array), number=1
+                )
                 pbar.update(1)
 
-            results.append((length, num_true, numba_time, general_numba_time, general_time, find_first_true_time))
+            results.append(
+                (
+                    length,
+                    num_true,
+                    numba_time,
+                    general_numba_time,
+                    general_time,
+                    find_first_true_time,
+                )
+            )
 
 # Print compilation times
 print("Compilation time for find_first_true_numba:", compilation_time_true_numba)
 print("Compilation time for find_first_general_numba:", compilation_time_general_numba)
 
 # Print benchmark results in an organized way
-for length, num_true, numba_time, general_numba_time, general_time, find_first_true_time in results:
+for (
+    length,
+    num_true,
+    numba_time,
+    general_numba_time,
+    general_time,
+    find_first_true_time,
+) in results:
     print(f"\nArray Length: {length}, Number of Trues: {num_true}")
     print(f"Specialized Boolean Numba function time: {numba_time}")
     print(f"General Numba function time: {general_numba_time}")

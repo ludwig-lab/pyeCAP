@@ -1,16 +1,17 @@
-import numpy as np
-import matplotlib.pyplot as plt
+import copy
 import math
 import warnings
-import copy
-import pandas as pd
-import dask as da
+from functools import lru_cache
 
-from .ts_data import _TsData
+import dask as da
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
 from .dio_data import _DioData
 from .parameter_data import _ParameterData
+from .ts_data import _TsData
 from .utils.visualization import _plt_add_ax_connected_top, _plt_setup_fig_axis
-from functools import lru_cache
 
 
 class _DioEpoch:

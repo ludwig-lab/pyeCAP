@@ -6,10 +6,10 @@ import numpy as np
 # Importing necessary functions from the utility modules
 from .utils.numeric import _to_numeric_array, largest_triangle_three_buckets
 from .utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_ax_to_pix,
     _plt_setup_fig_axis,
     _plt_show_fig,
-    _plt_ax_to_pix,
-    _plt_add_ax_connected_top,
 )
 
 
@@ -96,7 +96,13 @@ class _EventData:
     # Outputs a one dimensional array of elapsed times corresponding to stimulation pulses from the specified channel.
     # Times are in seconds and the first recorded data set is assumed to start at 0 seconds while other data sets
     # start times are specified with the start_times argument.
-    def events(self, channel: str, start_times: list = None, reference = None, remove_gaps: bool = False) -> np.ndarray:
+    def events(
+        self,
+        channel: str,
+        start_times: list = None,
+        reference=None,
+        remove_gaps: bool = False,
+    ) -> np.ndarray:
         """
         Outputs a one dimensional array of elapsed times corresponding to stimulation pulses from the specified channel.
         Times are in seconds and the first recorded data set is assumed to start at 0 seconds while other data sets
@@ -179,7 +185,7 @@ class _EventData:
         self,
         axis=None,
         start_times: list = None,
-        reference = None,
+        reference=None,
         remove_gaps: bool = False,
         x_lim: list = None,
         fig_size: tuple = (10, 1.5),
@@ -257,7 +263,7 @@ class _EventData:
         return _plt_show_fig(fig, ax, show)
 
     # Creates a new class instance with new data added to the original data.
-    def append(self, new_data) -> '_EventData':
+    def append(self, new_data) -> "_EventData":
         """
         Creates a new class instance with new data added to the original data.
 

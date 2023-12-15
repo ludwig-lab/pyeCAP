@@ -1,12 +1,12 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from .utils.numeric import _to_numeric_array, largest_triangle_three_buckets
 from .utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_ax_to_pix,
     _plt_setup_fig_axis,
     _plt_show_fig,
-    _plt_ax_to_pix,
-    _plt_add_ax_connected_top,
 )
 
 

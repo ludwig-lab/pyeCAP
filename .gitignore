@@ -1,8 +1,73 @@
-/pyeCAP.egg-info/
-/build/
+# Python files
 *.pyc
-*.xml
+__pycache__/
+~*.py
+*.py[cod]
+
+# Package metadata
+/pyeCAP.egg-info/
+*.egg
+*.egg-info/
+
+# Build files
+/build/
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+.installed.cfg
+
+# Specific example data
+/examples/.ipynb_checkpoints/
+/examples/pnpig191126-191204-174838/
+/examples/pnpig191126-191204-175046/
+
+# IDE settings
+.idea/pyeCAP.iml
+.vscode/settings.json
+
+# Dependency management
+poetry.lock
+
+# C extensions
+*.so
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+
+# Translations
+*.mo
+
+# Developer tools
+.mr.developer.cfg
+.project
+.pydevproject
+.ropeproject
+
+# Django files
+*.log
+*.pot
+
+# Sphinx documentation
 *.doctree
+docs/_build/
+
+# Web files
+*.xml
 *.eot
 *.js
 *.css
@@ -10,9 +75,3 @@
 *.woff
 *.woff2
 *.ttf
-.idea/pyeCAP.iml
-*.egg
-~*.py
-examples/.ipynb_checkpoints/*
-.vscode/settings.json
-poetry.lock

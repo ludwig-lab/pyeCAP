@@ -1,39 +1,40 @@
 # Python standard library imports
 import sys
-import pandas as pd
-from functools import lru_cache
+import time
 import warnings
-from cached_property import threaded_cached_property
+from functools import lru_cache
 
 # Scientific computing package imports
 import dask.array as da
-from dask import delayed
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
-import time
+import pandas as pd
+import seaborn as sns
+from cached_property import threaded_cached_property
+from dask import delayed
+
+# interactive plotting
+from ipywidgets import AppLayout, Button, FloatSlider, Output, VBox, interact
 
 # Plotting
 from matplotlib import get_backend as plt_get_backend
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-import seaborn as sns
 
-# interactive plotting
-from ipywidgets import interact, AppLayout, FloatSlider, VBox, Button, Output
+from .event_data import _EventData
+from .parameter_data import _ParameterData
 
 # pyCAP imports
 from .ts_data import _TsData
-from .event_data import _EventData
-from .parameter_data import _ParameterData
-from .utils.base import _to_array, _is_iterable
+from .utils.base import _is_iterable, _to_array
 from .utils.numeric import _to_numeric_array, find_first
 from .utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_add_cbar_axis,
+    _plt_ax_aspect,
+    _plt_ax_to_pix,
     _plt_setup_fig_axis,
     _plt_show_fig,
-    _plt_ax_to_pix,
-    _plt_add_ax_connected_top,
-    _plt_ax_aspect,
-    _plt_add_cbar_axis,
 )
 
 sns.set_context(
@@ -265,7 +266,7 @@ class _EpochData:
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
         calc_y_lim = [0, 0]
-        
+
         if spread_parameters:
             channels = tuple(channels)
         else:
@@ -279,7 +280,11 @@ class _EpochData:
 
         for p, c in zip(_to_parameters(parameters), colors):
             if parameter_label is not None:
-                parameter_label_value = self.event_data.parameters.loc[p, parameter_label] if parameter_label in self.event_data.parameters.columns else None
+                parameter_label_value = (
+                    self.event_data.parameters.loc[p, parameter_label]
+                    if parameter_label in self.event_data.parameters.columns
+                    else None
+                )
 
             if method == "mean":
                 plot_data = self.mean(p, channels=channels)
@@ -296,9 +301,17 @@ class _EpochData:
                 std_data = np.std(plot_data)
                 if std_data > max_std_data:
                     max_std_data = std_data
-                adjusted_plot_data = plot_data + (np.ones_like(plot_data) * spread_accumulator)
+                adjusted_plot_data = plot_data + (
+                    np.ones_like(plot_data) * spread_accumulator
+                )
                 for i, ch in enumerate(channels):
-                    ax.plot(plot_time, adjusted_plot_data[i, :], *args, color=colors[i], **kwargs)
+                    ax.plot(
+                        plot_time,
+                        adjusted_plot_data[i, :],
+                        *args,
+                        color=colors[i],
+                        **kwargs
+                    )
 
                 # Save the position and label for the custom tick
                 custom_y_ticks.append(spread_accumulator)
@@ -323,21 +336,27 @@ class _EpochData:
 
         ax.set_xlabel("time (s)")
         ax.set_ylabel("amplitude (V)")  # Label for the left y-axis
-        ax.set_ylim(_to_numeric_array([calc_y_lim[0], calc_y_lim[1] + spread_accumulator]))
+        ax.set_ylim(
+            _to_numeric_array([calc_y_lim[0], calc_y_lim[1] + spread_accumulator])
+        )
 
         if spread_parameters:
             ax2 = ax.twinx()
             ax.set_ylabel(parameter_label)
             ax2.set_ylabel("amplitude (V)")  # Label for the right y-axis
-            ax2.set_ylim(_to_numeric_array([calc_y_lim[0], calc_y_lim[1] + spread_accumulator]))
+            ax2.set_ylim(
+                _to_numeric_array([calc_y_lim[0], calc_y_lim[1] + spread_accumulator])
+            )
 
             # Remove existing left y-axis ticks and set custom ticks
             ax.set_yticks(custom_y_ticks)
             ax.set_yticklabels(custom_y_labels)
 
             for i, ch in enumerate(channels):
-                ax.plot([], [], color=colors[i], label=ch)  # Dummy plot for legend entry
-            ax.legend(loc='lower right')
+                ax.plot(
+                    [], [], color=colors[i], label=ch
+                )  # Dummy plot for legend entry
+            ax.legend(loc="lower right")
 
         if x_lim is None:
             ax.set_xlim(plot_time[0], plot_time[-1])
@@ -408,7 +427,7 @@ class _EpochData:
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
         calc_y_lim = [0, 0]
-        
+
         for p, c in zip(_to_parameters(parameters), colors):
             if method == "mean":
                 plot_data = self.mean(p, channels=channel)

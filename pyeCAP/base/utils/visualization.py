@@ -1,13 +1,14 @@
 # python standard library imports
 import warnings
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
 # Scientific computing imports
 import numpy as np
 
 # Matplotlib imports
 from matplotlib import get_backend as mpl_get_backend
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 

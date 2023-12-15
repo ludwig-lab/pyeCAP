@@ -1,11 +1,11 @@
 # scientific imports
-import dask.array as da
-import scipy.io as sio
-import numpy as np
-
-import struct
 import datetime as dt
+import struct
 import warnings
+
+import dask.array as da
+import numpy as np
+import scipy.io as sio
 
 
 def check_data(raw_data):

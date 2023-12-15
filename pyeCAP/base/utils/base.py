@@ -7,7 +7,7 @@ import numpy as np
 
 def _is_iterable(obj, element_type=None):
     """
-    Check if an object is an iterable and, if element_type is specified, 
+    Check if an object is an iterable and, if element_type is specified,
     whether all elements in it are of the specified type.
 
     Parameters:
@@ -20,7 +20,9 @@ def _is_iterable(obj, element_type=None):
     if element_type is None:
         return isinstance(obj, Iterable)
     else:
-        return isinstance(obj, Iterable) and all(isinstance(element, element_type) for element in obj)
+        return isinstance(obj, Iterable) and all(
+            isinstance(element, element_type) for element in obj
+        )
 
 
 def _to_array(array, dtype=None):

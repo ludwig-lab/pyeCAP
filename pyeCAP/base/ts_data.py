@@ -1,52 +1,53 @@
 # python standard library imports
+import copy
 import os.path
 import warnings
 from datetime import datetime
-import copy
+
 # deal with importing collections across versions due to deprication of collections in python 3.10
 try:
-    from collections.abc import Iterable # For python >=3.10
+    from collections.abc import Iterable  # For python >=3.10
 except ImportError:
-    from collections import Iterable # For python <3.10
+    from collections import Iterable  # For python <3.10
+
 from distutils.version import LooseVersion
+from multiprocessing.pool import ThreadPool
 
 # scientific computing library imports
 import dask.array as da
-from dask.diagnostics import ProgressBar
 import dask.multiprocessing
-from dask.cache import Cache
+import matplotlib.pyplot as plt
+import mne
 import numpy as np
 import scipy
-from scipy import signal
-import mne
+import seaborn as sns
+from dask.cache import Cache
+from dask.diagnostics import ProgressBar
+
+# interactive plotting
+from ipywidgets import AppLayout, Button, FloatSlider, Output, VBox, interact
 
 # plotting and figure generation
 from matplotlib import __version__ as mpl_version
 from matplotlib import get_backend as plt_get_backend
-import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-import seaborn as sns
-
-# interactive plotting
-from ipywidgets import interact, AppLayout, FloatSlider, VBox, Button, Output
+from scipy import signal
 
 # neuro base class imports
 from .dio_data import _DioData
 from .event_data import _EventData
 from .utils.numeric import (
+    _group_consecutive,
     _to_numeric_array,
     largest_triangle_three_buckets,
-    _group_consecutive,
 )
 from .utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_ax_to_pix,
+    _plt_check_interactive,
     _plt_setup_fig_axis,
     _plt_show_fig,
-    _plt_ax_to_pix,
-    _plt_add_ax_connected_top,
-    _plt_check_interactive,
 )
-
-from multiprocessing.pool import ThreadPool
 
 dask.config.set(scheduler="threads", pool=ThreadPool(8))
 
@@ -1318,11 +1319,13 @@ class _TsData:
             x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps
         )
         for data in plot_data:
-
             if LooseVersion(mpl_version) > LooseVersion("3.5.0"):
                 # Matplotlib version > 3.5.0: Apply transforms using offsets
                 lines = LineCollection(
-                    [line + np.array([0, offset[1]]) for line, offset in zip(data[0], offsets)],
+                    [
+                        line + np.array([0, offset[1]])
+                        for line, offset in zip(data[0], offsets)
+                    ],
                     colors=colors,
                     linewidths=np.ones(plot_array.shape[0]),
                 )
@@ -1459,15 +1462,26 @@ class _TsData:
                 scroll_line.remove()
                 down_sampled_n = []
                 for data_n in plot_data_n:
-                    down_sampled_n.append(data_n[1])
-                    lines_n = LineCollection(
-                        data_n[0],
-                        offsets=offsets,
-                        colors=colors,
-                        linewidths=np.ones(plot_array.shape[0]),
-                        transOffset=None,
-                    )
-                    current_lines = ax.add_collection(lines_n)
+                    if LooseVersion(mpl_version) > LooseVersion("3.5.0"):
+                        # Matplotlib version > 3.5.0: Apply transforms using offsets
+                        lines = LineCollection(
+                            [
+                                line + np.array([0, offset[1]])
+                                for line, offset in zip(data_n[0], offsets)
+                            ],
+                            colors=colors,
+                            linewidths=np.ones(plot_array.shape[0]),
+                        )
+                    else:
+                        # Matplotlib version <= 3.5.0: Use offsets
+                        lines = LineCollection(
+                            data_n[0],
+                            offsets=offsets,
+                            colors=colors,
+                            linewidths=np.ones(plot_array.shape[0]),
+                            transOffset=None,
+                        )
+                    current_lines = ax.add_collection(lines)
                 scroll_span = scroll_ax.axvspan(
                     x_lim_n[0], x_lim_n[1], color="green", zorder=11, alpha=0.7
                 )
@@ -1477,7 +1491,6 @@ class _TsData:
 
                 # Set new x_limits
                 ax.set_xlim(x_lim_n)
-                print((x_lim_n, down_sampled_n))
                 fig.canvas.draw()
                 fig.canvas.flush_events()
 
@@ -1875,8 +1888,6 @@ class _TsData:
             # converts each time to an index that takes gaps into account
             def tti_with_gaps(
                 elapsed_time,
-
-
                 start_times=sts,
                 end_times=ets,
                 start_indices=sis,

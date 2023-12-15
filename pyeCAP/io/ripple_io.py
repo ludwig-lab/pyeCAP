@@ -1,16 +1,16 @@
 # standard imports
 import os
-from itertools import compress
-import warnings
-
-# scientific computing library imports
-import numpy as np
 
 # to lock file for thread safe reading
 import threading
-from cached_property import (
+import warnings
+from itertools import compress
+
+# scientific computing library imports
+import numpy as np
+from cached_property import (  # This can be removed in python 3.8 as they are adding cached properties as a built-in decorator
     threaded_cached_property,
-)  # This can be removed in python 3.8 as they are adding cached properties as a built-in decorator
+)
 
 
 # TODO: set this up to store event data and metadata after loading the first time.
@@ -23,8 +23,8 @@ class RippleIO:
 
         # import statements from th pyneuroshare library from Ripple that mush be obtained directly from them.
         try:
-            from pyns.nsfile import NSFile
             from pyns.nsentity import EntityType
+            from pyns.nsfile import NSFile
         except ModuleNotFoundError:
             warnings.warn("No Neuroshare package found, Ripple files will not work")
 

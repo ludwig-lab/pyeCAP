@@ -1,6 +1,6 @@
 # python standard library imports
-import os
 import glob
+import os
 
 # scientific computing library imports
 import numpy as np
@@ -10,8 +10,8 @@ from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
 
 # pyeCAP io class imports
-from .io.ripple_io import RippleIO, RippleArray
-from .io.tdt_io import TdtIO, TdtArray, gather_sample_delay
+from .io.ripple_io import RippleArray, RippleIO
+from .io.tdt_io import TdtArray, TdtIO, gather_sample_delay
 
 
 class Ephys(_TsData):

@@ -1,24 +1,25 @@
 # Standard library imports
-import sys
-import os
+import functools
 import glob  # for file and directory handling
 import io
-from contextlib import redirect_stdout
 import itertools
+import os
+import sys
 import threading  # to lock file for thread safe reading
 import warnings
-from typing import List, Optional
-import functools
 from collections import defaultdict
+from contextlib import redirect_stdout
+from typing import List, Optional
+
+import dask
+import dask.array as da
+import numpy as np
+import pandas as pd
 
 # Third party imports
 import tdt
-from tdt import read_block, epoc_filter
-import numpy as np
-import pandas as pd
-import dask
-import dask.array as da
 from dask.cache import Cache
+from tdt import epoc_filter, read_block
 
 cache = Cache(0.5e9)  # Leverage 500mb of memory for fast access to data
 
@@ -50,10 +51,11 @@ class TdtIO:
     This class is responsible for handling TDT data files.
     It reads the data, handles errors, and extracts metadata.
     """
+
     def __init__(self, file_path: str):
         """
         Initialize TdtIO with a file path.
-        
+
         :param file_path: The path to the TDT data file.
         :type file_path: str
         :raises TypeError: If the file path is not a string.
@@ -72,7 +74,7 @@ class TdtIO:
         # Redirect print output from read_block to buffer
         try:
             with io.StringIO() as buf, redirect_stdout(buf):
-                # 'headers' var, set to 1 to return only the headers for the block. 
+                # 'headers' var, set to 1 to return only the headers for the block.
                 # This enables fast consecutive calls to read_block
                 self.tdt_block = read_block(self.file_path, headers=1)
                 output = buf.getvalue()
@@ -82,12 +84,12 @@ class TdtIO:
         if self.tdt_block is None:
             raise IOError("File path does not appear to be a TDT tank.")
 
-    @functools.cached_property  
+    @functools.cached_property
     def metadata(self) -> dict:
         """
         Extract metadata from the StoresListing file.
         This method is cached for efficiency as the metadata won't change after being read in.
-        
+
         :return: A dictionary containing the metadata.
         :rtype: dict
         """
@@ -141,7 +143,7 @@ class TdtIO:
     def stores(self) -> list:
         """
         Return a list of keys from the tdt_block stores.
-        
+
         :return: A list of keys from the tdt_block stores.
         :rtype: list
         """
@@ -152,6 +154,7 @@ class TdtStim:
     """
     Class for handling TDT stimulation data.
     """
+
     def __init__(self, tdt_io: TdtIO, type: str = "stim"):
         """
         Initialize TdtStim object.
@@ -172,7 +175,9 @@ class TdtStim:
         self.parameter_stores = []
 
         for key, value in self.tdt_io.metadata["Gizmo Name"].items():
-            if (key in self.tdt_io.stores or '_'+key in self.tdt_io.stores) and value in (
+            if (
+                key in self.tdt_io.stores or "_" + key in self.tdt_io.stores
+            ) and value in (
                 "Electrical Stim Driver",
                 "Electrical Stimulation",
             ):
@@ -187,11 +192,11 @@ class TdtStim:
                         warnings.warn(
                             "Parameter data stored by the electrical stim driver could not be found."
                         )
-                if '_'+key in self.tdt_io.stores:
+                if "_" + key in self.tdt_io.stores:
                     if "p" in key:
-                        self.parameter_stores.append('_'+key)
+                        self.parameter_stores.append("_" + key)
                     elif "r" in key:
-                        self.raw_stores.append('_'+key)
+                        self.raw_stores.append("_" + key)
                     else:
                         warnings.warn(
                             "Parameter data stored by the electrical stim driver could not be found."
@@ -200,7 +205,7 @@ class TdtStim:
                 key == "MonA"
             ):  # TODO: check if any other monitoring channels exist and for new data use the IV10 or other stimulator to check if monitoring data is there
                 self.raw_stores.append(key)
-        
+
         # raise errors/warnings for certain data
         if not self.parameter_stores and not self.raw_stores:
             raise ValueError("No electrical stimulation detected")
@@ -377,14 +382,14 @@ class TdtStim:
         :rtype: dict
         """
         # defaultdict is used here to automatically create lists for keys that do not yet exist in the dictionary.
-        # This is useful when we want to append items to lists for certain keys in a loop, 
+        # This is useful when we want to append items to lists for certain keys in a loop,
         # and we don't know in advance what the keys will be.
         dio = defaultdict(list)
         params = self.parameters
         for ch, name in zip(self.metadata["channels"], self.metadata["ch_names"]):
             ch_params = params[params["channel"] == ch]
-            # Preallocate an array of zeros for the digital input/output data. 
-            # The size of the array is twice the length of the channel parameters, 
+            # Preallocate an array of zeros for the digital input/output data.
+            # The size of the array is twice the length of the channel parameters,
             # because for each parameter, we will store both an onset and an offset.
             dio_data = np.zeros((len(ch_params) * 2,), dtype=float)
             if indicators:
@@ -392,11 +397,11 @@ class TdtStim:
             else:
                 onsets = np.array(ch_params["onset time (s)"])
                 offsets = np.array(ch_params["offset time (s)"])
-                # Fill the preallocated array with the onset and offset times. 
+                # Fill the preallocated array with the onset and offset times.
                 # The onset times are stored at even indices, and the offset times are stored at odd indices.
                 dio_data[0::2] = onsets
                 dio_data[1::2] = offsets
-            # Here, we append the dio_data to the list associated with the key 'name'. 
+            # Here, we append the dio_data to the list associated with the key 'name'.
             # If 'name' does not yet exist in the dictionary, defaultdict automatically creates a new list for it.
             dio[name].extend(dio_data)
         # Convert the defaultdict back to a regular dictionary before returning.
@@ -404,8 +409,8 @@ class TdtStim:
 
     def events(self, indicators: bool = False) -> dict:
         """
-        Get stimulation events. If indicators is True, the function will return an array of 
-        integers where each integer corresponds to the index of the stimulation within the 
+        Get stimulation events. If indicators is True, the function will return an array of
+        integers where each integer corresponds to the index of the stimulation within the
         the stimulation parameter DataFrame returned by the parameters method.
 
         :param indicators: If True, return indicators, defaults to False
@@ -418,8 +423,8 @@ class TdtStim:
         for ch, name in zip(self.metadata["channels"], self.metadata["ch_names"]):
             ch_params = params[params["channel"] == ch]
             total_events = ch_params["pulse count"].sum()
-            # Preallocate an array of the required size for the stimulation events. 
-            # This is done for efficiency reasons, as it is faster to allocate memory for an array once, 
+            # Preallocate an array of the required size for the stimulation events.
+            # This is done for efficiency reasons, as it is faster to allocate memory for an array once,
             # rather than dynamically resizing the array every time we add an event.
             ch_events = np.empty(total_events, dtype=int if indicators else float)
             event_idx = 0
@@ -463,7 +468,13 @@ class TdtStim:
 
 
 class TdtArray:
-    def __init__(self, tdt_io: TdtIO, type: str = "ephys", stores: Optional[List] = None, chunk_size: int = 2040800):
+    def __init__(
+        self,
+        tdt_io: TdtIO,
+        type: str = "ephys",
+        stores: Optional[List] = None,
+        chunk_size: int = 2040800,
+    ):
         """
         Stores data in an array by channel and index.
         Streams are alphanumerically iterated through and stored accordingly in metadata['streams'].

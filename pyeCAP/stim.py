@@ -1,6 +1,6 @@
 # python standard library imports
-import os
 import glob
+import os
 import sys
 import warnings
 
@@ -8,15 +8,16 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from .base.dio_data import _DioData
+
 # neuro base class imports
 from .base.event_data import _EventData
-from .base.dio_data import _DioData
 from .base.parameter_data import _ParameterData
 from .base.utils.base import _is_iterable
 from .base.utils.numeric import _to_numeric_array
 
 # pyeCAP io class imports
-from .io.ripple_io import RippleIO, RippleEvents
+from .io.ripple_io import RippleEvents, RippleIO
 from .io.tdt_io import TdtIO, TdtStim
 
 
@@ -24,6 +25,7 @@ class Stim(_EventData, _DioData, _ParameterData):
     """
     Class for working with stimulation data.
     """
+
 
 def __init__(
     self,
@@ -88,7 +90,16 @@ def __init__(
             raise TypeError("All elements in 'metadata' must be dictionaries")
 
         # Check for empty lists
-        if not file_path or not io or not events or not event_indicators or not dio or not dio_indicators or not parameters or not metadata:
+        if (
+            not file_path
+            or not io
+            or not events
+            or not event_indicators
+            or not dio
+            or not dio_indicators
+            or not parameters
+            or not metadata
+        ):
             raise ValueError("Input lists must not be empty")
 
         self.file_path = file_path
@@ -172,7 +183,9 @@ def __init__(
             metadata,
         )
     else:
-        raise ValueError(f"file_path expected to be a string or a list of strings, but got {type(file_path)}")
+        raise ValueError(
+            f"file_path expected to be a string or a list of strings, but got {type(file_path)}"
+        )
 
     @property
     def raw_stores(self):
@@ -389,4 +402,3 @@ def __init__(
             self._metadata += new_data._metadata
         else:
             raise TypeError("Appended data is not of the same type.")
-

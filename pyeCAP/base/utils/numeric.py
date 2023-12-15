@@ -145,8 +145,8 @@ def find_first_true(vec: np.ndarray) -> int:
     Returns:
     int: The index of the first True in the array, or -1 if no True value is found.
     """
-    # This was tested in dev\speed_tests_speed_test_find_first.py 
-    # and found to beat previously used numba based versions. 
+    # This was tested in dev\speed_tests_speed_test_find_first.py
+    # and found to beat previously used numba based versions.
     true_indices = np.where(vec)[0]
     return true_indices[0] if true_indices.size > 0 else -1
 
@@ -162,8 +162,8 @@ def find_first(array: np.ndarray, value: Union[int, float, str]) -> int:
     Returns:
     int: The index of the first occurrence of the value in the array, or -1 if not found.
     """
-    # This was tested in dev\speed_tests_speed_test_find_first.py 
-    # and found to beat previously used numba based versions. 
+    # This was tested in dev\speed_tests_speed_test_find_first.py
+    # and found to beat previously used numba based versions.
     indices = np.where(array == value)[0]
     return indices[0] if indices.size > 0 else -1
 
@@ -174,22 +174,22 @@ def _group_consecutive(data: np.ndarray, stepsize: int = 1) -> list:
 
     This function takes an array of integers and groups consecutive integers into subarrays.
     The consecutive integers are defined based on a specified step size. By default, consecutive
-    integers are those which differ by 1. The function returns a list of numpy arrays, each 
+    integers are those which differ by 1. The function returns a list of numpy arrays, each
     containing a chunk of consecutive integers.
 
     Parameters:
     -----------
     data : np.ndarray
         An array of integers which will be grouped into consecutive chunks.
-    
+
     stepsize : int, optional
-        The step size to define consecutiveness. Consecutive integers are those which differ 
+        The step size to define consecutiveness. Consecutive integers are those which differ
         by the step size. The default is 1.
 
     Returns:
     --------
     list of np.ndarray
-        A list containing subarrays of the input array. Each subarray consists of consecutive 
+        A list containing subarrays of the input array. Each subarray consists of consecutive
         integers as defined by the stepsize.
 
     Examples:

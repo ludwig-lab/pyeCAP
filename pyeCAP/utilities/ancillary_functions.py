@@ -1,12 +1,12 @@
 import datetime as dt
 import os
 import sys
+import warnings
 from glob import glob
 
 import numpy as np
 import openpyxl
 import pandas as pd
-import warnings
 import xlrd
 
 # TDT_SAMPLE_DELAY = 21  # TDT introduces a delay between stim and recording. This is the sample size of that delay

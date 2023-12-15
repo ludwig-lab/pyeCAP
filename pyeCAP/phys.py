@@ -1,23 +1,23 @@
 # scientific library imports
-import scipy.io as sio
-import numpy as np
 import dask.array as da
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+import numpy as np
+import scipy.io as sio
 import seaborn as sns
+from matplotlib.collections import LineCollection
 
 # neuro base class imports
 from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
 from .base.utils.visualization import (
+    _plt_add_ax_connected_top,
     _plt_ax_to_pix,
     _plt_setup_fig_axis,
     _plt_show_fig,
-    _plt_add_ax_connected_top,
 )
 
 # pyeCAP io class imports
-from .io.adinstruments_io import AdInstrumentsIO, convert_time, ADInstrumentsBin
+from .io.adinstruments_io import ADInstrumentsBin, AdInstrumentsIO, convert_time
 
 # TODO: Comments could be used for event data
 
