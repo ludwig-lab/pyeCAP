@@ -27,165 +27,165 @@ class Stim(_EventData, _DioData, _ParameterData):
     """
 
 
-def __init__(
-    self,
-    file_path,
-    io=None,
-    events=None,
-    event_indicators=None,
-    dio=None,
-    dio_indicators=None,
-    parameters=None,
-    metadata=None,
-):
-    """
-    Constructor for stimulation data objects.
-
-    Parameters
-    ----------
-    file_path : str, list
-        Directory or list of directories containing TDT data sets.
-    io : None, list
-        List of pyeCAP io objects to read ripple/tdt data for each experiment.
-    events : None, list
-        List of dictionaries containing name and an array with stimulation event times.
-    event_indicators : None, list
-        List of dictionaries containing channel name and a pandas integer array relating each stimulation event to
-        the stimulation parameter.
-    dio : None, list
-        List of dictionaries containing channel name and stimulation start/stop times in an array.
-    dio_indicators : None, list
-        List of dictionaries containing channel name and pandas integer array that relates the stimulation parameter
-        to the starting and stopping times.
-    parameters : None, list
-        List of pandas DataFrames containing stimulation parameter data.
-    metadata : None, list
-        List of dictionaries containing stimulation experiment metadata.
-    """
-
-    if (
-        isinstance(file_path, list)
-        and isinstance(io, list)
-        and isinstance(events, list)
-        and isinstance(event_indicators, list)
-        and isinstance(dio, list)
-        and isinstance(dio_indicators, list)
-        and isinstance(parameters, list)
-        and isinstance(metadata, list)
+    def __init__(
+        self,
+        file_path,
+        io=None,
+        events=None,
+        event_indicators=None,
+        dio=None,
+        dio_indicators=None,
+        parameters=None,
+        metadata=None,
     ):
-        # Validate input types
-        if not all(isinstance(i, RippleIO) for i in io):
-            raise TypeError("All elements in 'io' must be instances of RippleIO")
-        if not all(isinstance(e, dict) for e in events):
-            raise TypeError("All elements in 'events' must be dictionaries")
-        if not all(isinstance(ei, dict) for ei in event_indicators):
-            raise TypeError("All elements in 'event_indicators' must be dictionaries")
-        if not all(isinstance(d, dict) for d in dio):
-            raise TypeError("All elements in 'dio' must be dictionaries")
-        if not all(isinstance(di, dict) for di in dio_indicators):
-            raise TypeError("All elements in 'dio_indicators' must be dictionaries")
-        if not all(isinstance(p, pd.DataFrame) for p in parameters):
-            raise TypeError("All elements in 'parameters' must be pandas DataFrames")
-        if not all(isinstance(m, dict) for m in metadata):
-            raise TypeError("All elements in 'metadata' must be dictionaries")
+        """
+        Constructor for stimulation data objects.
 
-        # Check for empty lists
+        Parameters
+        ----------
+        file_path : str, list
+            Directory or list of directories containing TDT data sets.
+        io : None, list
+            List of pyeCAP io objects to read ripple/tdt data for each experiment.
+        events : None, list
+            List of dictionaries containing name and an array with stimulation event times.
+        event_indicators : None, list
+            List of dictionaries containing channel name and a pandas integer array relating each stimulation event to
+            the stimulation parameter.
+        dio : None, list
+            List of dictionaries containing channel name and stimulation start/stop times in an array.
+        dio_indicators : None, list
+            List of dictionaries containing channel name and pandas integer array that relates the stimulation parameter
+            to the starting and stopping times.
+        parameters : None, list
+            List of pandas DataFrames containing stimulation parameter data.
+        metadata : None, list
+            List of dictionaries containing stimulation experiment metadata.
+        """
+
         if (
-            not file_path
-            or not io
-            or not events
-            or not event_indicators
-            or not dio
-            or not dio_indicators
-            or not parameters
-            or not metadata
+            isinstance(file_path, list)
+            and isinstance(io, list)
+            and isinstance(events, list)
+            and isinstance(event_indicators, list)
+            and isinstance(dio, list)
+            and isinstance(dio_indicators, list)
+            and isinstance(parameters, list)
+            and isinstance(metadata, list)
         ):
-            raise ValueError("Input lists must not be empty")
+            # Validate input types
+            if not all((isinstance(i, RippleIO) or isinstance(i, TdtIO)) for i in io):
+                raise TypeError("All elements in 'io' must be instances of RippleIO")
+            if not all(isinstance(e, dict) for e in events):
+                raise TypeError("All elements in 'events' must be dictionaries")
+            if not all(isinstance(ei, dict) for ei in event_indicators):
+                raise TypeError("All elements in 'event_indicators' must be dictionaries")
+            if not all(isinstance(d, dict) for d in dio):
+                raise TypeError("All elements in 'dio' must be dictionaries")
+            if not all(isinstance(di, dict) for di in dio_indicators):
+                raise TypeError("All elements in 'dio_indicators' must be dictionaries")
+            if not all(isinstance(p, pd.DataFrame) for p in parameters):
+                raise TypeError("All elements in 'parameters' must be pandas DataFrames")
+            if not all(isinstance(m, dict) for m in metadata):
+                raise TypeError("All elements in 'metadata' must be dictionaries")
 
-        self.file_path = file_path
-        self.io = io
-        _EventData.__init__(self, events, metadata, indicators=event_indicators)
-        _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
-        _ParameterData.__init__(self, parameters, metadata)
-    elif isinstance(file_path, str):
-        # Read in Ripple data files
-        if file_path.endswith(".nev"):
-            # TODO: Changes for tdt will break this code for ripple, need to repair
-            self.file_path = [file_path]
-            self.io = [RippleIO(file_path)]
-            events = RippleEvents(self.io[0], type="stim")
+            # Check for empty lists
+            if (
+                not file_path
+                or not io
+                or not events
+                or not event_indicators
+                or not dio
+                or not dio_indicators
+                or not parameters
+                or not metadata
+            ):
+                raise ValueError("Input lists must not be empty")
 
-        # Read in file types that point to a directory (i.e. tdt)
-        elif os.path.isdir(file_path):
-            # Check if directory is for tdt data
-            tev_files = glob.glob(file_path + "/*.tev")  # There should only be one
-            if len(tev_files) == 0:
-                # Check if this is a folder of tanks, look for tev files one live deep
-                tev_files = glob.glob(file_path + "/*/*.tev")
+            self.file_path = file_path
+            self.io = io
+            _EventData.__init__(self, events, metadata, indicators=event_indicators)
+            _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
+            _ParameterData.__init__(self, parameters, metadata)
+        elif isinstance(file_path, str):
+            # Read in Ripple data files
+            if file_path.endswith(".nev"):
+                # TODO: Changes for tdt will break this code for ripple, need to repair
+                self.file_path = [file_path]
+                self.io = [RippleIO(file_path)]
+                events = RippleEvents(self.io[0], type="stim")
+
+            # Read in file types that point to a directory (i.e. tdt)
+            elif os.path.isdir(file_path):
+                # Check if directory is for tdt data
+                tev_files = glob.glob(file_path + "/*.tev")  # There should only be one
                 if len(tev_files) == 0:
-                    raise FileNotFoundError(
-                        f"Could not locate '*.tev' file expected for tdt tank in directory {file_path}."
+                    # Check if this is a folder of tanks, look for tev files one live deep
+                    tev_files = glob.glob(file_path + "/*/*.tev")
+                    if len(tev_files) == 0:
+                        raise FileNotFoundError(
+                            f"Could not locate '*.tev' file expected for tdt tank in directory {file_path}."
+                        )
+                    else:
+                        file_path = [os.path.split(f)[0] for f in tev_files]
+                        self.__init__(
+                            file_path,
+                            io=io,
+                            events=events,
+                            event_indicators=event_indicators,
+                            dio=dio,
+                            dio_indicators=dio_indicators,
+                            parameters=parameters,
+                            metadata=metadata,
+                        )
+                        return
+                elif len(tev_files) > 1:
+                    raise FileExistsError(
+                        f"Multiple '*.tev' files found in tank at {file_path}, 1 expected."
                     )
                 else:
-                    file_path = [os.path.split(f)[0] for f in tev_files]
-                    self.__init__(
-                        file_path,
-                        io=io,
-                        events=events,
-                        event_indicators=event_indicators,
-                        dio=dio,
-                        dio_indicators=dio_indicators,
-                        parameters=parameters,
-                        metadata=metadata,
-                    )
-                    return
-            elif len(tev_files) > 1:
-                raise FileExistsError(
-                    f"Multiple '*.tev' files found in tank at {file_path}, 1 expected."
-                )
+                    self.file_path = [file_path]
+                    self.io = [TdtIO(file_path)]
+                    tdt_stim = TdtStim(self.io[0])
+                    parameters = tdt_stim.parameters
+                    metadata = tdt_stim.metadata
+                    events = tdt_stim.events()
+                    event_indicators = tdt_stim.events(indicators=True)
+                    dio = tdt_stim.dio()
+                    dio_indicators = tdt_stim.dio(indicators=True)
+            # File type not found
             else:
-                self.file_path = [file_path]
-                self.io = [TdtIO(file_path)]
-                tdt_stim = TdtStim(self.io[0])
-                parameters = tdt_stim.parameters
-                metadata = tdt_stim.metadata
-                events = tdt_stim.events()
-                event_indicators = tdt_stim.events(indicators=True)
-                dio = tdt_stim.dio()
-                dio_indicators = tdt_stim.dio(indicators=True)
-        # File type not found
-        else:
-            _, file_extension = os.path.splitext(file_path)
-            raise IOError(
-                f'"{file_extension}" is not a supported file extension for file {file_path}'
+                _, file_extension = os.path.splitext(file_path)
+                raise IOError(
+                    f'"{file_extension}" is not a supported file extension for file {file_path}'
+                )
+            _EventData.__init__(self, events, metadata, indicators=event_indicators)
+            _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
+            _ParameterData.__init__(self, parameters, metadata)
+        elif _is_iterable(file_path, str):
+            data = [type(self)(f) for f in file_path]
+            file_path = [item for d in data for item in d.file_path]
+            io = [item for d in data for item in d.io]
+            events = [item for d in data for item in d._events]
+            event_indicators = [item for d in data for item in d._event_indicators]
+            dio = [item for d in data for item in d._dio]
+            dio_indicators = [item for d in data for item in d._dio_indicators]
+            parameters = [item for d in data for item in d._parameters]
+            metadata = [item for d in data for item in d._metadata]
+            self.__init__(
+                file_path,
+                io,
+                events,
+                event_indicators,
+                dio,
+                dio_indicators,
+                parameters,
+                metadata,
             )
-        _EventData.__init__(self, events, metadata, indicators=event_indicators)
-        _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
-        _ParameterData.__init__(self, parameters, metadata)
-    elif _is_iterable(file_path, str):
-        data = [type(self)(f) for f in file_path]
-        file_path = [item for d in data for item in d.file_path]
-        io = [item for d in data for item in d.io]
-        events = [item for d in data for item in d._events]
-        event_indicators = [item for d in data for item in d._event_indicators]
-        dio = [item for d in data for item in d._dio]
-        dio_indicators = [item for d in data for item in d._dio_indicators]
-        parameters = [item for d in data for item in d._parameters]
-        metadata = [item for d in data for item in d._metadata]
-        self.__init__(
-            file_path,
-            io,
-            events,
-            event_indicators,
-            dio,
-            dio_indicators,
-            parameters,
-            metadata,
-        )
-    else:
-        raise ValueError(
-            f"file_path expected to be a string or a list of strings, but got {type(file_path)}"
-        )
+        else:
+            raise ValueError(
+                f"file_path expected to be a string or a list of strings, but got {type(file_path)}"
+            )
 
     @property
     def raw_stores(self):
