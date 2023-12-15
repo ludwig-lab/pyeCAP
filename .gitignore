@@ -13,3 +13,4 @@
 .idea/pyeCAP.iml
 *.egg
 examples/.ipynb_checkpoints/*
+__init__.py
