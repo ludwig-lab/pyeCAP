@@ -345,7 +345,7 @@ class _EpochData:
 
     def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
                   fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, vlines=None, 
-                  baseline_ms=None, **kwargs):
+                  baseline_ms=None, title_fontsize='medium', file_name=None, **kwargs):
         """
         Plots multiple epochs for specified channels and parameters.
 
@@ -353,17 +353,19 @@ class _EpochData:
         - channels (list or str): List of channel names or a single channel name.
         - parameters (list): List of parameter names.
         - num_cols (int): Number of columns in the subplot grid (default: 1).
-        - method (str): Averaging method for plotting data (default: 'mean').
+        - method (str): Averaging method for plotting data. Options are 'mean' and 'median' (default: 'mean').
         - x_lim (tuple): Tuple specifying the x-axis limits (default: None).
-        - y_lim (str or tuple): y-axis limits. 'auto' for automatic calculation, 'max' for maximum range, or a tuple specifying the limits (default: 'auto').
+        - y_lim (str or tuple): y-axis limits. Options are 'auto' for automatic calculation, 'max' for maximum range, or a tuple specifying the limits (default: 'auto').
         - fig_size (tuple): Figure size in inches (default: (10, 3)).
         - show (bool): Whether to display the plot (default: True).
         - show_window (bool): Whether to display the neural fiber window on the plot (default: None).
         - fig_title (str): Title of the figure (default: None).
-        - sort (str): Sorting order for parameters. 'ascending' for ascending order, 'descending' for descending order (default: None).
+        - sort (str): Sorting order for parameters. Options are 'ascending' for ascending order, 'descending' for descending order (default: None).
         - save (bool): Whether to save the figure (default: False).
         - vlines (int or list): Vertical lines to be added to the plot at specific sample numbers (default: None).
         - baseline_ms (float): Baseline correction window in milliseconds (default: None).
+        - title_fontsize (str): Font size of the figure title. Options are 'small', 'medium', 'large' and integar (default: 'medium').
+        - file_name (str): Name of the file to save the figure (default: None).
         - **kwargs: Additional keyword arguments to be passed to the plot function.
 
         Returns:
@@ -382,7 +384,7 @@ class _EpochData:
         fig_height = fig_size[1] * num_rows
 
         fig, ax = plt.subplots(ncols=num_cols, nrows=num_rows, figsize=(fig_width,fig_height))
-        fig.suptitle(fig_title, fontsize='medium')
+        fig.suptitle(fig_title, fontsize=title_fontsize)
         fig.tight_layout()
         fig.subplots_adjust(top=0.95, hspace=0.25, wspace=0.15)
 
@@ -404,7 +406,7 @@ class _EpochData:
             #print('Index: ' + str(idx))
 
             for chan in channels:
-                name = str(self.parameters.parameters['pulse amplitude (μA)'][param]) + ' ' + str(param)
+                name = str(self.parameters.parameters['pulse amplitude (μA)'][param]) + 'μA ' + str(param)
 
                 if method == 'mean':
                     plot_data = self.mean(param, channels=chan)
@@ -487,7 +489,9 @@ class _EpochData:
                         raise ValueError(
                             "Neural window indicies values have not been calculated for this data yet.")
             if save:
-                plt.savefig(fig_title)
+                if file_name is None:
+                    file_name = fig_title
+                plt.savefig(file_name)
         return _plt_show_fig(fig, ax, show)
 
     def plot_phase_delay(self, channels, parameter, *args, method='mean', axis=None, x_lim=None, y_lim='auto',
