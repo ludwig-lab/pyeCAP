@@ -344,7 +344,31 @@ class _EpochData:
         return  _plt_show_fig(fig, ax, show)
 
     def multiplot(self, channels, parameters, num_cols=1, *args, method='mean', x_lim=None, y_lim='auto',
-                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, vlines=None, **kwargs):
+                  fig_size=(10,3), show=True, show_window=None, fig_title=None, sort=None, save=False, vlines=None, 
+                  baseline_ms=None, **kwargs):
+        """
+        Plots multiple epochs for specified channels and parameters.
+
+        Parameters:
+        - channels (list or str): List of channel names or a single channel name.
+        - parameters (list): List of parameter names.
+        - num_cols (int): Number of columns in the subplot grid (default: 1).
+        - method (str): Averaging method for plotting data (default: 'mean').
+        - x_lim (tuple): Tuple specifying the x-axis limits (default: None).
+        - y_lim (str or tuple): y-axis limits. 'auto' for automatic calculation, 'max' for maximum range, or a tuple specifying the limits (default: 'auto').
+        - fig_size (tuple): Figure size in inches (default: (10, 3)).
+        - show (bool): Whether to display the plot (default: True).
+        - show_window (bool): Whether to display the neural fiber window on the plot (default: None).
+        - fig_title (str): Title of the figure (default: None).
+        - sort (str): Sorting order for parameters. 'ascending' for ascending order, 'descending' for descending order (default: None).
+        - save (bool): Whether to save the figure (default: False).
+        - vlines (int or list): Vertical lines to be added to the plot at specific sample numbers (default: None).
+        - baseline_ms (float): Baseline correction window in milliseconds (default: None).
+        - **kwargs: Additional keyword arguments to be passed to the plot function.
+
+        Returns:
+        - fig, ax: The figure and axes objects.
+        """
 
         #If a string is passed because the user only specified a single channel, will convert to list before proceeding
         if isinstance(channels, str):
@@ -396,7 +420,11 @@ class _EpochData:
                         "and 'median'.")
 
                 plot_time = self.time(param)
-
+                # Baseline correction
+                if baseline_ms is not None:
+                    baseline_correction_window = int(baseline_ms * 0.001 * self.fs)
+                    baseline = np.mean(plot_data[:, :baseline_correction_window], axis=1)
+                    plot_data = plot_data - baseline[:, None]
                 # compute appropriate y_limits
                 calc_y_lim = [0, 0]
                 if y_lim is None or y_lim == 'auto':
