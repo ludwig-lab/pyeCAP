@@ -1,8 +1,11 @@
 # python standard library imports
 import copy
+import hashlib
 import os.path
+import pickle
 import warnings
 from datetime import datetime
+from functools import cached_property
 
 # deal with importing collections across versions due to deprication of collections in python 3.10
 try:
@@ -36,6 +39,7 @@ from scipy import signal
 # neuro base class imports
 from .dio_data import _DioData
 from .event_data import _EventData
+from .utils.median import rolling_median
 from .utils.numeric import (
     _group_consecutive,
     _to_numeric_array,
@@ -71,7 +75,7 @@ class _TsData:
         metadata,
         chunks=None,
         daskify=True,
-        thread_safe=True,
+        lock=False,
         fancy_index=True,
         order=True,
         ch_offsets=None,
@@ -89,7 +93,7 @@ class _TsData:
             Dask chunks of the input data, or None to pull the chunks from the input data.
         daskify : bool
             Set to True to convert input data into a dask array.
-        thread_safe : bool
+        lock : bool
             Set to True to create a lock if daskify is True.
         fancy_index : bool
             Set to True to support fancy indexing if daskify is True.
@@ -122,9 +126,7 @@ class _TsData:
 
         # Setup data, converting to dask if required
         if daskify:
-            self.data = [
-                da.from_array(d, lock=thread_safe, fancy=fancy_index) for d in data
-            ]
+            self.data = [da.from_array(d, lock=lock, fancy=fancy_index) for d in data]
         else:
             self.data = data
         if ch_offsets is not None:
@@ -152,6 +154,32 @@ class _TsData:
             srted = sorted(unsorted, key=lambda x: x[1]["start_time"])
             self.data = [s[0] for s in srted]
             self.metadata = [s[1] for s in srted]
+
+    @cached_property
+    def _state_identifier(self):
+        import hashlib
+        import pickle
+
+        from dask.base import is_dask_collection
+
+        data_bytes = b""
+        for d in self.data:
+            if is_dask_collection(d):
+                # Get static properties of the Dask graph
+                graph = d.__dask_graph__()
+                graph_properties = (
+                    f"{len(graph)}-{set(type(v) for v in graph.values())}"
+                )
+                data_bytes += graph_properties.encode()
+            elif isinstance(d, np.ndarray):
+                data_bytes += d.tobytes()
+            else:
+                raise TypeError(f"Unsupported data type: {type(d)}")
+
+        metadata_bytes = pickle.dumps(self.metadata)
+
+        # Hash the concatenated bytes
+        return hashlib.sha256(data_bytes + metadata_bytes).hexdigest()
 
     @property
     def array(self):
@@ -992,23 +1020,26 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
+
+        def apply_filter(x):
+            # Apply the filter to each channel separately
+            return rolling_median(x[0, :], kernel_size)[np.newaxis, :]
+
+        rolling_median(
+            np.zeros(10), 3
+        )  # trigger jit with some dummy data before passed to map_overlap
+
         if btype in ("lowpass", "low"):
             data = [
-                da.map_overlap(
-                    d,
-                    lambda x: scipy.ndimage.median_filter(x, size=(1, kernel_size)),
-                    (0, kernel_size),
-                    dtype=d.dtype,
+                d.map_overlap(
+                    lambda x: apply_filter(x), (0, kernel_size), dtype=d.dtype
                 )
                 for d in self.data
             ]
         elif btype in ("highpass", "high"):
             data = [
-                da.map_overlap(
-                    d,
-                    lambda x: x - scipy.ndimage.median_filter(x, size=(1, kernel_size)),
-                    (0, kernel_size),
-                    dtype=d.dtype,
+                d.map_overlap(
+                    lambda x: x - apply_filter(x), (0, kernel_size), dtype=d.dtype
                 )
                 for d in self.data
             ]
@@ -1124,7 +1155,7 @@ class _TsData:
         x_lim=None,
         fig_size=(10, 2),
         show=True,
-        **kwargs
+        **kwargs,
     ):
         """
         Plots the times when experiments represented by the data sets were conducted.
@@ -1519,7 +1550,7 @@ class _TsData:
         fig_size=(10, 3),
         nperseg=None,
         colors=sns.color_palette(),
-        **kwargs
+        **kwargs,
     ):
         """
         Plots Power Spectral Density (PSD) (V**2/Hz) vs. Frequency (Hz) using the Welch method and 50 percent overlap.
@@ -1569,7 +1600,7 @@ class _TsData:
             shape=(2, nperseg),
             dtype=np.float64,
             nperseg=nperseg,
-            **kwargs
+            **kwargs,
         )
         psd = da.swapaxes(psd, 1, 2).compute()
 
@@ -1616,7 +1647,7 @@ class _TsData:
         store="data",
         compression="gzip",
         method="hdf5",
-        **kwargs
+        **kwargs,
     ):
         data = self.array
         if scale != 1:

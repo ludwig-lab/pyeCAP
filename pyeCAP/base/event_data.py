@@ -1,4 +1,5 @@
 from datetime import datetime
+from functools import cached_property
 from typing import Union
 
 import matplotlib.pyplot as plt
@@ -47,6 +48,17 @@ class _EventData:
         self._events = events
         self._metadata = metadata
         self._event_indicators = indicators
+
+    @cached_property
+    def _state_identifier(self):
+        from .utils.base import _generate_state_identifier
+
+        properties = [
+            self._dio,
+            self._metadata,
+            self._dio_indicators,
+        ]  # Add more properties to this list if needed
+        return _generate_state_identifier(properties)
 
     # Property getter method for metadata for the data sets including start and stop time, channel names, number of
     # stimulation times, and more.

@@ -3,6 +3,7 @@ import functools
 import glob  # for file and directory handling
 import io
 import itertools
+import mmap
 import os
 import sys
 import threading  # to lock file for thread safe reading
@@ -603,12 +604,14 @@ class TdtArray:
 
             @dask.delayed
             def load_block(offsets):
-                f = open(tev_file, "r")
+                f = open(tev_file, "rb")
+                mm = mmap.mmap(
+                    f.fileno(), 0, access=mmap.ACCESS_READ
+                )  # Create a memory-mapped file object
                 n_offsets = np.copy(offsets)
-                n_offsets[1:] = np.diff(offsets) - block_bits
-                # print((f, np_dtype, block_size, offsets))
+                # n_offsets[1:] = np.diff(offsets) - block_bits
                 block = [
-                    np.fromfile(f, dtype=np_dtype, count=block_size, offset=offset)
+                    np.frombuffer(mm, dtype=np_dtype, count=block_size, offset=offset)
                     for offset in n_offsets
                 ]
                 block = np.concatenate(block)

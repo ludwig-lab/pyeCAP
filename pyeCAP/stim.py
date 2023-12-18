@@ -3,6 +3,7 @@ import glob
 import os
 import sys
 import warnings
+from functools import cached_property
 
 # scientific computing library imports
 import numpy as np
@@ -189,6 +190,20 @@ class Stim(_EventData, _DioData, _ParameterData):
             raise ValueError(
                 f"file_path expected to be a string or a list of strings, but got {type(file_path)}"
             )
+
+    @cached_property
+    def _state_identifier(self):
+        from .base.utils.base import _generate_state_identifier
+
+        properties = [
+            self._events,
+            self._event_indicators,
+            self._dio,
+            self._dio_indicators,
+            self._parameters,
+            self._metadata,
+        ]  # Add more properties to this list if needed
+        return _generate_state_identifier(properties)
 
     @property
     def raw_stores(self):

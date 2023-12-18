@@ -1,8 +1,12 @@
 # Python standard library imports
+import hashlib
 import sys
 import time
 import warnings
-from functools import lru_cache
+from collections import OrderedDict
+from functools import cached_property, lru_cache
+
+import dask
 
 # Scientific computing package imports
 import dask.array as da
@@ -27,7 +31,7 @@ from .parameter_data import _ParameterData
 # pyCAP imports
 from .ts_data import _TsData
 from .utils.base import _is_iterable, _to_array
-from .utils.numeric import _to_numeric_array, find_first
+from .utils.numeric import _get_size, _to_numeric_array, find_first_true
 from .utils.visualization import (
     _plt_add_ax_connected_top,
     _plt_add_cbar_axis,
@@ -59,6 +63,23 @@ class _EpochData:
     Class representing Epoch Data and parent class of ECAP. Contains the methods for the ECAP class.
     """
 
+    _cache = OrderedDict()  # Initialize a cahce across all instances of _EpochData
+    _cache_size = 2e9  # Set the maximum cache size in bytes
+
+    @classmethod
+    def clear_cache(cls):
+        """
+        Clears the cache across all instances of _EpochData.
+        """
+        cls._cache.clear()
+
+    @classmethod
+    def cache_size(cls):
+        """
+        Returns the current size of the cache in bytes.
+        """
+        return sum(sys.getsizeof(v) for v in cls._cache.values())
+
     def __init__(self, ts_data, event_data, parameters, x_lim="auto"):
         """
         Constructor for _Epochdata class.
@@ -86,6 +107,31 @@ class _EpochData:
         else:
             raise ValueError("Unrecognized input data types")
 
+    @cached_property
+    def _state_identifier(self):
+        """
+        Generate a state identifier that integrates the result from the 3 classes it inherits from.
+        """
+
+        # get_state_identifier properties
+        ts_data_id = self.ts_data._state_identifier
+        event_data_id = self.event_data._state_identifier
+        parameter_data_id = self.parameters._state_identifier
+
+        # Concatenate the identifiers and convert to bytes
+        combined_id = (ts_data_id + event_data_id + parameter_data_id).encode()
+
+        # Generate a SHA256 hash of the combined identifier
+        return hashlib.sha256(combined_id).hexdigest()
+
+    @property
+    def sample_rate(self):
+        return self.ts_data.sample_rate
+
+    @property
+    def ch_names(self):
+        return self.ts_data.ch_names
+
     @lru_cache(maxsize=None)
     def time(self, parameter):
         """
@@ -109,33 +155,16 @@ class _EpochData:
         """
         sample_len = self.dask_array(parameter).shape[2]
         if self.x_lim is None or self.x_lim == "auto":
-            return np.arange(0, sample_len) / self.ts_data.sample_rate
+            return np.arange(0, sample_len) / self.sample_rate
         else:
-            return (np.arange(0, sample_len) / self.ts_data.sample_rate) - self.x_lim[0]
-
-    # Todo: move to end
-    def _first_onset_index(self):
-        """
-        :return: dataframe of onset indices stores in a  multiindex dataframe of mxn
-            where m:conditions, n: amplitude
-        """
-        fs = self.ts_data.sample_rate
-        df_epocs = pd.copy(self.event_data.parameters[["onset time (s)"]], deep=True)
-
-        # convert onset time to onset index
-        df_epocs_idx = round(df_epocs * fs).astype(int)
-        df_epocs_idx = df_epocs_idx.rename(
-            columns={"onset time (s)": "onset index", "offset time (s)": "offset index"}
-        )
-
-        return df_epocs_idx
+            return (np.arange(0, sample_len) / self.sample_rate) - self.x_lim[0]
 
     def epoc_index(self):
         """
         :return: dataframe of onset indices stores in a  multiindex dataframe of mxn
             where m:conditions, n: amplitude
         """
-        fs = self.ts_data.sample_rate
+        fs = self.sample_rate
         pulse_count = self.event_data.parameters["pulse count"]
 
         # epocs including offset: might have to include this later for checking. Leaving Commented out for now
@@ -143,7 +172,7 @@ class _EpochData:
         df_offset["offset index"] = df_offset[[0]]
         df_offset = df_offset.rename(columns={0: "onset index"})
         df_epocs = self.event_data.parameters[["onset time (s)", "offset time (s)"]]
-        fs = self.ts_data.sample_rate
+        fs = self.sample_rate
         # df_epocs['time diff (s)'] = df_epocs['offset time (s)'] - df_epocs['onset time (s)']
         df_epocs_idx = round(df_epocs * fs).astype(int)
         df_epocs_idx = df_epocs_idx.rename(
@@ -182,7 +211,7 @@ class _EpochData:
         for ch in self.event_data.ch_names:
             # Get events for the current channel based on start times.
             events = self.event_data.events(
-                ch, start_times=self.ts_data.start_indices / self.ts_data.sample_rate
+                ch, start_times=self.ts_data.start_indices / self.sample_rate
             )
             # Get event indicators for the current channel.
             event_indicators = self.event_data.event_indicators(ch)
@@ -200,11 +229,11 @@ class _EpochData:
         # Determine the length of each sample based on settings or automatically.
         if self.x_lim is None or self.x_lim == "auto":
             min_event_time = np.min(np.diff(event_times))
-            sample_len = np.round(min_event_time * self.ts_data.sample_rate)
+            sample_len = np.round(min_event_time * self.sample_rate)
         else:
             event_times = event_times + self.x_lim[0]
             sample_len = int(
-                np.round((self.x_lim[1] - self.x_lim[0]) * self.ts_data.sample_rate)
+                np.round((self.x_lim[1] - self.x_lim[0]) * self.sample_rate)
             )
 
         # Convert event times to indices.
@@ -217,8 +246,8 @@ class _EpochData:
             indices[ts:te] = True
 
         # Find the indices of the first and last onset in the boolean mask.
-        first_onset_idx = find_first(True, indices)
-        last_onset_idx = len(indices) - find_first(True, np.flip(indices)) - 1
+        first_onset_idx = find_first_true(indices)
+        last_onset_idx = len(indices) - find_first_true(np.flip(indices)) - 1
 
         # Determine indices to remove from the data.
         removal_idx = np.logical_not(
@@ -261,7 +290,7 @@ class _EpochData:
         show=True,
         spread_parameters=False,
         spread_factor=3.0,
-        **kwargs
+        **kwargs,
     ):
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
@@ -310,7 +339,7 @@ class _EpochData:
                         adjusted_plot_data[i, :],
                         *args,
                         color=colors[i],
-                        **kwargs
+                        **kwargs,
                     )
 
                 # Save the position and label for the custom tick
@@ -377,7 +406,7 @@ class _EpochData:
         colors=sns.color_palette(),
         fig_size=(10, 3),
         show=True,
-        **kwargs
+        **kwargs,
     ):
         """
         Plots the data from a channel for the given stimulation parameters. Plotting occurs over the time interval of
@@ -477,7 +506,7 @@ class _EpochData:
         c_map="RdYlBu",
         fig_size=(10, 4),
         show=True,
-        **kwargs
+        **kwargs,
     ):
         """
         Generates a raster plot for a given channel and parameters.
@@ -582,7 +611,7 @@ class _EpochData:
             vmin=calc_c_lim[0],
             vmax=calc_c_lim[1],
             aspect="auto",
-            **kwargs
+            **kwargs,
         )
 
         if x_lim is None:
@@ -592,34 +621,95 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
-    @lru_cache(maxsize=None)
-    def array(self, parameter, channels=None):
-        """
-        Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
-        the time series data with one dimension representing the pulse and another representing the channel. The remaining
-        dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
-        for faster computing.
+    # @lru_cache(maxsize=None)
+    # def array(self, parameter, channels=None):
+    #     """
+    #     Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
+    #     the time series data with one dimension representing the pulse and another representing the channel. The remaining
+    #     dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
+    #     for faster computing.
 
-        Parameters
-        ----------
-        parameter : tuple
-            Stimulation parameter. Composed of index for the data set and index for the stimulation.
-        channels : None, str, int, tuple
-            Channels or channel indices to include in the array.
+    #     Parameters
+    #     ----------
+    #     parameter : tuple
+    #         Stimulation parameter. Composed of index for the data set and index for the stimulation.
+    #     channels : None, str, int, tuple
+    #         Channels or channel indices to include in the array.
 
-        Returns
-        -------
-        numpy.ndarray, dask.array.core.
-            Three dimensional array containing raw Ephys data.
+    #     Returns
+    #     -------
+    #     numpy.ndarray, dask.array.core.
+    #         Three dimensional array containing raw Ephys data.
 
-        Examples
-        ________
-        >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
-        """
+    #     Examples
+    #     ________
+    #     >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
+    #     """
+    #     if channels is None:
+    #         return self.dask_array(parameter).compute()
+    #     else:
+    #         return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
+
+    def array(self, parameters, channels=None):
+        # Ensure parameters and channels are lists for iteration
+        if not isinstance(parameters, list):
+            parameters = [parameters]
         if channels is None:
-            return self.dask_array(parameter).compute()
-        else:
-            return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
+            channels = self.channels
+        elif not isinstance(channels, list):
+            channels = [channels]
+        channels = np.where(self._ch_to_index(channels))[0]
+
+        # Prepare a list of dask arrays to compute
+        dask_arrays = {}
+        data_to_compute = {}
+        for parameter in parameters:
+            # Check which channels are not in the cache
+            channels_to_compute = [
+                channel
+                for channel in channels
+                if self._generate_cache_key(self.array, parameter, channel)
+                not in self._cache
+            ]
+            if channels_to_compute:
+                data_to_compute[parameter] = channels_to_compute
+                # Compute only the channels that are not in the cache
+                dask_arrays[parameter] = self.dask_array(parameter)[
+                    :, channels_to_compute, :
+                ]
+
+        # Compute all dask arrays at once
+        computed_arrays = da.compute(dask_arrays, scheduler="threads", num_workers=8)[0]
+
+        print(data_to_compute)
+        # Store computed arrays in the cache
+        for parameter, channels_to_compute in data_to_compute.items():
+            for i, channel in enumerate(channels_to_compute):
+                key = self._generate_cache_key(self.array, parameter, channel)
+                channel_array = computed_arrays[parameter][:, i, :]
+                data_size = _get_size(channel_array)  # Get size of the entire array
+                # If adding this data will exceed the cache size, remove least recently used items
+                while (
+                    len(self._cache) > 0
+                    and (data_size + sum(_get_size(a) for a in self._cache.values()))
+                    > self._cache_size
+                ):
+                    self._cache.popitem(last=False)
+                self._cache[key] = channel_array
+
+        # Return the computed arrays for the requested parameters and channels
+        result = {
+            parameter: np.stack(
+                [
+                    self._cache[
+                        self._generate_cache_key(self.array, parameter, channel)
+                    ]
+                    for channel in channels
+                ]
+            )
+            for parameter in parameters
+        }
+        return result
 
     @lru_cache(
         maxsize=None
@@ -698,3 +788,67 @@ class _EpochData:
         >>> ecap_data.std((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
         return np.std(self.array(parameter, channels=channels), axis=0)
+
+    def compute(self, functions, parameters, channels=None):
+        # Ensure parameters and channels are lists for iteration
+        if not isinstance(parameters, list):
+            parameters = [parameters]
+        if channels is not None and not isinstance(channels, list):
+            channels = [channels]
+
+        # Prepare a list of dask arrays to compute
+        dask_arrays = []
+        for function in functions:
+            for parameter in parameters:
+                for channel in channels:
+                    key = self._generate_cache_key(
+                        function.__name__, parameter, channel
+                    )
+                    if key not in self._cache:
+                        dask_arrays.append((key, function(parameter, channel)))
+
+        # Compute all dask arrays at once
+        computed_arrays = dask.compute([array for key, array in dask_arrays])
+
+        # Store computed arrays in the cache
+        for (key, _), array in zip(dask_arrays, computed_arrays):
+            data_size = self._get_size(array)
+            # If adding this data will exceed the cache size, remove least recently used items
+            while (
+                len(self._cache) > 0
+                and (data_size + sum(self._cache.values())) > self._cache_size
+            ):
+                self._cache.popitem(last=False)
+            self._cache[key] = array
+
+        # Return the computed arrays for the requested functions, parameters and channels
+        result = [
+            self._cache[self._generate_cache_key(function.__name__, parameter, channel)]
+            for function in functions
+            for parameter in parameters
+            for channel in channels
+        ]
+        return result
+
+    def _ch_to_index(self, channels):
+        return self.ts_data._ch_to_index(channels)
+
+    def _first_onset_index(self):
+        """
+        :return: dataframe of onset indices stores in a  multiindex dataframe of mxn
+            where m:conditions, n: amplitude
+        """
+        fs = self.sample_rate
+        df_epocs = pd.copy(self.event_data.parameters[["onset time (s)"]], deep=True)
+
+        # convert onset time to onset index
+        df_epocs_idx = round(df_epocs * fs).astype(int)
+        df_epocs_idx = df_epocs_idx.rename(
+            columns={"onset time (s)": "onset index", "offset time (s)": "offset index"}
+        )
+
+        return df_epocs_idx
+
+    def _generate_cache_key(self, function_name, parameter, channel):
+        # Create a combined string
+        return f"{self._state_identifier}_{function_name}_{parameter}_{channel}"

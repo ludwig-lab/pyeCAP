@@ -1,7 +1,13 @@
+import dask.array as da
 import numpy as np
 import pytest
 
-from pyeCAP.base.utils.numeric import _to_numeric_array, find_first, find_first_true
+from pyeCAP.base.utils.numeric import (
+    _get_size,
+    _to_numeric_array,
+    find_first,
+    find_first_true,
+)
 
 # Test _to_numeric_array
 
@@ -72,3 +78,31 @@ def test_find_first_empty_array():
 def test_find_first_with_string():
     array = np.array(["apple", "banana", "cherry"])
     assert find_first(array, "banana") == 1
+
+
+# Tests for _get_size
+
+
+def test_get_size_numpy():
+    # Create a numpy array
+    np_array = np.array([1, 2, 3, 4, 5], dtype=np.int32)
+    # Calculate expected size: number of elements * size of each element
+    expected_size = np_array.size * np_array.dtype.itemsize
+    assert _get_size(np_array) == expected_size
+
+
+def test_get_size_dask():
+    # Create a dask array
+    da_array = da.from_array([1, 2, 3, 4, 5], chunks=2)
+    # Calculate expected size: number of elements * size of each element
+    expected_size = da_array.size * da_array.dtype.itemsize
+    assert _get_size(da_array) == expected_size
+
+
+def test_get_size_invalid_input():
+    # Test with an invalid input (not a numpy or dask array)
+    with pytest.raises(TypeError):
+        _get_size([1, 2, 3, 4, 5])
+
+
+# Test median filter 1d function

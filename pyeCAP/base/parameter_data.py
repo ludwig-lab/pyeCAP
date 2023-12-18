@@ -1,3 +1,6 @@
+import hashlib
+from functools import cached_property
+
 import pandas as pd
 
 
@@ -24,7 +27,17 @@ class _ParameterData:
         self._parameters = parameters
         self._metadata = metadata
 
-    @property
+    @cached_property
+    def _state_identifier(self):
+        from .utils.base import _generate_state_identifier
+
+        properties = [
+            self._parameters,
+            self._metadata,
+        ]  # Add more properties to this list if needed
+        return _generate_state_identifier(properties)
+
+    @cached_property
     def parameters(self):
         """
         Property getter method for information about stimulation time periods, pulses, frequencies, and more.

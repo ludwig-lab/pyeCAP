@@ -1,4 +1,5 @@
 from datetime import datetime
+from functools import cached_property
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,6 +41,17 @@ class _DioData:
         self._dio = dio
         self._metadata = metadata
         self._dio_indicators = indicators
+
+    @cached_property
+    def _state_identifier(self):
+        from .utils.base import _generate_state_identifier
+
+        properties = [
+            self._dio,
+            self._metadata,
+            self._dio_indicators,
+        ]  # Add more properties to this list if needed
+        return _generate_state_identifier(properties)
 
     @property
     def metadata(self):

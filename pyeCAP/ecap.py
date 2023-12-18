@@ -10,7 +10,6 @@ import dask
 import dask.bag as db
 import matplotlib.pyplot as plt
 import numpy as np
-import openpyxl
 import pandas as pd
 from scipy import ndimage
 from scipy.signal import find_peaks, medfilt, savgol_filter
@@ -52,14 +51,4 @@ class ECAP(_EpochData):
             Stimulation data object.
         """
 
-        if (
-            isinstance(ephys_data, _TsData)
-            and isinstance(stim_data, _EventData)
-            and isinstance(stim_data, _ParameterData)
-        ):
-            self.ts_data = ephys_data
-            self.event_data = stim_data
-            self.parameters = stim_data
-            self.x_lim = "auto"
-        else:
-            raise ValueError("Unrecognized input data types")
+        super().__init__(ephys_data, stim_data, stim_data, "auto")

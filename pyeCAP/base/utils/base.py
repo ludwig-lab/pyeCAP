@@ -53,3 +53,31 @@ def _to_array(array, dtype=None):
         return np_array
     except Exception as e:
         raise ValueError(f"Conversion to numpy array failed: {e}")
+
+
+def _generate_state_identifier(properties):
+    """
+    Generate a unique identifier for a given set of properties.
+
+    This function serializes each property into bytes. If a property has a '_state_identifier' attribute,
+    it is encoded into bytes. Otherwise, the property is pickled into bytes. The bytes of all properties
+    are then concatenated and hashed using SHA256 to generate a unique identifier.
+
+    Parameters:
+    properties (Iterable): An iterable of properties to generate the identifier for.
+
+    Returns:
+    str: A unique identifier for the given properties as a hexadecimal string.
+    """
+    import hashlib
+    import pickle
+
+    bytes_list = []
+    for prop in properties:
+        if hasattr(prop, "_state_identifier"):
+            bytes_list.append(prop._state_identifier.encode())
+        else:
+            bytes_list.append(pickle.dumps(prop))
+
+    # Hash the concatenated bytes
+    return hashlib.sha256(b"".join(bytes_list)).hexdigest()
