@@ -31,6 +31,7 @@ class _DioData:
             List of dictionaries containing channel name and pandas integer array that relates the stimulation parameter
             to the starting and stopping times.
         """
+        # metadata expects ch_names and start_time
         if not isinstance(dio, list):
             dio = [dio]
         if not isinstance(metadata, list):
@@ -254,6 +255,13 @@ class _DioData:
                                 ymax=(i + 1) * 1 / channels,
                                 **kwargs
                             )
+                            ax.axvline(
+                                event[0],
+                                *args,
+                                ymin=i * 1 / channels,
+                                ymax=(i + 1) * 1 / channels,
+                                **kwargs
+                            )
                         else:
                             ax.axvspan(
                                 datetime.fromtimestamp(event[0]),
@@ -263,13 +271,13 @@ class _DioData:
                                 ymax=(i + 1) * 1 / channels,
                                 **kwargs
                             )
-                        # ax.axvline(
-                        #     event[0],
-                        #     *args,
-                        #     ymin=i * 1 / channels,
-                        #     ymax=(i + 1) * 1 / channels,
-                        #     **kwargs
-                        # )
+                            ax.axvline(
+                                datetime.fromtimestamp(event[0]),
+                                *args,
+                                ymin=i * 1 / channels,
+                                ymax=(i + 1) * 1 / channels,
+                                **kwargs
+                            )
                 elif display == "lines":
                     if remove_gaps:
                         ax.vlines(events[::2], i + 0.5, i + 1.5)
@@ -324,6 +332,51 @@ class _DioData:
             return type(self)(dio, metadata, indicators)
         else:
             raise TypeError("Appended data is not of the same type.")
+
+    def merge(self, other):
+        """
+        Merges channels and metadata from two _DioData instances if their start_times are the same and their channels are different.
+
+        Parameters
+        ----------
+        other : _DioData
+            The other _DioData instance to merge with.
+
+        Returns
+        -------
+        _DioData
+            A new _DioData instance with merged data.
+        """
+        if not isinstance(other, _DioData):
+            raise TypeError("The 'other' parameter must be an instance of _DioData.")
+
+        if self.start_times != other.start_times:
+            raise ValueError(
+                "The start_times of the two _DioData instances must be the same."
+            )
+
+        if set(self.ch_names).intersection(set(other.ch_names)):
+            raise ValueError(
+                "The channels of the two _DioData instances must be different."
+            )
+
+        # Merge dio and indicators
+        merged_dio = [{**d, **other_d} for d, other_d in zip(self._dio, other._dio)]
+        merged_indicators = [
+            {**i, **other_i}
+            for i, other_i in zip(
+                self._dio_indicators or [], other._dio_indicators or []
+            )
+        ]
+
+        # Merge metadata
+        merged_metadata = []
+        for self_meta, other_meta in zip(self._metadata, other._metadata):
+            merged_ch_names = self_meta["ch_names"] + other_meta["ch_names"]
+            merged_meta = {**self_meta, **other_meta, "ch_names": merged_ch_names}
+            merged_metadata.append(merged_meta)
+
+        return type(self)(merged_dio, merged_metadata, merged_indicators)
 
     def __getitem__(self, item):
         if isinstance(item, str):
