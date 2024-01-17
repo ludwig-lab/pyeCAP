@@ -852,3 +852,10 @@ class _EpochData:
     def _generate_cache_key(self, function_name, parameter, channel):
         # Create a combined string
         return f"{self._state_identifier}_{function_name}_{parameter}_{channel}"
+
+    def _calc_RMS(self, data, window=None):
+        if window is not None:
+            RMS = np.sqrt(np.mean(data[window[0] : window[1]] ** 2))
+        else:
+            RMS = np.sqrt(np.mean(data**2))
+        return RMS
