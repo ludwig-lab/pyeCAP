@@ -14,6 +14,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import seaborn as sns
 from cached_property import threaded_cached_property
 from dask import delayed
@@ -636,6 +637,7 @@ class _EpochData:
         show_mean=False,
         method="mean",
         axis=None,
+        opacity=1,
         x_lim=None,
         y_lim="auto",
         colors=sns.color_palette(),
@@ -651,18 +653,292 @@ class _EpochData:
         plot_time = self.time(parameter)
         print(_to_parameters(parameter))
         print("Plotting trace #s " + str(bin[0]) + " to " + str(bin[1]))
-        # print(bin[1])
 
         # Creates numpy array of binned traces for plotting
         bin_data = self.array_old(parameter, channel)[bin[0] : bin[1], :, :]
 
         for data in bin_data:
-            ax.plot(plot_time, data[0, :])
+            ax.plot(plot_time, data[0, :], alpha=opacity)
 
+        if show_mean == True:
+            if method == "median":
+                avg_trace = self.median(parameter, channel)
+            else:
+                avg_trace = self.mean(parameter, channel)
+            ax.plot(plot_time, avg_trace, "r")
+
+        if fig_title is not None:
+            ax.set_title(fig_title)
+
+        if x_lim is None:
+            ax.set_xlim(plot_time[0], plot_time[-1])
+        else:
+            ax.set_xlim(x_lim)
+
+        # compute appropriate y_limits
+        if y_lim is None or y_lim == "auto":
+            std_data = np.std(bin_data)
+            calc_y_lim = [
+                np.min([-std_data * 7, calc_y_lim[0]]),
+                np.max([std_data * 7, calc_y_lim[1]]),
+            ]
+        elif y_lim == "max":
+            calc_y_lim = None
+        else:
+            calc_y_lim = _to_numeric_array(y_lim)
+        ax.set_ylim(calc_y_lim)
+
+        if vlines is not None:
+            # Add vline at specific sample # -- Later: Incorporate adding it in at a specific time
+            if isinstance(vlines, int):  # For case where only one line is passed
+                # ax[idx].axvline(vlines * self.fs)
+                ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+            elif isinstance(vlines, list):
+                for line in vlines:
+                    ax.axvline(line * (1 / self.fs), linestyle="--", c="red")
+            else:
+                raise Exception(
+                    "Vertical line inputs must be integer (for single line), or a list of integers."
+                )
         # ax.set_ylim(y_lim)
-        # ax.set_xlim(x_lim)
-
         return _plt_show_fig(fig, ax, show)
+
+    def multiplot(
+        self,
+        channels,
+        parameters,
+        num_cols=1,
+        *args,
+        method="mean",
+        x_lim=None,
+        y_lim="auto",
+        fig_size=(10, 3),
+        show=True,
+        show_window=None,
+        fig_title=None,
+        sort=None,
+        save=False,
+        vlines=None,
+        baseline_ms=None,
+        title_fontsize="medium",
+        file_name=None,
+        **kwargs,
+    ):
+        """
+        Plots multiple epochs for specified channels and parameters.
+
+        Parameters:
+        - channels (list or str): List of channel names or a single channel name.
+        - parameters (list): List of parameter names.
+        - num_cols (int): Number of columns in the subplot grid (default: 1).
+        - method (str): Averaging method for plotting data. Options are 'mean' and 'median' (default: 'mean').
+        - x_lim (tuple): Tuple specifying the x-axis limits (default: None).
+        - y_lim (str or tuple): y-axis limits. Options are 'auto' for automatic calculation, 'max' for maximum range, or a tuple specifying the limits (default: 'auto').
+        - fig_size (tuple): Figure size in inches (default: (10, 3)).
+        - show (bool): Whether to display the plot (default: True).
+        - show_window (bool): Whether to display the neural fiber window on the plot (default: None).
+        - fig_title (str): Title of the figure (default: None).
+        - sort (str): Sorting order for parameters. Options are 'ascending' for ascending order, 'descending' for descending order (default: None).
+        - save (bool): Whether to save the figure (default: False).
+        - vlines (int or list): Vertical lines to be added to the plot at specific sample numbers (default: None).
+        - baseline_ms (float): Baseline correction window in milliseconds (default: None).
+        - title_fontsize (str): Font size of the figure title. Options are 'small', 'medium', 'large' and integar (default: 'medium').
+        - file_name (str): Name of the file to save the figure (default: None).
+        - **kwargs: Additional keyword arguments to be passed to the plot function.
+
+        Returns:
+        - fig, ax: The figure and axes objects.
+        """
+
+        # If a string is passed because the user only specified a single channel, will convert to list before proceeding
+        if isinstance(channels, str):
+            channels = [channels]
+
+        if show_window == True and len(channels) > 1:
+            warnings.warn(
+                "Multiple channels passed. Neural fiber window displays with respect to first channel only."
+            )
+
+        num_rows = math.ceil(len(parameters) / num_cols)
+        fig_width = fig_size[0] * num_cols
+        fig_height = fig_size[1] * num_rows
+
+        fig, ax = plt.subplots(
+            ncols=num_cols, nrows=num_rows, figsize=(fig_width, fig_height)
+        )
+        fig.suptitle(fig_title, fontsize=title_fontsize)
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.95, hspace=0.25, wspace=0.15)
+
+        print("Channels: " + str(channels))
+        # print('Parameter indices: ' + str(parameters))
+        ax = ax.ravel()
+        axrange = range(len(parameters))
+
+        if sort is not None:
+            if sort == "ascending":
+                sorted_params = (
+                    self.parameters.parameters.loc[parameters]
+                    .sort_values("pulse amplitude (μA)", ascending=False)
+                    .index
+                )
+            elif sort == "descending":
+                sorted_params = (
+                    self.parameters.parameters.loc[parameters]
+                    .sort_values("pulse amplitude (μA)", ascending=True)
+                    .index
+                )
+        else:
+            sorted_params = parameters
+
+        for param, idx in zip(_to_parameters(sorted_params), axrange):
+            # print('Parameter: ' + str(param))
+            # print('Index: ' + str(idx))
+
+            for chan in channels:
+                name = (
+                    str(self.parameters.parameters["pulse amplitude (μA)"][param])
+                    + "μA "
+                    + str(param)
+                )
+
+                if method == "mean":
+                    plot_data = self.mean(param, channels=chan)
+                    # print('mean')   #Check to make sure 'if' loop functions
+                elif method == "median":
+                    plot_data = self.median(param, channels=chan)
+                    # print('median')
+                elif method == "std":
+                    plot_data = self.std(param, channels=chan)
+                else:
+                    raise ValueError(
+                        "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
+                        "and 'median'."
+                    )
+
+                plot_time = self.time(param)
+                # Baseline correction
+                if baseline_ms is not None:
+                    baseline_correction_window = int(baseline_ms * 0.001 * self.fs)
+                    baseline = np.mean(
+                        plot_data[:, :baseline_correction_window], axis=1
+                    )
+                    plot_data = plot_data - baseline[:, None]
+                # compute appropriate y_limits
+                calc_y_lim = [0, 0]
+                if y_lim is None or y_lim == "auto":
+                    std_data = np.std(plot_data)
+                    # print(std_data.compute())
+                    calc_y_lim = [
+                        np.min([-std_data.compute() * 7, calc_y_lim[0]]),
+                        np.max([std_data.compute() * 7, calc_y_lim[1]]),
+                    ]
+                    # print(calc_y_lim)
+                    # calc_y_lim = [-std_data * 7, std_data * 7]
+                elif y_lim == "max":
+                    calc_y_lim = None
+                else:
+                    calc_y_lim = _to_numeric_array(y_lim)
+
+                ax[idx].plot(plot_time, plot_data[0, :], label=chan, *args, **kwargs)
+
+                ax[idx].set_ylim(calc_y_lim)
+                ax[idx].set_xlabel("time (s)")
+                ax[idx].set_ylabel("amplitude (V)")
+                ax[idx].legend()
+                ax[idx].set_title(name)
+
+                if x_lim is None:
+                    ax[idx].set_xlim(plot_time[0], plot_time[-1])
+                else:
+                    ax[idx].set_xlim(x_lim)
+
+                if vlines is not None:
+                    # Add vline at specific sample # -- Later: Incorporate adding it in at a specific time
+                    if isinstance(
+                        vlines, int
+                    ):  # For case where only one line is passed
+                        # ax[idx].axvline(vlines * self.fs)
+                        ax[idx].axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+                    elif isinstance(vlines, list):
+                        for line in vlines:
+                            ax[idx].axvline(
+                                line * (1 / self.fs), linestyle="--", c="red"
+                            )
+                    else:
+                        raise Exception(
+                            "Vertical line inputs must be integer (for single line), or a list of integers."
+                        )
+
+                # IN DEVELOPMENT -- Display integration windows on plot
+                if show_window == True:
+                    c_map = "bgrym"
+                    label_scale = [0.9, 0.8, 0.7, 0.6, 0.5]
+
+                    if self.neural_window_indicies is not None:
+                        # print(self.neural_window_indicies)
+                        window_array = self.neural_window_indicies[
+                            np.where(self.ts_data._ch_to_index(channels[0]))
+                        ]
+                        # print(windows)
+                        for i, win in enumerate(window_array[0]):
+                            start = win[0] / self.fs
+                            stop = win[1] / self.fs
+                            ax[idx].axvspan(start, stop, alpha=0.1, color=c_map[i])
+                            ax[idx].axvspan(start, stop, edgecolor="k", fill=False)
+
+                            # if window_labels == True:
+                            #    ax.hlines(label_scale[i] * np.max(y_lim), start, stop, color=c_map[i])
+                            #    ax.text(start, label_scale[i] * np.max(y_lim), self.neural_fiber_names[i],
+                            #            ha='right', va='center')
+                    else:
+                        raise ValueError(
+                            "Neural window indicies values have not been calculated for this data yet."
+                        )
+            if save:
+                if file_name is None:
+                    file_name = fig_title
+                plt.savefig(file_name)
+        return _plt_show_fig(fig, ax, show)
+
+    def plot_interactive(self, channels, parameter, *args, method="mean", **kwargs):
+
+        if isinstance(parameter, list):
+            raise Exception(
+                "Interactive plots can only contain a single parameter (amplitude)."
+            )
+
+        if not isinstance(channels, list):
+            channels = [channels]
+
+        plotDF = pd.DataFrame()
+        nameLIST = []
+        plotDF["Time (ms)"] = self.time(parameter) * 1e3
+        plotNAME = (
+            "Amplitude (uA): "
+            + str(self.parameters.parameters["pulse amplitude (μA)"][parameter])
+            + " - Param ID: "
+            + str(parameter)
+        )
+
+        # TODO: If channels are passed as integers convert them to channel names
+
+        for chan in channels:
+            # print("Channel: " + chan)
+            if method == "mean":
+                plotDF[chan] = self.mean(parameter, channels=chan).T
+            elif method == "median":
+                plotDF[chan] = self.median(parameter, channels=chan).T
+            nameLIST.append(plotDF[chan])
+        # print(nameLIST)
+        fig = px.line(
+            plotDF, x=plotDF.index, y=nameLIST, title=plotNAME, hover_data=["Time (ms)"]
+        )
+        fig.update_xaxes(title_text="Sample #")
+        fig.update_yaxes(title_text="Voltage (V)")
+        fig.show()
+        # fig.show(renderer='notebook_connected')
+        return
 
     @lru_cache(maxsize=None)
     def array_old(self, parameter, channels=None):
@@ -743,22 +1019,34 @@ class _EpochData:
         # Return the computed arrays for the requested parameters and channels
         print(len(parameters))
 
-        if len(parameters) > 1:
-            result = {
-                parameter: np.stack(
-                    [
-                        self._cache[
-                            self._generate_cache_key(self.array, parameter, channel)
-                        ]
-                        for channel in channels
+        result = {
+            parameter: np.stack(
+                [
+                    self._cache[
+                        self._generate_cache_key(self.array, parameter, channel)
                     ]
-                )
-                for parameter in parameters
-            }
-        else:
-            result = self._cache[
-                self._generate_cache_key(self.array, parameter, channel)
-            ]
+                    for channel in channels
+                ]
+            )
+            for parameter in parameters
+        }
+
+        # if len(parameters) > 1:
+        #     result = {
+        #         parameter: np.stack(
+        #             [
+        #                 self._cache[
+        #                     self._generate_cache_key(self.array, parameter, channel)
+        #                 ]
+        #                 for channel in channels
+        #             ]
+        #         )
+        #         for parameter in parameters
+        #     }
+        # else:
+        #     result = self._cache[
+        #         self._generate_cache_key(self.array, parameter, channel)
+        #     ]
         return result
 
     @lru_cache(
@@ -790,9 +1078,8 @@ class _EpochData:
         # mean = np.mean(data_dict[parameter], axis = 1)
         # return mean
 
-        return np.mean(self.array(parameter, channels=channels), axis=0)
-
-        # return np.mean(self.array(parameter, channels=channels)[parameter], axis=1)
+        # return np.mean(self.array(parameter, channels=channels), axis=0)
+        return np.mean(self.array(parameter, channels=channels)[parameter], axis=1)
 
     @lru_cache(
         maxsize=None
