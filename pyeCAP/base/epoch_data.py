@@ -848,10 +848,10 @@ class _EpochData:
         print("Plotting trace #s " + str(bin[0]) + " to " + str(bin[1]))
 
         # Creates numpy array of binned traces for plotting
-        bin_data = self.array_old(parameter, channel)[bin[0] : bin[1], :, :]
+        bin_data = self.array(parameter, channel)[parameter][:, bin[0] : bin[1], :]
 
-        for data in bin_data:
-            ax.plot(plot_time, data[0, :], alpha=opacity)
+        for data in bin_data[0]:
+            ax.plot(plot_time, data, alpha=opacity)
 
         if show_mean == True:
             if method == "median":
