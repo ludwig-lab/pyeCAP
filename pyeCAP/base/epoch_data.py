@@ -395,7 +395,7 @@ class _EpochData:
         if spread_parameters:
             return _plt_show_fig(fig, [ax, ax2], show)
         else:
-            return _plot_show_fig(fig, ax, show)
+            return _plt_show_fig(fig, ax, show)
 
     def plot_channel(
         self,
@@ -627,34 +627,71 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
-    # @lru_cache(maxsize=None)
-    # def array(self, parameter, channels=None):
-    #     """
-    #     Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
-    #     the time series data with one dimension representing the pulse and another representing the channel. The remaining
-    #     dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
-    #     for faster computing.
+    def plot_binned_traces(
+        self,
+        channel,
+        parameter,
+        bin,
+        *args,
+        show_mean=False,
+        method="mean",
+        axis=None,
+        x_lim=None,
+        y_lim="auto",
+        colors=sns.color_palette(),
+        fig_size=(10, 3),
+        show=True,
+        fig_title=None,
+        vlines=None,
+        **kwargs,
+    ):
 
-    #     Parameters
-    #     ----------
-    #     parameter : tuple
-    #         Stimulation parameter. Composed of index for the data set and index for the stimulation.
-    #     channels : None, str, int, tuple
-    #         Channels or channel indices to include in the array.
+        fig, ax = _plt_setup_fig_axis(axis, fig_size)
+        calc_y_lim = [0, 0]
+        plot_time = self.time(parameter)
+        print(_to_parameters(parameter))
+        print("Plotting trace #s " + str(bin[0]) + " to " + str(bin[1]))
+        # print(bin[1])
 
-    #     Returns
-    #     -------
-    #     numpy.ndarray, dask.array.core.
-    #         Three dimensional array containing raw Ephys data.
+        # Creates numpy array of binned traces for plotting
+        bin_data = self.array_old(parameter, channel)[bin[0] : bin[1], :, :]
 
-    #     Examples
-    #     ________
-    #     >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
-    #     """
-    #     if channels is None:
-    #         return self.dask_array(parameter).compute()
-    #     else:
-    #         return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
+        for data in bin_data:
+            ax.plot(plot_time, data[0, :])
+
+        # ax.set_ylim(y_lim)
+        # ax.set_xlim(x_lim)
+
+        return _plt_show_fig(fig, ax, show)
+
+    @lru_cache(maxsize=None)
+    def array_old(self, parameter, channels=None):
+        """
+        Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
+        the time series data with one dimension representing the pulse and another representing the channel. The remaining
+        dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
+        for faster computing.
+
+        Parameters
+        ----------
+        parameter : tuple
+            Stimulation parameter. Composed of index for the data set and index for the stimulation.
+        channels : None, str, int, tuple
+            Channels or channel indices to include in the array.
+
+        Returns
+        -------
+        numpy.ndarray, dask.array.core.
+            Three dimensional array containing raw Ephys data.
+
+        Examples
+        ________
+        >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
+        """
+        if channels is None:
+            return self.dask_array(parameter).compute()
+        else:
+            return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
 
     def array(self, parameters, channels=None):
         # Ensure parameters and channels are lists for iteration
@@ -722,37 +759,7 @@ class _EpochData:
             result = self._cache[
                 self._generate_cache_key(self.array, parameter, channel)
             ]
-
         return result
-
-    @lru_cache(maxsize=None)
-    def old_array(self, parameter, channels=None):
-        """
-        Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
-        the time series data with one dimension representing the pulse and another representing the channel. The remaining
-        dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
-        for faster computing.
-
-        Parameters
-        ----------
-        parameter : tuple
-            Stimulation parameter. Composed of index for the data set and index for the stimulation.
-        channels : None, str, int, tuple
-            Channels or channel indices to include in the array.
-
-        Returns
-        -------
-        numpy.ndarray, dask.array.core.
-            Three dimensional array containing raw Ephys data.
-
-        Examples
-        ________
-        >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
-        """
-        if channels is None:
-            return self.dask_array(parameter).compute()
-        else:
-            return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
 
     @lru_cache(
         maxsize=None
