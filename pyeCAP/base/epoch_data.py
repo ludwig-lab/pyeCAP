@@ -276,6 +276,154 @@ class _EpochData:
         )
         return da.moveaxis(event_data_reshaped, 1, 0)
 
+    def get_parameters(
+        self, channel=None, bipolar_ch=None, amplitude=None, amp_cutoff=None
+    ):
+
+        # TODO: make function work with lists of channels and bipolar channels
+
+        # Bring up stimulation data to use for finding desired parameters
+        df = self.parameters.parameters
+        paramLIST = []
+
+        if channel is None:
+            # If no channel or bipolar channel are specified return all params matching amplitude arguments
+            if bipolar_ch is None:
+                if amp_cutoff is not None:
+                    if isinstance(amplitude, list):
+                        raise ValueError(
+                            "If the 'amp_cutoff' argument is defined, the 'amplitude' argument must be a single value."
+                        )
+                    elif amp_cutoff == "high":
+                        paramLIST = df.loc[
+                            abs(df["pulse amplitude (μA)"]) >= amplitude
+                        ].index
+                    elif amp_cutoff == "low":
+                        paramLIST = df.loc[
+                            abs(df["pulse amplitude (μA)"]) <= amplitude
+                        ].index
+                    else:
+                        raise ValueError(
+                            "The 'amp_cutoff' argument must be 'high', 'low', or 'None'. Use 'None' when you wish to pass a specific value or list of amplitudes to look for."
+                        )
+                else:
+                    if not isinstance(amplitude, list):
+                        amplitude = [amplitude]
+                    paramLIST = df.loc[df["pulse amplitude (μA)"].isin(amplitude)].index
+            # Channel is not defined, but bipolar channel is then return params that satisfy amplitude arguments while matching the bipolar channel
+            else:
+                if (
+                    amplitude is None
+                ):  # If only bipolar channel is specified, return all params that use that bipolar channel
+                    paramLIST = df.loc[df["bipolar channel"] == bipolar_ch].index
+                elif amp_cutoff is not None:
+                    if isinstance(amplitude, list):
+                        raise ValueError(
+                            "If the 'amp_cutoff' argument is defined, the 'amplitude' argument must be a single value."
+                        )
+                    elif amp_cutoff == "high":
+                        paramLIST = df.loc[
+                            (abs(df["pulse amplitude (μA)"]) >= amplitude)
+                            & (df["bipolar channel"] == bipolar_ch)
+                        ].index
+                    elif amp_cutoff == "low":
+                        paramLIST = df.loc[
+                            (abs(df["pulse amplitude (μA)"]) <= amplitude)
+                            & (df["bipolar channel"] == bipolar_ch)
+                        ].index
+                    else:
+                        raise ValueError(
+                            "The 'amp_cutoff' argument must be 'high', 'low', or 'None'. Use 'None' when you wish to pass a specific value or list of amplitudes to look for."
+                        )
+                else:
+                    if not isinstance(amplitude, list):
+                        amplitude = [amplitude]
+                    paramLIST = df.loc[
+                        (df["pulse amplitude (μA)"].isin(amplitude))
+                        & (df["bipolar channel"] == bipolar_ch)
+                    ].index
+
+        # If statements for situations where 'channel' is not specified
+        else:
+            # Channel is defined, but bipolar channel is undefined, return all params using channel and matching amplitude arguments
+            if bipolar_ch is None:
+                if (
+                    amplitude is None
+                ):  # If only channel is specified, return all params that use that channel
+                    paramLIST = df.loc[df["channel"] == channel].index
+                elif amp_cutoff is not None:
+                    if isinstance(amplitude, list):
+                        raise ValueError(
+                            "If the 'amp_cutoff' argument is defined, the 'amplitude' argument must be a single value."
+                        )
+                    elif amp_cutoff == "high":
+                        paramLIST = df.loc[
+                            (abs(df["pulse amplitude (μA)"]) >= amplitude)
+                            & (df["channel"] == channel)
+                        ].index
+                    elif amp_cutoff == "low":
+                        paramLIST = df.loc[
+                            (abs(df["pulse amplitude (μA)"]) <= amplitude)
+                            & (df["channel"] == channel)
+                        ].index
+                    else:
+                        raise ValueError(
+                            "The 'amp_cutoff' argument must be 'high', 'low', or 'None'. Use 'None' when you wish to pass a specific value or list of amplitudes to look for."
+                        )
+                else:
+                    if not isinstance(amplitude, list):
+                        amplitude = [amplitude]
+                    paramLIST = df.loc[
+                        (df["pulse amplitude (μA)"].isin(amplitude))
+                        & (df["channel"] == channel)
+                    ].index
+            # Channel and bipolar_ch are defined, return all params that match all arguments
+            else:
+                if amplitude is None:
+                    paramLIST = df.loc[
+                        (df["channel"] == channel)
+                        & (df["bipolar channel"] == bipolar_ch)
+                    ].index
+                elif amp_cutoff is not None:
+                    if isinstance(amplitude, list):
+                        raise ValueError(
+                            "If the 'amp_cutoff' argument is defined, the 'amplitude' argument must be a single value."
+                        )
+                    elif amp_cutoff == "high":
+                        paramLIST = df.loc[
+                            (abs(df["pulse amplitude (μA)"]) >= amplitude)
+                            & (df["channel"] == channel)
+                            & (df["bipolar channel"] == bipolar_ch)
+                        ].index
+                    elif amp_cutoff == "low":
+                        paramLIST = df.loc[
+                            (abs(df["pulse amplitude (μA)"]) <= amplitude)
+                            & (df["channel"] == channel)
+                            & (df["bipolar channel"] == bipolar_ch)
+                        ].index
+                    else:
+                        raise ValueError(
+                            "The 'amp_cutoff' argument must be 'high', 'low', or 'None'. Use 'None' when you wish to pass a specific value or list of amplitudes to look for."
+                        )
+                else:
+                    if not isinstance(amplitude, list):
+                        amplitude = [amplitude]
+                    paramLIST = df.loc[
+                        (df["pulse amplitude (μA)"].isin(amplitude))
+                        & (df["channel"] == channel)
+                        & (df["bipolar channel"] == bipolar_ch)
+                    ].index
+
+        # If only channel is specified, return all params that use that channel
+
+        # If only bipolar channel is specified, return all params that use that bipolar channel
+
+        # If channel and bipolar channel are specified, return all params that use that pairing
+
+        # If amplitude is specified and has a cutoff type, return params based on the type. Above/Below etc., This cannot be used if a list of amplitudes is passed
+
+        return paramLIST
+
     def plot(
         self,
         channels,
@@ -410,6 +558,9 @@ class _EpochData:
         colors=sns.color_palette(),
         fig_size=(10, 3),
         show=True,
+        sort=None,
+        fig_title=None,
+        vlines=None,
         **kwargs,
     ):
         """
@@ -461,10 +612,30 @@ class _EpochData:
 
         calc_y_lim = [0, 0]
 
-        for p, c in zip(_to_parameters(parameters), colors):
+        if sort is not None:
+            if sort == "ascending":
+                sorted_params = (
+                    self.parameters.parameters.loc[parameters]
+                    .sort_values("pulse amplitude (μA)", ascending=False)
+                    .index
+                )
+            elif sort == "descending":
+                sorted_params = (
+                    self.parameters.parameters.loc[parameters]
+                    .sort_values("pulse amplitude (μA)", ascending=True)
+                    .index
+                )
+            else:
+                raise ValueError(
+                    "The 'sort' argument must be set to either 'ascending', 'descending', or 'None' (default)."
+                )
+        else:
+            sorted_params = parameters
+
+        for p, c in zip(_to_parameters(sorted_params), colors):
             if method == "mean":
                 plot_data = self.mean(p, channels=channel)
-                print(plot_data.shape)
+                # print(plot_data.shape)
             elif method == "median":
                 plot_data = self.median(p, channels=channel)
             else:
@@ -478,26 +649,48 @@ class _EpochData:
             if y_lim is None or y_lim == "auto":
                 std_data = np.std(plot_data)
                 calc_y_lim = [
-                    np.min([-std_data * 6, calc_y_lim[0]]),
-                    np.max([std_data * 6, calc_y_lim[1]]),
+                    np.min([-std_data * 7, calc_y_lim[0]]),
+                    np.max([std_data * 7, calc_y_lim[1]]),
                 ]
             elif y_lim == "max":
                 calc_y_lim = None
             else:
                 calc_y_lim = _to_numeric_array(y_lim)
 
-            # old
-            # ax.plot(plot_time, plot_data[0, :], *args, color=c, **kwargs)
-            ax.plot(plot_time, plot_data, *args, color=c, **kwargs)
+            plotLABEL = (
+                str(self.parameters.parameters.loc[p]["pulse amplitude (μA)"])
+                + " (Stim Ch. "
+                + str(self.parameters.parameters.loc[p]["channel"])
+                + ")"
+            )
+            ax.plot(
+                plot_time, plot_data[0, :], label=plotLABEL, *args, color=c, **kwargs
+            )
 
         ax.set_ylim(calc_y_lim)
         ax.set_xlabel("time (s)")
         ax.set_ylabel("amplitude (V)")
+        ax.legend(loc=1)
+
+        if fig_title is not None:
+            ax.set_title(fig_title)
 
         if x_lim is None:
             ax.set_xlim(plot_time[0], plot_time[-1])
         else:
             ax.set_xlim(x_lim)
+
+        if vlines is not None:
+            # Add vline at specific sample # -- TODO: Incorporate adding it in at a specific time
+            if isinstance(vlines, int):  # For case where only one line is passed
+                ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+            elif isinstance(vlines, list):
+                for line in vlines:
+                    ax.axvline(line * (1 / self.fs), linestyle="--", c="red")
+            else:
+                raise Exception(
+                    "Vertical line inputs must be integer (for single line), or a list of integers."
+                )
 
         return _plt_show_fig(fig, ax, show)
 
@@ -665,7 +858,7 @@ class _EpochData:
                 avg_trace = self.median(parameter, channel)
             else:
                 avg_trace = self.mean(parameter, channel)
-            ax.plot(plot_time, avg_trace, "r")
+            ax.plot(plot_time, avg_trace[0, :], "r")
 
         if fig_title is not None:
             ax.set_title(fig_title)
@@ -929,8 +1122,7 @@ class _EpochData:
                 plotDF[chan] = self.mean(parameter, channels=chan).T
             elif method == "median":
                 plotDF[chan] = self.median(parameter, channels=chan).T
-            nameLIST.append(plotDF[chan])
-        # print(nameLIST)
+            nameLIST.append(chan)
         fig = px.line(
             plotDF, x=plotDF.index, y=nameLIST, title=plotNAME, hover_data=["Time (ms)"]
         )
