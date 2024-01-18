@@ -348,7 +348,7 @@ class _EpochData:
 
                 spread_accumulator += std_data * spread_factor
             else:
-                ax.plot(plot_time, plot_data[0, :], *args, color=c, **kwargs)
+                ax.plot(plot_time, plot_data, *args, color=c, **kwargs)
         spread_accumulator -= std_data * spread_factor
 
         # compute appropriate y_limits
@@ -392,7 +392,10 @@ class _EpochData:
         else:
             ax.set_xlim(x_lim)
 
-        return _plt_show_fig(fig, [ax, ax2], show)
+        if spread_parameters:
+            return _plt_show_fig(fig, [ax, ax2], show)
+        else:
+            return _plot_show_fig(fig, ax, show)
 
     def plot_channel(
         self,
@@ -460,6 +463,7 @@ class _EpochData:
         for p, c in zip(_to_parameters(parameters), colors):
             if method == "mean":
                 plot_data = self.mean(p, channels=channel)
+                print(plot_data.shape)
             elif method == "median":
                 plot_data = self.median(p, channels=channel)
             else:
@@ -481,7 +485,9 @@ class _EpochData:
             else:
                 calc_y_lim = _to_numeric_array(y_lim)
 
-            ax.plot(plot_time, plot_data[0, :], *args, color=c, **kwargs)
+            # old
+            # ax.plot(plot_time, plot_data[0, :], *args, color=c, **kwargs)
+            ax.plot(plot_time, plot_data, *args, color=c, **kwargs)
 
         ax.set_ylim(calc_y_lim)
         ax.set_xlabel("time (s)")
@@ -698,18 +704,55 @@ class _EpochData:
                 self._cache[key] = channel_array
 
         # Return the computed arrays for the requested parameters and channels
-        result = {
-            parameter: np.stack(
-                [
-                    self._cache[
-                        self._generate_cache_key(self.array, parameter, channel)
+        print(len(parameters))
+
+        if len(parameters) > 1:
+            result = {
+                parameter: np.stack(
+                    [
+                        self._cache[
+                            self._generate_cache_key(self.array, parameter, channel)
+                        ]
+                        for channel in channels
                     ]
-                    for channel in channels
-                ]
-            )
-            for parameter in parameters
-        }
+                )
+                for parameter in parameters
+            }
+        else:
+            result = self._cache[
+                self._generate_cache_key(self.array, parameter, channel)
+            ]
+
         return result
+
+    @lru_cache(maxsize=None)
+    def old_array(self, parameter, channels=None):
+        """
+        Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
+        the time series data with one dimension representing the pulse and another representing the channel. The remaining
+        dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
+        for faster computing.
+
+        Parameters
+        ----------
+        parameter : tuple
+            Stimulation parameter. Composed of index for the data set and index for the stimulation.
+        channels : None, str, int, tuple
+            Channels or channel indices to include in the array.
+
+        Returns
+        -------
+        numpy.ndarray, dask.array.core.
+            Three dimensional array containing raw Ephys data.
+
+        Examples
+        ________
+        >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
+        """
+        if channels is None:
+            return self.dask_array(parameter).compute()
+        else:
+            return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
 
     @lru_cache(
         maxsize=None
@@ -735,7 +778,14 @@ class _EpochData:
         ________
         >>> ecap_data.mean  ((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
+
+        # data_dict = self.array(parameter, channels=channels)
+        # mean = np.mean(data_dict[parameter], axis = 1)
+        # return mean
+
         return np.mean(self.array(parameter, channels=channels), axis=0)
+
+        # return np.mean(self.array(parameter, channels=channels)[parameter], axis=1)
 
     @lru_cache(
         maxsize=None
