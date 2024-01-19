@@ -1305,6 +1305,39 @@ class _EpochData:
                 for p, v in self.array(parameters, channels).items()
             }
 
+    def _time_to_index(self, time, units="seconds"):
+        # TODO: calculate index accounting for
+        """
+        Converts an elapsed time into an index. This index corresponds to the array index of the data point at the
+        specified time.
+
+        Parameters
+        ----------
+        time : int, str
+            Elapsed time.
+        units : str
+            Units of the 'time' parameter. Enter 'seconds', 'milliseconds', or 'microseconds'.
+
+
+        Returns
+        -------
+        int
+            Array index corresponding to the data at the time input.
+
+        Examples
+        ________
+        >>> ephys_data._time_to_index(5)
+        122070
+
+        """
+        # Convert time units once at the beginning.
+        if units == "milliseconds":
+            time = time / 1e3
+        elif units == "microseconds":
+            time = time / 1e6
+
+        return np.round(np.multiply(time, self.sample_rate)).astype(int)
+
     def _ch_to_index(self, channels):
         return self.ts_data._ch_to_index(channels)
 

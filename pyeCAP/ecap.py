@@ -254,14 +254,22 @@ class ECAP(_EpochData):
                 self.AUC_traces = self.mean(parameter_index)[np.newaxis, :, :]
             else:
                 self.AUC_traces = np.concatenate(
-                    [self.mean(parameter_index)[p] for p in parameter_index], axis=0
+                    [
+                        self.mean(parameter_index)[p][np.newaxis, :, :]
+                        for p in parameter_index
+                    ],
+                    axis=0,
                 )
         elif method == "median":
             if len(parameter_index) == 1:
                 self.AUC_traces = self.median(parameter_index)[np.newaxis, :, :]
             else:
                 self.AUC_traces = np.concatenate(
-                    [self.median(parameter_index)[p] for p in parameter_index], axis=0
+                    [
+                        self.median(parameter_index)[p][np.newaxis, :, :]
+                        for p in parameter_index
+                    ],
+                    axis=0,
                 )
         print("Finished Averaging Data")
         # toc = time.perf_counter()
