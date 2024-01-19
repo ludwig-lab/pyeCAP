@@ -1,4 +1,4 @@
-__version__ = "0.0.3-post.4+00dbe83"
+__version__ = "0.0.3-post.19+317de1e"
 
 from .ecap import ECAP
 from .emg import EMG
