@@ -9,8 +9,6 @@ import numpy as np
 from numba import float32, int32, jit, njit
 from numba.typed import List
 
-from .median import rolling_median
-
 
 def _to_numeric_array(array, dtype=float):
     """
@@ -53,7 +51,7 @@ def _to_numeric_array(array, dtype=float):
         raise ValueError(f"Conversion to numeric array failed: {e}")
 
 
-@jit(nopython=True)
+@njit(nogil=True)
 def largest_triangle_three_buckets(data, threshold):
     """Return a downsampled version of data.
 
@@ -154,98 +152,30 @@ def find_first_true(vec: np.ndarray) -> int:
     Returns:
     int: The index of the first True in the array, or -1 if no True value is found.
     """
-    for idx in range(vec.size):
-        if vec[idx]:
-            return idx
+    for i in range(vec.size):
+        if vec[i]:
+            return i
     return -1
 
 
-# def find_first_true(vec: np.ndarray) -> int:
-#     """
-#     Return the index of the first occurrence of True in a boolean numpy array.
-
-#     Parameters:
-#     vec (np.ndarray): Boolean Numpy array in which to find the first occurrence of True.
-
-#     Returns:
-#     int: The index of the first True in the array, or -1 if no True value is found.
-#     """
-#     # This was tested in dev\speed_tests_speed_test_find_first.py
-#     # and found to beat previously used numba based versions.
-#     true_indices = np.where(vec)[0]
-#     return true_indices[0] if true_indices.size > 0 else -1
-
-
-def find_first(array: np.ndarray, value: Union[int, float, str]) -> int:
+@njit(nogil=True)
+def find_first(vec: np.ndarray) -> int:
     """
-    Return the index of the first occurrence of a specified value in a numpy array.
+    Return the index of the first occurrence of True in a boolean numpy array using Numba.
+
+    This function uses Numba for just-in-time compilation, offering performance benefits
+    for large arrays.
 
     Parameters:
-    array (np.ndarray): Numpy array in which to find the value.
-    value (int, float, str): Value to find in the array.
+    vec (np.ndarray): Boolean Numpy array in which to find the first occurrence of True.
 
     Returns:
-    int: The index of the first occurrence of the value in the array, or -1 if not found.
+    int: The index of the first True in the array, or -1 if no True value is found.
     """
-    # This was tested in dev\speed_tests_speed_test_find_first.py
-    # and found to beat previously used numba based versions.
-    indices = np.where(array == value)[0]
-    return indices[0] if indices.size > 0 else -1
-
-
-# @njit(nogil=True)
-# def median_filter_1d(data, kernel_size):
-#     edge = kernel_size // 2
-#     output = np.copy(data)
-#     for i in range(edge, len(data) - edge):
-#         output[i] = np.median(data[i - edge : i + edge + 1])
-#     return output
-
-# def median_filter_1d_(data, kernel_size):
-#     edge = kernel_size // 2
-#     strided = np.lib.stride_tricks.as_strided(data, shape=(data.size - kernel_size + 1, kernel_size), strides=(data.strides[0], data.strides[0]))
-#     median_filtered = np.zeros(strided.shape[0])
-#     for i in range(strided.shape[0]):
-#         median_filtered[i] = np.median(strided[i])
-#     # Manually implement padding
-#     pad_start = data[:edge]
-#     pad_end = data[-edge:]
-#     return np.concatenate((pad_start, median_filtered, pad_end))
-
-# @njit(nogil=True)
-# def numba_median(arr):
-#     return np.sort(arr)[arr.size // 2]
-
-# @njit(nogil=True)
-# def median_filter_1d(data, kernel_size):
-#     edge = kernel_size // 2
-#     median_filtered = np.empty_like(data)
-#     for i in range(edge, data.size - edge):
-#         median_filtered[i] = numba_median(data[i - edge : i + edge + 1])
-#     # Manually implement padding
-#     median_filtered[:edge] = data[:edge]
-#     median_filtered[-edge:] = data[-edge:]
-#     return median_filtered
-
-# @njit(nogil=True)
-# def median_filter_1d(data, kernel_size):
-#     edge = kernel_size // 2
-#     median_filtered = np.empty_like(data)
-#     median_filtered[edge:-edge] = rolling_median(data, kernel_size)
-#     # Manually implement padding
-#     median_filtered[:edge] = data[:edge]
-#     median_filtered[-edge:] = data[-edge:]
-#     return median_filtered
-
-# @njit(nogil=True)
-# def median_filter_1d(data, kernel_size):
-#     return rolling_median(data, kernel_size)
-
-# @jit(nogil=True)
-# def median_filter_1d(data, kernel_size):
-#     edge = kernel_size // 2
-#     median_filtered = np.median(np.lib.stride_tricks.sliding_window_view(data, (kernel_size,)), axis=1)
-#     return np.pad(median_filtered, (edge, edge), mode='edge')
+    for i in range(array.size):
+        if array[i] == value:
+            return i
+    return -1
 
 
 def _group_consecutive(data: np.ndarray, stepsize: int = 1) -> list:

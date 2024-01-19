@@ -64,9 +64,6 @@ class _EpochData:
     Class representing Epoch Data and parent class of ECAP. Contains the methods for the ECAP class.
     """
 
-    _cache = OrderedDict()  # Initialize a cahce across all instances of _EpochData
-    _cache_size = 2e9  # Set the maximum cache size in bytes
-
     @classmethod
     def clear_cache(cls):
         """
@@ -96,6 +93,10 @@ class _EpochData:
         x_lim : str
             ???
         """
+        self._cache = (
+            OrderedDict()
+        )  # Initialize a cahce across all instances of _EpochData
+        self._cache_size = 0.5e9  # Set the maximum cache size in bytes
         if (
             isinstance(ts_data, _TsData)
             and isinstance(event_data, _EventData)
@@ -493,7 +494,8 @@ class _EpochData:
 
                 # Save the position and label for the custom tick
                 custom_y_ticks.append(spread_accumulator)
-                custom_y_labels.append(parameter_label_value)
+                if parameter_label is not None:
+                    custom_y_labels.append(parameter_label_value)
 
                 spread_accumulator += std_data * spread_factor
             else:
@@ -772,10 +774,8 @@ class _EpochData:
                     np.min([-std_data * 6, calc_c_lim[0]]),
                     np.max([std_data * 6, calc_c_lim[1]]),
                 ]
-                print((p_data[0, :].shape, std_data, calc_c_lim))
             elif c_lim == "max":
                 calc_c_lim = None
-                print((p_data[0, :].shape))
             else:
                 calc_c_lim = _to_numeric_array(c_lim)
 
@@ -1166,7 +1166,7 @@ class _EpochData:
         if not isinstance(parameters, list):
             parameters = [parameters]
         if channels is None:
-            channels = self.channels
+            channels = self.ch_names
         elif not isinstance(channels, list):
             channels = [channels]
         channels = np.where(self._ch_to_index(channels))[0]
@@ -1192,7 +1192,6 @@ class _EpochData:
         # Compute all dask arrays at once
         computed_arrays = da.compute(dask_arrays, scheduler="threads", num_workers=8)[0]
 
-        print(data_to_compute)
         # Store computed arrays in the cache
         for parameter, channels_to_compute in data_to_compute.items():
             for i, channel in enumerate(channels_to_compute):
@@ -1218,32 +1217,19 @@ class _EpochData:
                         self._generate_cache_key(self.array, parameter, channel)
                     ]
                     for channel in channels
-                ]
+                ],
+                axis=1,
             )
             for parameter in parameters
         }
+        if len(parameters) == 1:
+            return result[parameters[0]]
+        else:
+            return result
 
-        # if len(parameters) > 1:
-        #     result = {
-        #         parameter: np.stack(
-        #             [
-        #                 self._cache[
-        #                     self._generate_cache_key(self.array, parameter, channel)
-        #                 ]
-        #                 for channel in channels
-        #             ]
-        #         )
-        #         for parameter in parameters
-        #     }
-        # else:
-        #     result = self._cache[
-        #         self._generate_cache_key(self.array, parameter, channel)
-        #     ]
-        return result
-
-    @lru_cache(
-        maxsize=None
-    )  # Caching this since results are small but computational cost high
+    # @lru_cache(
+    #     maxsize=None
+    # )  # Caching this since results are small but computational cost high
     def mean(self, parameter, channels=None):
         """
         Computes an array of mean values of the data from a parameter for each pulse
@@ -1273,9 +1259,9 @@ class _EpochData:
         # return np.mean(self.array(parameter, channels=channels), axis=0)
         return np.mean(self.array(parameter, channels=channels)[parameter], axis=1)
 
-    @lru_cache(
-        maxsize=None
-    )  # Caching this since results are small but computational cost high
+    # @lru_cache(
+    #     maxsize=None
+    # )  # Caching this since results are small but computational cost high
     def median(self, parameter, channels=None):
         """
         Computes an array of median values of the data from a parameter  for each pulse across given channels. The
@@ -1299,9 +1285,9 @@ class _EpochData:
         """
         return np.median(self.array(parameter, channels=channels), axis=0)
 
-    @lru_cache(
-        maxsize=None
-    )  # Caching this since results are small but computational cost high
+    # @lru_cache(
+    #     maxsize=None
+    # )  # Caching this since results are small but computational cost high
     def std(self, parameter, channels=None):
         """
         Computes an array of standard deviation values of the data from a parameter across each pulse for the given
@@ -1324,47 +1310,6 @@ class _EpochData:
         >>> ecap_data.std((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
         return np.std(self.array(parameter, channels=channels), axis=0)
-
-    def compute(self, functions, parameters, channels=None):
-        # Ensure parameters and channels are lists for iteration
-        if not isinstance(parameters, list):
-            parameters = [parameters]
-        if channels is not None and not isinstance(channels, list):
-            channels = [channels]
-
-        # Prepare a list of dask arrays to compute
-        dask_arrays = []
-        for function in functions:
-            for parameter in parameters:
-                for channel in channels:
-                    key = self._generate_cache_key(
-                        function.__name__, parameter, channel
-                    )
-                    if key not in self._cache:
-                        dask_arrays.append((key, function(parameter, channel)))
-
-        # Compute all dask arrays at once
-        computed_arrays = dask.compute([array for key, array in dask_arrays])
-
-        # Store computed arrays in the cache
-        for (key, _), array in zip(dask_arrays, computed_arrays):
-            data_size = self._get_size(array)
-            # If adding this data will exceed the cache size, remove least recently used items
-            while (
-                len(self._cache) > 0
-                and (data_size + sum(self._cache.values())) > self._cache_size
-            ):
-                self._cache.popitem(last=False)
-            self._cache[key] = array
-
-        # Return the computed arrays for the requested functions, parameters and channels
-        result = [
-            self._cache[self._generate_cache_key(function.__name__, parameter, channel)]
-            for function in functions
-            for parameter in parameters
-            for channel in channels
-        ]
-        return result
 
     def _ch_to_index(self, channels):
         return self.ts_data._ch_to_index(channels)

@@ -39,7 +39,7 @@ from scipy import signal
 # neuro base class imports
 from .dio_data import _DioData
 from .event_data import _EventData
-from .utils.median import rolling_median
+from .utils.median import rolling_median, rolling_median_column
 from .utils.numeric import (
     _group_consecutive,
     _to_numeric_array,
@@ -1025,21 +1025,25 @@ class _TsData:
             # Apply the filter to each channel separately
             return rolling_median(x[0, :], kernel_size)[np.newaxis, :]
 
-        rolling_median(
-            np.zeros(10), 3
+        rolling_median_column(
+            np.zeros(10)[np.newaxis, :], 3
         )  # trigger jit with some dummy data before passed to map_overlap
 
         if btype in ("lowpass", "low"):
             data = [
                 d.map_overlap(
-                    lambda x: apply_filter(x), (0, kernel_size), dtype=d.dtype
+                    lambda x: rolling_median_column(x, kernel_size),
+                    (0, kernel_size // 2),
+                    dtype=d.dtype,
                 )
                 for d in self.data
             ]
         elif btype in ("highpass", "high"):
             data = [
                 d.map_overlap(
-                    lambda x: x - apply_filter(x), (0, kernel_size), dtype=d.dtype
+                    lambda x: rolling_median_column(x, kernel_size, highpass=True),
+                    (0, kernel_size // 2),
+                    dtype=d.dtype,
                 )
                 for d in self.data
             ]
