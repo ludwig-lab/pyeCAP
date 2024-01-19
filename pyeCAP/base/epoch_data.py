@@ -1,5 +1,6 @@
 # Python standard library imports
 import hashlib
+import math
 import sys
 import time
 import warnings
@@ -1132,35 +1133,6 @@ class _EpochData:
         # fig.show(renderer='notebook_connected')
         return
 
-    @lru_cache(maxsize=None)
-    def array_old(self, parameter, channels=None):
-        """
-        Returns a numpy or dask array of the raw data with the specified parameter and channels. The array will contain
-        the time series data with one dimension representing the pulse and another representing the channel. The remaining
-        dimension specifies the number of data points in each pulse/channel combination. The result is stored in a cache
-        for faster computing.
-
-        Parameters
-        ----------
-        parameter : tuple
-            Stimulation parameter. Composed of index for the data set and index for the stimulation.
-        channels : None, str, int, tuple
-            Channels or channel indices to include in the array.
-
-        Returns
-        -------
-        numpy.ndarray, dask.array.core.
-            Three dimensional array containing raw Ephys data.
-
-        Examples
-        ________
-        >>> ecap_data.array((0,0), channels = ['RawE 1'])        # doctest: +SKIP
-        """
-        if channels is None:
-            return self.dask_array(parameter).compute()
-        else:
-            return self.dask_array(parameter)[:, self.ts_data._ch_to_index(channels), :]
-
     def array(self, parameters, channels=None):
         # Ensure parameters and channels are lists for iteration
         if not isinstance(parameters, list):
@@ -1207,9 +1179,6 @@ class _EpochData:
                     self._cache.popitem(last=False)
                 self._cache[key] = channel_array
 
-        # Return the computed arrays for the requested parameters and channels
-        print(len(parameters))
-
         result = {
             parameter: np.stack(
                 [
@@ -1230,7 +1199,7 @@ class _EpochData:
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def mean(self, parameter, channels=None):
+    def mean(self, parameters, channels=None):
         """
         Computes an array of mean values of the data from a parameter for each pulse
         across given channels. The result is stored in a cache for faster computing.
@@ -1255,14 +1224,21 @@ class _EpochData:
         # data_dict = self.array(parameter, channels=channels)
         # mean = np.mean(data_dict[parameter], axis = 1)
         # return mean
+        if not isinstance(parameters, list):
+            parameters = [parameters]
 
-        # return np.mean(self.array(parameter, channels=channels), axis=0)
-        return np.mean(self.array(parameter, channels=channels)[parameter], axis=1)
+        if len(parameters) == 1:
+            return np.mean(self.array(parameters, channels=channels), axis=0)
+        else:
+            return {
+                p: np.mean(v, axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
 
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def median(self, parameter, channels=None):
+    def median(self, parameters, channels=None):
         """
         Computes an array of median values of the data from a parameter  for each pulse across given channels. The
         result is stored in a cache for faster computing.
@@ -1283,12 +1259,21 @@ class _EpochData:
         ________
         >>> ecap_data.median((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
-        return np.median(self.array(parameter, channels=channels), axis=0)
+        if not isinstance(parameters, list):
+            parameters = [parameters]
+
+        if len(parameters) == 1:
+            return np.median(self.array(parameters, channels=channels), axis=0)
+        else:
+            return {
+                p: np.median(v, axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
 
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def std(self, parameter, channels=None):
+    def std(self, parameters, channels=None):
         """
         Computes an array of standard deviation values of the data from a parameter across each pulse for the given
         channels. The result is stored in a cache for faster computing.
@@ -1309,7 +1294,16 @@ class _EpochData:
         ________
         >>> ecap_data.std((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
-        return np.std(self.array(parameter, channels=channels), axis=0)
+        if not isinstance(parameters, list):
+            parameters = [parameters]
+
+        if len(parameters) == 1:
+            return np.std(self.array(parameters, channels=channels), axis=0)
+        else:
+            return {
+                p: np.std(v, axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
 
     def _ch_to_index(self, channels):
         return self.ts_data._ch_to_index(channels)

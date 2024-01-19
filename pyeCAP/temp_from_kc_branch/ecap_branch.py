@@ -10,7 +10,6 @@ import dask
 import dask.bag as db
 import matplotlib.pyplot as plt
 import numpy as np
-import openpyxl
 import pandas as pd
 from scipy import ndimage
 from scipy.signal import find_peaks, medfilt, savgol_filter
@@ -250,24 +249,20 @@ class ECAP(_EpochData):
         if parameter_index is None:
             parameter_index = self.df_epoc_idx.index
 
-        # print(toc-tic, "elapsed")
-        # tic = time.perf_counter()
-        bag_params = db.from_sequence(parameter_index.map(lambda x: self.dask_array(x)))
-
-        # print(parameter_index)
-        # print("Begin Averaging Data")
         if method == "mean":
-            print("Begin averaging data by mean.")
-            self.AUC_traces = np.squeeze(
-                dask.compute(bag_params.map(lambda x: np.nanmean(x, axis=0)).compute())
-            )
-        elif method == "median":
-            print("Begin averaging data by median.")
-            self.AUC_traces = np.squeeze(
-                dask.compute(
-                    bag_params.map(lambda x: np.nanmedian(x, axis=0)).compute()
+            if len(parameter_index) == 1:
+                self.AUC_traces = self.mean(parameter_index)[np.newaxis, :, :]
+            else:
+                self.AUC_traces = np.concatenate(
+                    [self.mean(parameter_index)[p] for p in parameter_index], axis=0
                 )
-            )
+        elif method == "median":
+            if len(parameter_index) == 1:
+                self.AUC_traces = self.median(parameter_index)[np.newaxis, :, :]
+            else:
+                self.AUC_traces = np.concatenate(
+                    [self.median(parameter_index)[p] for p in parameter_index], axis=0
+                )
         print("Finished Averaging Data")
         # toc = time.perf_counter()
         # print(toc - tic, "seconds elapsed")
