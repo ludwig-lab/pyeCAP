@@ -841,7 +841,45 @@ class _EpochData:
         vlines=None,
         **kwargs,
     ):
+        """
+        Plots the raw data response to each individual stimulation pulse over a specified range for a given channel.
 
+        Parameters
+        ----------
+        channel : str, int
+            Channel or channel index to be plotted.
+        parameter : tuple
+            Stimulation parameter to be plotted.
+        bin : tuple, list
+            Range of stimulation pulses to be plotted.
+        * args : Arguments
+            See `mpl.axes.Axes.plot <https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.plot.html>`_ for more
+            information.
+        show_mean : bool
+            Set to 'True' to also plot the mean response to the specified channel/parameter pair.
+        method : str
+            Specify whether to plot the 'mean' or 'median' of the aggregate response when show_mean = True.
+        opacity : float
+            A value between 0 and 1 that adjusts the transparency of the plotted traces.
+        axis : None, matplotlib.axis.Axis
+            Either None to use a new axis, or a matplotlib axis to plot on.
+        x_lim : None, list, tuple, np.ndarray
+            None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
+            end times for data to plot.
+        y_lim : None, str, list, tuple, np.ndarray
+            None or 'auto' to automatically calculate reasonable bounds based on standard deviation of data. 'max' to
+            plot y axis limits encompassing all accessible data. Otherwise tuple, list, or numpy array of length 2
+            containing limits for the y axis.
+        fig_size : list, tuple, np.ndarray
+            The size of the matplotlib figure to plot axis on if axis=None.
+        show : bool
+            Set to True to display the plot and return nothing, set to False to return the plotting axis and display
+            nothing.
+        fig_title : str
+            Adds a user-defined title to the plotted figure.
+        vlines : int, list
+            Adds a dashed red vertical line at the specified sample(s).
+        """
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
         calc_y_lim = [0, 0]
         plot_time = self.time(parameter)
@@ -849,10 +887,10 @@ class _EpochData:
         print("Plotting trace #s " + str(bin[0]) + " to " + str(bin[1]))
 
         # Creates numpy array of binned traces for plotting
-        bin_data = self.array(parameter, channel)[parameter][:, bin[0] : bin[1], :]
+        bin_data = self.array(parameter, channel)[bin[0] : bin[1], :, :]
 
-        for data in bin_data[0]:
-            ax.plot(plot_time, data, alpha=opacity)
+        for data in bin_data:
+            ax.plot(plot_time, data[0, :], alpha=opacity)
 
         if show_mean == True:
             if method == "median":
@@ -883,7 +921,7 @@ class _EpochData:
         ax.set_ylim(calc_y_lim)
 
         if vlines is not None:
-            # Add vline at specific sample # -- Later: Incorporate adding it in at a specific time
+            # TODO: Change so that this argument uses time instead of sample #
             if isinstance(vlines, int):  # For case where only one line is passed
                 # ax[idx].axvline(vlines * self.fs)
                 ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
