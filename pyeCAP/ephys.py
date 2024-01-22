@@ -1,6 +1,7 @@
 # python standard library imports
 import glob
 import os
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 # scientific computing library imports
 import numpy as np
@@ -12,6 +13,33 @@ from .base.utils.base import _is_iterable
 # pyeCAP io class imports
 from .io.ripple_io import RippleArray, RippleIO
 from .io.tdt_io import TdtArray, TdtIO, gather_sample_delay
+
+
+def process_file(
+    data_type,
+    file,
+    *args,
+    stores=None,
+    rz_sample_rate=None,
+    si_sample_rate=None,
+    sample_delay=None,
+    **kwargs
+):
+    if isinstance(file, str):
+        ephys_data_set = data_type(
+            file,
+            *args,
+            stores=stores,
+            rz_sample_rate=rz_sample_rate,
+            si_sample_rate=si_sample_rate,
+            sample_delay=sample_delay,
+            **kwargs
+        )
+        return ephys_data_set
+    else:
+        raise IOError(
+            "Input is expected to be either a string containing a file path, or a list of file paths."
+        )
 
 
 class Ephys(_TsData):
@@ -153,10 +181,14 @@ class Ephys(_TsData):
         # Work with iterable of file paths
         elif _is_iterable(data, str):
             self.file_path = data
-            ephys_files = []
-            for file in self.file_path:
-                if isinstance(file, str):
-                    ephys_data_set = type(self)(
+
+            # Reading in the initial data files (particularly TDT files) can be slow and can be parallelized.
+
+            with ThreadPoolExecutor() as executor:
+                futures = [
+                    executor.submit(
+                        process_file,
+                        type(self),
                         file,
                         *args,
                         stores=stores,
@@ -165,11 +197,10 @@ class Ephys(_TsData):
                         sample_delay=sample_delay,
                         **kwargs
                     )
-                    ephys_files.append(ephys_data_set)
-                else:
-                    raise IOError(
-                        "Input is expected to be either a string containing a file path, or a list of file paths."
-                    )
+                    for file in self.file_path
+                ]
+                ephys_files = [future.result() for future in futures]
+
             self.io = [item for d in ephys_files for item in d.io]
             data = [item for d in ephys_files for item in d.data]
             metadata = [item for d in ephys_files for item in d.metadata]

@@ -172,8 +172,8 @@ def find_first(vec: np.ndarray) -> int:
     Returns:
     int: The index of the first True in the array, or -1 if no True value is found.
     """
-    for i in range(array.size):
-        if array[i] == value:
+    for i in range(vec.size):
+        if vec[i] == vec:
             return i
     return -1
 
