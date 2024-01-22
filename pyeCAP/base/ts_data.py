@@ -1032,7 +1032,7 @@ class _TsData:
         if btype in ("lowpass", "low"):
             data = [
                 d.map_overlap(
-                    lambda x: rolling_median_column(x, kernel_size),
+                    lambda x: rolling_median_column(np.copy(x), kernel_size),
                     (0, kernel_size // 2),
                     dtype=d.dtype,
                 )
@@ -1041,7 +1041,9 @@ class _TsData:
         elif btype in ("highpass", "high"):
             data = [
                 d.map_overlap(
-                    lambda x: rolling_median_column(x, kernel_size, highpass=True),
+                    lambda x: rolling_median_column(
+                        np.copy(x), kernel_size, highpass=True
+                    ),
                     (0, kernel_size // 2),
                     dtype=d.dtype,
                 )
