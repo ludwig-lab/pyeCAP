@@ -4,9 +4,8 @@ import glob  # for file and directory handling
 import io
 import itertools
 import mmap
+import multiprocessing
 import os
-import sys
-import threading  # to lock file for thread safe reading
 import warnings
 from collections import defaultdict
 from contextlib import redirect_stdout
@@ -18,11 +17,29 @@ import numpy as np
 import pandas as pd
 
 # Third party imports
-import tdt
 from dask.cache import Cache
-from tdt import epoc_filter, read_block
+from tdt import read_block
 
 cache = Cache(0.5e9)  # Leverage 500mb of memory for fast access to data
+
+# class NullIO(StringIO):
+#     def write(self, txt):
+#        pass
+
+
+@dask.delayed
+def load_block(tev_file, np_dtype, block_size, offsets):
+    f = open(tev_file, "rb")
+    mm = mmap.mmap(
+        f.fileno(), 0, access=mmap.ACCESS_READ
+    )  # Create a memory-mapped file object
+    n_offsets = np.copy(offsets)
+    block = [
+        np.frombuffer(mm, dtype=np_dtype, count=block_size, offset=offset)
+        for offset in n_offsets
+    ]
+    block = np.concatenate(block)
+    return block
 
 
 def gather_sample_delay(rz_sample_rate, si_sample_rate):
@@ -47,6 +64,13 @@ def gather_sample_delay(rz_sample_rate, si_sample_rate):
         raise ValueError("RZ Sample rate invalid")
 
 
+@functools.lru_cache(maxsize=None)
+def cached_read_block(*args, **kwargs):
+    with multiprocessing.Pool(1) as pool:
+        result = pool.apply(read_block, args, kwargs)
+    return result
+
+
 class TdtIO:
     """
     This class is responsible for handling TDT data files.
@@ -64,7 +88,6 @@ class TdtIO:
         :raises IOError: If the file path is not accessible or does not appear to be a TDT tank.
         """
         self.file_path = file_path
-        self.lock = threading.Lock()  # Lock for thread-safe reading
 
         # Check if the file path is a string and if it points to a directory
         if not isinstance(self.file_path, str):
@@ -74,11 +97,9 @@ class TdtIO:
 
         # Redirect print output from read_block to buffer
         try:
-            with io.StringIO() as buf, redirect_stdout(buf):
-                # 'headers' var, set to 1 to return only the headers for the block.
-                # This enables fast consecutive calls to read_block
-                self.tdt_block = read_block(self.file_path, headers=1)
-                output = buf.getvalue()
+            # 'headers' var, set to 1 to return only the headers for the block.
+            # This enables fast consecutive calls to read_block
+            self.tdt_block = cached_read_block(self.file_path, headers=1)
         except IOError as e:
             raise IOError(f"{self.file_path} is not accessible. {str(e)}")
 
@@ -602,20 +623,20 @@ class TdtArray:
             block_size = self.block_size
             block_bits = block_size * np_dtype.itemsize
 
-            @dask.delayed
-            def load_block(offsets):
-                f = open(tev_file, "rb")
-                mm = mmap.mmap(
-                    f.fileno(), 0, access=mmap.ACCESS_READ
-                )  # Create a memory-mapped file object
-                n_offsets = np.copy(offsets)
-                # n_offsets[1:] = np.diff(offsets) - block_bits
-                block = [
-                    np.frombuffer(mm, dtype=np_dtype, count=block_size, offset=offset)
-                    for offset in n_offsets
-                ]
-                block = np.concatenate(block)
-                return block
+            # @dask.delayed
+            # def load_block(offsets):
+            #     f = open(tev_file, "rb")
+            #     mm = mmap.mmap(
+            #         f.fileno(), 0, access=mmap.ACCESS_READ
+            #     )  # Create a memory-mapped file object
+            #     n_offsets = np.copy(offsets)
+            #     # n_offsets[1:] = np.diff(offsets) - block_bits
+            #     block = [
+            #         np.frombuffer(mm, dtype=np_dtype, count=block_size, offset=offset)
+            #         for offset in n_offsets
+            #     ]
+            #     block = np.concatenate(block)
+            #     return block
 
             n = int(chunk_size / block_size)
             for key in np.asarray(self.metadata["streams"]).flatten():
@@ -658,7 +679,15 @@ class TdtArray:
                         ]
                         data_len = [len(offsets) for offsets in data_offsets]
                         data_delayed = [
-                            (load_block(np.array(offsets)), l)
+                            (
+                                load_block(
+                                    self.tev_file,
+                                    self.np_dtype,
+                                    self.block_size,
+                                    np.array(offsets),
+                                ),
+                                l,
+                            )
                             for offsets, l in zip(data_offsets, data_len)
                         ]
                         dask_arrays = [
@@ -671,20 +700,20 @@ class TdtArray:
             self.data = da.stack(data_arrays)
             self.chunks = (1, chunk_size)
 
-    @dask.delayed
-    def load_block(self, offset: int) -> np.ndarray:
-        """
-        Load a block of data from the file.
+    # @dask.delayed
+    # def load_block(self, offset: int) -> np.ndarray:
+    #     """
+    #     Load a block of data from the file.
 
-        Args:
-            offset (int): The offset to start reading from.
+    #     Args:
+    #         offset (int): The offset to start reading from.
 
-        Returns:
-            np.ndarray: The block of data read from the file.
-        """
-        return np.fromfile(
-            self.tev_file, dtype=self.np_dtype, count=self.block_size, offset=offset
-        )
+    #     Returns:
+    #         np.ndarray: The block of data read from the file.
+    #     """
+    #     return np.fromfile(
+    #         self.tev_file, dtype=self.np_dtype, count=self.block_size, offset=offset
+    #     )
 
     @functools.cached_property
     def metadata(self) -> dict:

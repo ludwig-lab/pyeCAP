@@ -3,6 +3,7 @@ import glob
 import os
 import sys
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 
 # scientific computing library imports
@@ -167,7 +168,8 @@ class Stim(_EventData, _DioData, _ParameterData):
             _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
             _ParameterData.__init__(self, parameters, metadata)
         elif _is_iterable(file_path, str):
-            data = [type(self)(f) for f in file_path]
+            with ThreadPoolExecutor() as executor:
+                data = list(executor.map(type(self), file_path))
             file_path = [item for d in data for item in d.file_path]
             io = [item for d in data for item in d.io]
             events = [item for d in data for item in d._events]
