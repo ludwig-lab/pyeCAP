@@ -424,7 +424,7 @@ class _EpochData:
 
         # If amplitude is specified and has a cutoff type, return params based on the type. Above/Below etc., This cannot be used if a list of amplitudes is passed
 
-        return paramLIST
+        return paramLIST.tolist()
 
     def plot(
         self,
@@ -1135,6 +1135,20 @@ class _EpochData:
 
     def plot_interactive(self, channels, parameter, *args, method="mean", **kwargs):
 
+        """
+        Creates an interactive plot of the specified channels and parameter. Hovering over lines in the plot
+        displays data point specific information.
+
+        Parameters
+        ----------
+        channel : str, int
+            Channel or channel index to be plotted.
+        parameter : tuple
+            Stimulation parameter to be plotted.
+        method : str
+            Specify whether to plot the 'mean' or 'median' of the data.
+        """
+        # TODO: Make this function work with multiple parameters
         if isinstance(parameter, list):
             raise Exception(
                 "Interactive plots can only contain a single parameter (amplitude)."
@@ -1146,29 +1160,37 @@ class _EpochData:
         plotDF = pd.DataFrame()
         nameLIST = []
         plotDF["Time (ms)"] = self.time(parameter) * 1e3
+        plotDF["Sample Number"] = plotDF.index
         plotNAME = (
             "Amplitude (uA): "
             + str(self.parameters.parameters["pulse amplitude (μA)"][parameter])
-            + " - Param ID: "
+            + " - Parameter ID: "
             + str(parameter)
         )
 
-        # TODO: If channels are passed as integers convert them to channel names
+        # If channels are passed as integers, converts them to string name channels for purpose of figure legends
+        if isinstance(channels[0], int):
+            ch_names = np.array(self.ch_names)[self._ch_to_index(channels)].tolist()
+        else:
+            ch_names = channels
 
-        for chan in channels:
-            # print("Channel: " + chan)
+        # TODO: Make function work with multiple parameters
+        for chan in ch_names:
             if method == "mean":
                 plotDF[chan] = self.mean(parameter, channels=chan).T
             elif method == "median":
                 plotDF[chan] = self.median(parameter, channels=chan).T
             nameLIST.append(chan)
         fig = px.line(
-            plotDF, x=plotDF.index, y=nameLIST, title=plotNAME, hover_data=["Time (ms)"]
+            plotDF,
+            x="Time (ms)",
+            y=ch_names,
+            title=plotNAME,
+            hover_data=["Sample Number"],
         )
-        fig.update_xaxes(title_text="Sample #")
+        fig.update_xaxes(title_text="Time (ms)")
         fig.update_yaxes(title_text="Voltage (V)")
         fig.show()
-        # fig.show(renderer='notebook_connected')
         return
 
     def array(self, parameters, channels=None):
@@ -1259,9 +1281,6 @@ class _EpochData:
         >>> ecap_data.mean  ((0,0), channels = ['RawE 1'])        # doctest: +SKIP
         """
 
-        # data_dict = self.array(parameter, channels=channels)
-        # mean = np.mean(data_dict[parameter], axis = 1)
-        # return mean
         if not isinstance(parameters, list):
             parameters = [parameters]
 
