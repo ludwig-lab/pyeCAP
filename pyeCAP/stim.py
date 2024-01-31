@@ -109,8 +109,10 @@ class Stim(_EventData, _DioData, _ParameterData):
 
             self.file_path = file_path
             self.io = io
-            _EventData.__init__(self, events, metadata, indicators=event_indicators)
-            _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
+            _EventData.__init__(
+                self, events, metadata, event_indicators=event_indicators
+            )
+            _DioData.__init__(self, dio, metadata, dio_indicators=dio_indicators)
             _ParameterData.__init__(self, parameters, metadata)
         elif isinstance(file_path, str):
             # Read in Ripple data files
@@ -164,8 +166,10 @@ class Stim(_EventData, _DioData, _ParameterData):
                 raise IOError(
                     f'"{file_extension}" is not a supported file extension for file {file_path}'
                 )
-            _EventData.__init__(self, events, metadata, indicators=event_indicators)
-            _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
+            _EventData.__init__(
+                self, events, metadata, event_indicators=event_indicators
+            )
+            _DioData.__init__(self, dio, metadata, dio_indicators=dio_indicators)
             _ParameterData.__init__(self, parameters, metadata)
         elif _is_iterable(file_path, str):
             with ThreadPoolExecutor() as executor:
@@ -188,6 +192,27 @@ class Stim(_EventData, _DioData, _ParameterData):
                 parameters,
                 metadata,
             )
+        elif isinstance(file_path, type(self)):
+            self.file_path = file_path.file_path
+            if io is None:
+                self.io = file_path.io
+            if events is None:
+                events = file_path._events.copy()
+            if event_indicators is None:
+                event_indicators = file_path._event_indicators.copy()
+            if dio is None:
+                dio = file_path._dio.copy()
+            if dio_indicators is None:
+                dio_indicators = file_path._dio_indicators.copy()
+            if parameters is None:
+                parameters = file_path._parameters.copy()
+            if metadata is None:
+                parameters = file_path._metadata.copy()
+            _EventData.__init__(
+                self, events, metadata, event_indicators=event_indicators
+            )
+            _DioData.__init__(self, dio, metadata, dio_indicators=dio_indicators)
+            _ParameterData.__init__(self, parameters, metadata)
         else:
             raise ValueError(
                 f"file_path expected to be a string or a list of strings, but got {type(file_path)}"
@@ -298,7 +323,6 @@ class Stim(_EventData, _DioData, _ParameterData):
         -------
         None
         """
-        print(len(values))
         potential_parameters = ["polarity", "channel"]
         if parameter in potential_parameters:
             if _is_iterable(values):

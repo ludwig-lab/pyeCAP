@@ -31,6 +31,7 @@ Pillow = "^9.4.0"
 tqdm = "^4.64.1"
 opencv-python = "^4.8.1.78"
 plotly = "^5.18.0"
+pyvisa = "^1.14.1"
 
 [tool.poetry.group.dev.dependencies]
 sphinx-rtd-theme = "^1.1.1"

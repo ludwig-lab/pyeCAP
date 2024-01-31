@@ -109,6 +109,7 @@ class _EpochData:
             self.x_lim = x_lim
         else:
             raise ValueError("Unrecognized input data types")
+        self.sample_delay = 0
 
     @cached_property
     def _state_identifier(self):
@@ -127,6 +128,9 @@ class _EpochData:
         # Generate a SHA256 hash of the combined identifier
         return hashlib.sha256(combined_id).hexdigest()
 
+    def set_delay(self, time_delay):
+        self.sample_delay = int(time_delay * self.sample_rate)
+
     @property
     def sample_rate(self):
         return self.ts_data.sample_rate
@@ -135,8 +139,8 @@ class _EpochData:
     def ch_names(self):
         return self.ts_data.ch_names
 
-    @lru_cache(maxsize=None)
-    def time(self, parameter):
+    # @lru_cache(maxsize=None)
+    def time(self, parameter, stim_channels=None):
         """
         Returns an array of times starting at 0 seconds. These times correspond to times of data points from one pulse
         of the given parameter. The result is stored in a cache for faster computing.
@@ -156,7 +160,7 @@ class _EpochData:
         >>> ecap_data.time((0,0))   # first stimulation of first data set       # doctest: +SKIP
         >>> ecap_data.time((0,1))   # second stimulation of first data set      # doctest: +SKIP
         """
-        sample_len = self.dask_array(parameter).shape[2]
+        sample_len = self.dask_array(parameter, stim_channels=stim_channels).shape[2]
         if self.x_lim is None or self.x_lim == "auto":
             return np.arange(0, sample_len) / self.sample_rate
         else:
@@ -184,8 +188,8 @@ class _EpochData:
 
         return df_epocs_idx
 
-    @lru_cache(maxsize=None)
-    def dask_array(self, parameter):
+    # @lru_cache(maxsize=None)
+    def dask_array(self, parameter, stim_channels=None):
         """
         Returns an array of data points from the data set from the given parameter. The array will contain
         the Ephys data with one dimension representing the pulse and another representing the channel. The remaining
@@ -209,22 +213,27 @@ class _EpochData:
         event_times = []
         # ToDo: modify so data continues to be pulled out across channels if channels are equal between event_data
         #  and ephys data but if channels match between the two datasets then pull out on a perchannel basis
-
         # Iterate over each channel in the event data.
-        for ch in self.event_data.ch_names:
+        if isinstance(stim_channels, str):
+            stim_channels = [stim_channels]
+        elif stim_channels is None:
+            stim_channels = self.event_data.ch_names
+
+        for ch in stim_channels:
             # Get events for the current channel based on start times.
             events = self.event_data.events(
                 ch, start_times=self.ts_data.start_indices / self.sample_rate
             )
             # Get event indicators for the current channel.
             event_indicators = self.event_data.event_indicators(ch)
-            # Filter events based on the provided stimulation parameter.
-            event_indices = np.logical_and(
-                event_indicators[:, 0] == parameter[0],
-                event_indicators[:, 1] == parameter[1],
-            )
-            # Append the filtered events to the event times list.
-            event_times.append(events[event_indices])
+            if len(event_indicators) > 0:
+                # Filter events based on the provided stimulation parameter.
+                event_indices = np.logical_and(
+                    event_indicators[:, 0] == parameter[0],
+                    event_indicators[:, 1] == parameter[1],
+                )
+                # Append the filtered events to the event times list.
+                event_times.append(events[event_indices])
 
         # Concatenate event times from all channels into a single array.
         event_times = np.concatenate(event_times, axis=0)
@@ -241,6 +250,7 @@ class _EpochData:
 
         # Convert event times to indices.
         event_times = self.ts_data._time_to_index(event_times)
+        event_times = event_times + self.sample_delay
 
         # Create a boolean mask to select relevant times from the time series data.
         indices = np.zeros(self.ts_data.shape[1], dtype=bool)
@@ -431,6 +441,7 @@ class _EpochData:
         channels,
         parameters,
         *args,
+        stim_channels=None,
         parameter_label=None,
         method="mean",
         axis=None,
@@ -440,7 +451,10 @@ class _EpochData:
         fig_size=(10, 5),
         show=True,
         spread_parameters=False,
+        spread_channels=False,
         spread_factor=3.0,
+        channel_spread_factor=1.0,
+        plot_info=None,
         **kwargs,
     ):
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
@@ -453,12 +467,17 @@ class _EpochData:
             channels = channels[0]
 
         spread_accumulator = 0
+        std_data_list = []  # Initialize std_data list
         max_std_data = 0
         std_data = 0
         custom_y_ticks = []
         custom_y_labels = []
 
-        for p, c in zip(_to_parameters(parameters), colors):
+        # If plot_info is provided, use it to set std_data and y_lim
+        if plot_info is not None:
+            std_data_list = plot_info.get("std_data", std_data_list)
+
+        for i, (p, c) in enumerate(zip(_to_parameters(parameters), colors)):
             if parameter_label is not None:
                 parameter_label_value = (
                     self.event_data.parameters.loc[p, parameter_label]
@@ -467,23 +486,40 @@ class _EpochData:
                 )
 
             if method == "mean":
-                plot_data = self.mean(p, channels=channels)
+                plot_data = self.mean(p, channels=channels, stim_channels=stim_channels)
             elif method == "median":
-                plot_data = self.median(p, channels=channels)
+                plot_data = self.median(
+                    p, channels=channels, stim_channels=stim_channels
+                )
             else:
                 raise ValueError(
                     "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
                     "and 'median'."
                 )
-            plot_time = self.time(p)
+            plot_time = self.time(p, stim_channels=stim_channels)
 
-            if spread_parameters:
-                std_data = np.std(plot_data)
+            if spread_parameters or spread_channels:
+                if plot_info is None:
+                    std_data = np.std(plot_data)
+                    std_data_list.append(std_data)  # Accumulate std_data
+                else:
+                    std_data = std_data_list[i]
                 if std_data > max_std_data:
                     max_std_data = std_data
                 adjusted_plot_data = plot_data + (
                     np.ones_like(plot_data) * spread_accumulator
                 )
+                # Adjust the plot data for channel spread
+                channel_adjustment = (
+                    np.ones_like(plot_data)
+                    * np.arange(plot_data.shape[0])[:, np.newaxis]
+                )
+                channel_adjustment -= (plot_data.shape[0] - 1) / 2
+                adjusted_plot_data += (
+                    channel_adjustment * channel_spread_factor * std_data
+                )
+
+                # Iterate over each channel
                 for i, ch in enumerate(channels):
                     ax.plot(
                         plot_time,
@@ -502,6 +538,9 @@ class _EpochData:
             else:
                 ax.plot(plot_time, plot_data, *args, color=c, **kwargs)
         spread_accumulator -= std_data * spread_factor
+        spread_accumulator += (
+            std_data * channel_spread_factor * (plot_data.shape[0] - 1) / 2
+        )
 
         # compute appropriate y_limits
         if y_lim is None or y_lim == "auto":
@@ -514,6 +553,10 @@ class _EpochData:
             calc_y_lim = None
         else:
             calc_y_lim = _to_numeric_array(y_lim)
+
+        # If plot_info is provided, use it to set std_data and y_lim
+        if plot_info is not None:
+            calc_y_lim = plot_info.get("y_lim", calc_y_lim)
 
         ax.set_xlabel("time (s)")
         ax.set_ylabel("amplitude (V)")  # Label for the left y-axis
@@ -544,16 +587,20 @@ class _EpochData:
         else:
             ax.set_xlim(x_lim)
 
+        # Create a dictionary to store plot information
+        plot_info = {"std_data": std_data_list, "y_lim": [calc_y_lim[0], calc_y_lim[1]]}
+
         if spread_parameters:
-            return _plt_show_fig(fig, [ax, ax2], show)
+            return _plt_show_fig(fig, [ax, ax2], show), plot_info
         else:
-            return _plt_show_fig(fig, ax, show)
+            return _plt_show_fig(fig, ax, show), plot_info
 
     def plot_channel(
         self,
         channel,
         parameters,
         *args,
+        stim_channels=None,
         method="mean",
         axis=None,
         x_lim=None,
@@ -637,16 +684,18 @@ class _EpochData:
 
         for p, c in zip(_to_parameters(sorted_params), colors):
             if method == "mean":
-                plot_data = self.mean(p, channels=channel)
+                plot_data = self.mean(p, channels=channel, stim_channels=stim_channels)
                 # print(plot_data.shape)
             elif method == "median":
-                plot_data = self.median(p, channels=channel)
+                plot_data = self.median(
+                    p, channels=channel, stim_channels=stim_channels
+                )
             else:
                 raise ValueError(
                     "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
                     "and 'median'."
                 )
-            plot_time = self.time(p)
+            plot_time = self.time(p, stim_channels=stim_channels)
 
             # compute appropriate y_limits
             if y_lim is None or y_lim == "auto":
@@ -666,8 +715,11 @@ class _EpochData:
                 + str(self.parameters.parameters.loc[p]["channel"])
                 + ")"
             )
+
+            if "color" in kwargs:
+                c = kwargs.pop("color")
             ax.plot(
-                plot_time, plot_data[0, :], label=plotLABEL, *args, color=c, **kwargs
+                plot_time, plot_data[0, :], *args, label=plotLABEL, color=c, **kwargs
             )
 
         ax.set_ylim(calc_y_lim)
@@ -1193,7 +1245,7 @@ class _EpochData:
         fig.show()
         return
 
-    def array(self, parameters, channels=None):
+    def array(self, parameters, channels=None, stim_channels=None):
         # Ensure parameters and channels are lists for iteration
         if not isinstance(parameters, list):
             parameters = [parameters]
@@ -1211,15 +1263,17 @@ class _EpochData:
             channels_to_compute = [
                 channel
                 for channel in channels
-                if self._generate_cache_key(self.array, parameter, channel)
+                if self._generate_cache_key(
+                    self.array, parameter, channel, stim_channels
+                )
                 not in self._cache
             ]
             if channels_to_compute:
                 data_to_compute[parameter] = channels_to_compute
                 # Compute only the channels that are not in the cache
-                dask_arrays[parameter] = self.dask_array(parameter)[
-                    :, channels_to_compute, :
-                ]
+                dask_arrays[parameter] = self.dask_array(
+                    parameter, stim_channels=stim_channels
+                )[:, channels_to_compute, :]
 
         # Compute all dask arrays at once
         computed_arrays = da.compute(dask_arrays, scheduler="threads", num_workers=8)[0]
@@ -1227,7 +1281,9 @@ class _EpochData:
         # Store computed arrays in the cache
         for parameter, channels_to_compute in data_to_compute.items():
             for i, channel in enumerate(channels_to_compute):
-                key = self._generate_cache_key(self.array, parameter, channel)
+                key = self._generate_cache_key(
+                    self.array, parameter, channel, stim_channels
+                )
                 channel_array = computed_arrays[parameter][:, i, :]
                 data_size = _get_size(channel_array)  # Get size of the entire array
                 # If adding this data will exceed the cache size, remove least recently used items
@@ -1243,7 +1299,9 @@ class _EpochData:
             parameter: np.stack(
                 [
                     self._cache[
-                        self._generate_cache_key(self.array, parameter, channel)
+                        self._generate_cache_key(
+                            self.array, parameter, channel, stim_channels
+                        )
                     ]
                     for channel in channels
                 ],
@@ -1259,7 +1317,7 @@ class _EpochData:
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def mean(self, parameters, channels=None):
+    def mean(self, parameters, channels=None, stim_channels=None):
         """
         Computes an array of mean values of the data from a parameter for each pulse
         across given channels. The result is stored in a cache for faster computing.
@@ -1285,17 +1343,22 @@ class _EpochData:
             parameters = [parameters]
 
         if len(parameters) == 1:
-            return np.mean(self.array(parameters, channels=channels), axis=0)
+            return np.mean(
+                self.array(parameters, channels=channels, stim_channels=stim_channels),
+                axis=0,
+            )
         else:
             return {
                 p: np.mean(v, axis=0)
-                for p, v in self.array(parameters, channels).items()
+                for p, v in self.array(
+                    parameters, channels, stim_channels=stim_channels
+                ).items()
             }
 
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def median(self, parameters, channels=None):
+    def median(self, parameters, channels=None, stim_channels=None):
         """
         Computes an array of median values of the data from a parameter  for each pulse across given channels. The
         result is stored in a cache for faster computing.
@@ -1320,17 +1383,22 @@ class _EpochData:
             parameters = [parameters]
 
         if len(parameters) == 1:
-            return np.median(self.array(parameters, channels=channels), axis=0)
+            return np.median(
+                self.array(parameters, channels=channels, stim_channels=stim_channels),
+                axis=0,
+            )
         else:
             return {
                 p: np.median(v, axis=0)
-                for p, v in self.array(parameters, channels).items()
+                for p, v in self.array(
+                    parameters, channels, stim_channels=stim_channels
+                ).items()
             }
 
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def std(self, parameters, channels=None):
+    def std(self, parameters, channels=None, stim_channels=None):
         """
         Computes an array of standard deviation values of the data from a parameter across each pulse for the given
         channels. The result is stored in a cache for faster computing.
@@ -1355,11 +1423,16 @@ class _EpochData:
             parameters = [parameters]
 
         if len(parameters) == 1:
-            return np.std(self.array(parameters, channels=channels), axis=0)
+            return np.std(
+                self.array(parameters, channels=channels, stim_channels=stim_channels),
+                axis=0,
+            )
         else:
             return {
                 p: np.std(v, axis=0)
-                for p, v in self.array(parameters, channels).items()
+                for p, v in self.array(
+                    parameters, channels, stim_channels=stim_channels
+                ).items()
             }
 
     def _time_to_index(self, time, units="seconds"):
@@ -1414,9 +1487,11 @@ class _EpochData:
 
         return df_epocs_idx
 
-    def _generate_cache_key(self, function_name, parameter, channel):
+    def _generate_cache_key(self, function_name, parameter, channel, stim_channels):
         # Create a combined string
-        return f"{self._state_identifier}_{function_name}_{parameter}_{channel}"
+        if isinstance(stim_channels, list):
+            stim_channels = "_".join(stim_channels)
+        return f"{self._state_identifier}_{function_name}_{parameter}_{channel}_{stim_channels}"
 
     def _calc_RMS(self, data, window=None):
         if window is not None:

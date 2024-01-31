@@ -18,7 +18,7 @@ class _DioData:
     Class for stimulation start/stop data.
     """
 
-    def __init__(self, dio, metadata, indicators=None):
+    def __init__(self, dio, metadata, dio_indicators=None):
         """
 
         Parameters
@@ -36,12 +36,12 @@ class _DioData:
             dio = [dio]
         if not isinstance(metadata, list):
             metadata = [metadata]
-        if indicators is not None:
-            if not isinstance(indicators, list):
-                indicators = [indicators]
+        if dio_indicators is not None:
+            if not isinstance(dio_indicators, list):
+                dio_indicators = [dio_indicators]
         self._dio = dio
         self._metadata = metadata
-        self._dio_indicators = indicators
+        self._dio_indicators = dio_indicators
 
     @cached_property
     def _state_identifier(self):
@@ -376,7 +376,12 @@ class _DioData:
             merged_meta = {**self_meta, **other_meta, "ch_names": merged_ch_names}
             merged_metadata.append(merged_meta)
 
-        return type(self)(merged_dio, merged_metadata, merged_indicators)
+        return type(self)(
+            self,
+            dio=merged_dio,
+            metadata=merged_metadata,
+            dio_indicators=merged_indicators,
+        )
 
     def __getitem__(self, item):
         if isinstance(item, str):

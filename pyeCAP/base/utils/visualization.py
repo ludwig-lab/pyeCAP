@@ -169,8 +169,112 @@ def _plt_add_cbar_axis(fig, ax, location="right", c_lim=None, c_label=None, c_ma
 
 
 def _plt_add_ax_connected_top(fig, ax, ratio=0.1):
+    """
+    Add a new axis on top of the given axis, with a specified height ratio.
+
+    Parameters:
+    - fig: The matplotlib figure object
+    - ax: The existing axis object
+    - ratio: The height ratio of the new axis to the existing axis (default 0.1)
+
+    Returns:
+    - dax: The new axis object
+    """
+
+    # Get the bounding box of the existing axis in figure coordinates
     bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+
+    # Create an axes locator for the existing axis
     divider = make_axes_locatable(ax)
+
+    # Get shared y-axes
+    shared_y_axes = ax.get_shared_x_axes()
+
+    # Check if there are any shared y-axes with overlapping coordinates
+    if shared_y_axes:
+        print([x for xs in shared_y_axes for x in xs])
+        for shared_ax in [x for xs in shared_y_axes for x in xs]:
+            print(shared_ax)
+            if shared_ax.get_xlim() == ax.get_xlim():
+                # Get the bounding box of the shared y-axis
+                shared_bbox = shared_ax.get_window_extent().transformed(
+                    fig.dpi_scale_trans.inverted()
+                )
+
+                # Check if the bounding boxes overlap
+                if bbox.overlaps(shared_bbox):
+                    # Split the shared y-axis
+                    shared_ax_divider = make_axes_locatable(shared_ax)
+                    shared_ax_dax = shared_ax_divider.append_axes(
+                        "top", size=bbox.height * ratio, pad=0, sharex=shared_ax
+                    )
+                    shared_ax_dax.get_xaxis().set_visible(False)
+
+    # Create a new axis on top of the existing axis
     dax = divider.append_axes("top", size=bbox.height * ratio, pad=0, sharex=ax)
+
+    # Hide the x-axis of the new axis
     dax.get_xaxis().set_visible(False)
+
+    # Return the new axis object
     return dax
+
+
+def _plt_split_axis(ax, ratios, direction="horizontal"):
+    """
+    Split the given axis into multiple sub-axes with the specified ratios.
+
+    Parameters:
+    - ax: The axis to be split
+    - ratios: A list of ratios, where each ratio is a float between 0 and 1
+    - direction: The direction of the split, either 'horizontal' or 'vertical'
+
+    Returns:
+    - ax_list: A list of new axis objects
+    """
+    if direction not in ["horizontal", "vertical"]:
+        raise ValueError("Direction must be either 'horizontal' or 'vertical'")
+
+    # Normalize the ratios to ensure they add up to 1
+    ratio_sum = sum(ratios)
+    normalized_ratios = [ratio / ratio_sum for ratio in ratios]
+
+    if ratio_sum != 1:
+        warnings.warn(
+            "Ratios do not add up to 1. Normalizing to fit available height.",
+            UserWarning,
+        )
+
+    # Get the bounding box of the existing axis in figure coordinates
+    bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
+
+    # Create an axes locator for the existing axis
+    divider = make_axes_locatable(ax)
+
+    # Create a list to store the new axis objects
+    ax_list = []
+
+    # Split the axis horizontally
+    for i, ratio in enumerate(normalized_ratios):
+        if direction == "horizontal":
+            # Calculate the size of the new axis as a fraction of the original axis
+            size = bbox.height * ratio
+
+            # Create a new axis on top of the existing axis
+            dax = divider.append_axes("top", size=size, pad=0, sharex=ax)
+
+            # Hide the x-axis of the new axis
+            dax.get_xaxis().set_visible(False)
+        else:
+            # Calculate the size of the new axis as a fraction of the original axis
+            size = bbox.width * ratio
+
+            # Create a new axis on top of the existing axis
+            dax = divider.append_axes("right", size=size, pad=0, sharey=ax)
+
+            # Hide the y-axis of the new axis
+            dax.get_yaxis().set_visible(False)
+
+        # Add the new axis to the list
+        ax_list.append(dax)
+    return ax_list

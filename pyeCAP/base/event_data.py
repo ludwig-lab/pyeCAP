@@ -22,7 +22,7 @@ class _EventData:
     """
 
     # Initialization of _EventData with events, metadata and indicators.
-    def __init__(self, events: list, metadata: list, indicators: list = None):
+    def __init__(self, events: list, metadata: list, event_indicators: list = None):
         """
         Initialize _EventData with events, metadata and indicators.
 
@@ -42,12 +42,12 @@ class _EventData:
             events = [events]
         if not isinstance(metadata, list):
             metadata = [metadata]
-        if indicators is not None:
-            if not isinstance(indicators, list):
-                indicators = [indicators]
+        if event_indicators is not None:
+            if not isinstance(event_indicators, list):
+                event_indicators = [event_indicators]
         self._events = events
         self._metadata = metadata
-        self._event_indicators = indicators
+        self._event_indicators = event_indicators
 
     @cached_property
     def _state_identifier(self):
@@ -153,8 +153,15 @@ class _EventData:
         # If channel is a string and exists in the channel names, return the events for that channel.
         if isinstance(channel, str):
             if channel in self.ch_names:
-                events = [e[channel] + s for e, s in zip(self._events, start_times)]
-                return np.concatenate(events)
+                events = [
+                    e[channel] + s
+                    for e, s in zip(self._events, start_times)
+                    if channel in e.keys()
+                ]
+                if len(events) > 0:
+                    return np.concatenate(events)
+                else:
+                    return []
         else:
             raise TypeError(
                 "_EventData class can only be indexed using 'str' or 'int' types"
@@ -181,8 +188,12 @@ class _EventData:
                 event_indicators = [
                     list(zip(np.asarray(i).repeat(len(e_ind[channel])), e_ind[channel]))
                     for i, e_ind in enumerate(self._event_indicators)
+                    if channel in e_ind.keys() and len(e_ind[channel]) > 0
                 ]
-                return np.concatenate(event_indicators).astype(int)
+                if len(event_indicators) > 0:
+                    return np.concatenate(event_indicators).astype(int)
+                else:
+                    return []
         else:
             raise TypeError(
                 "_DioData class can only be indexed using 'str' or 'int' types"
@@ -199,7 +210,7 @@ class _EventData:
         fig_size: tuple = (10, 1.5),
         show: bool = True,
         lw: int = 1,
-        **kwargs
+        **kwargs,
     ) -> None:
         """
         Plots stimulation data showing the time periods with and without stimulation in raster format.
@@ -248,20 +259,21 @@ class _EventData:
                 reference=reference,
                 remove_gaps=remove_gaps,
             )
-            if remove_gaps:
-                ax.vlines(events, i + 0.5, i + 1.5, lw=lw, **kwargs)
-            else:
-                ax.vlines(
-                    [datetime.fromtimestamp(e) for e in events],
-                    i + 0.5,
-                    i + 1.5,
-                    lw=lw,
-                    **kwargs
-                )
-            if x_lim is None:
-                max_ = events[-1]  # assumes events are in order but does not check
-                if max_ > x_max:
-                    x_max = max_
+            if events is not None and len(events) > 0:
+                if remove_gaps:
+                    ax.vlines(events, i + 0.5, i + 1.5, lw=lw, **kwargs)
+                else:
+                    ax.vlines(
+                        [datetime.fromtimestamp(e) for e in events],
+                        i + 0.5,
+                        i + 1.5,
+                        lw=lw,
+                        **kwargs,
+                    )
+                if x_lim is None:
+                    max_ = events[-1]  # assumes events are in order but does not check
+                    if max_ > x_max:
+                        x_max = max_
 
         if remove_gaps:
             # set x_lims via either user defined limits of 0 to last event
@@ -311,6 +323,69 @@ class _EventData:
         else:
             raise TypeError("Appended data is not of the same type.")
 
+    def filter_by_dio(self, event_channel, dio_data, dio_channel=None):
+        """
+        Creates a new _EventData object from an event channel that only contains the events that occur within the dio periods
+        defined by the periods in the _DioData class.
+
+        Parameters
+        ----------
+        event_channel : str
+            The channel name in the event data from which to filter events.
+        dio_data : _DioData
+            An instance of the _DioData class containing the start/stop periods.
+        dio_channel : str, optional
+            The channel name in the dio data that defines the periods within which to filter events. If None, all channels
+            not already in self.ch_names are used.
+
+        Returns
+        -------
+        _EventData
+            New _EventData object that includes the filtered events.
+        """
+        if dio_channel is None:
+            dio_channels = [ch for ch in dio_data.ch_names if ch not in self.ch_names]
+        else:
+            dio_channels = [dio_channel]
+
+        new_events = self._events.copy()
+        new_indicators = self._event_indicators.copy()
+        new_metadata = self.metadata.copy()
+
+        for dio_channel in dio_channels:
+            dio_periods = [d[dio_channel] for d in dio_data._dio]
+            dio_start_times = [d[::2] for d in dio_periods]
+            dio_stop_times = [d[1::2] for d in dio_periods]
+
+            for i, (dio_start, dio_stop) in enumerate(
+                zip(dio_start_times, dio_stop_times)
+            ):
+                event_times = new_events[i][event_channel]
+                event_indicators = new_indicators[i][event_channel]
+
+                mask = np.zeros_like(event_times, dtype=bool)
+                for start, stop in zip(dio_start, dio_stop):
+                    mask = np.logical_or(
+                        mask, np.logical_and(event_times >= start, event_times <= stop)
+                    )
+                filtered_events = event_times[mask]
+                filtered_indicators = event_indicators[mask]
+
+                new_events[i][dio_channel] = filtered_events
+                new_indicators[i][dio_channel] = filtered_indicators
+
+            for meta in new_metadata:
+                meta["ch_names"].append(dio_channel)
+
+        return type(self)(
+            self,
+            events=new_events,
+            metadata=new_metadata,
+            event_indicators=new_indicators,
+        )
+
+    ...
+
     # Get the item(s) from the _EventData using either a string that is the channel name or a number that is the channel number.
     def __getitem__(self, item: Union[str, int]) -> np.ndarray:
         """
@@ -330,9 +405,15 @@ class _EventData:
             if item in self.ch_names:
                 # TODO: Make work when there are multiple dio files
                 return self.events[item]
+            else:
+                raise ValueError(f"Channel name '{item}' does not exist in _EventData.")
         elif isinstance(item, int):
             if item < len(self.ch_names):
                 return self.events[self.ch_names[item]]
+            else:
+                raise ValueError(
+                    f"Channel number '{item}' does not exist in _EventData."
+                )
         else:
             raise TypeError(
                 "_DioData class can only be indexed using 'str' or 'int' types"

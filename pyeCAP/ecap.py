@@ -11,11 +11,20 @@ import dask.bag as db
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from scipy import ndimage
 from scipy.signal import find_peaks, medfilt, savgol_filter
 
 from .base.epoch_data import _EpochData
 from .base.utils.numeric import _to_numeric_array
+from .base.utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_add_cbar_axis,
+    _plt_ax_aspect,
+    _plt_ax_to_pix,
+    _plt_setup_fig_axis,
+    _plt_show_fig,
+)
 from .utilities.ancillary_functions import check_make_dir
 
 
@@ -115,6 +124,46 @@ class ECAP(_EpochData):
             return max_num_amps
         else:
             sys.exit("Improper Dimensions.")
+
+    def neural_windows(self, channels, distances):
+        # Conduction velocities of various fiber types in m/s
+        velocity_data = {
+            "a_alpha": [
+                120,
+                70,
+            ],  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
+            "a_beta": [
+                70,
+                30,
+            ],  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
+            "a_gamma": [
+                30,
+                15,
+            ],  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
+            "a_delta": [
+                30,
+                5,
+            ],  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
+            "B": [
+                15,
+                3,
+            ],  # http://www.scielo.br/scielo.php?script=sci_arttext&pid=S0004-282X2008000100033&lng=en&tlng=en
+            "C": [2, 0.5],
+        }
+
+        # Check if the lengths of channels and distances match
+        if len(channels) != len(distances):
+            raise ValueError("The lengths of channels and distances must match.")
+
+        # Calculate delay windows for each channel
+        delay_windows = {}
+        for channel, distance in zip(channels, distances):
+            delay_windows[channel] = {}
+            for fiber, velocity in velocity_data.items():
+                # Calculate the delay window for each fiber type
+                delay_window = [distance / v for v in velocity]
+                delay_windows[channel][fiber] = delay_window
+        return delay_windows
 
     def calculate_neural_window_lengths(self):
         """
@@ -361,6 +410,62 @@ class ECAP(_EpochData):
         return dict(
             zip(self.stim.parameters.index, range(len(self.stim.parameters.index)))
         )
+
+    def plot(
+        self,
+        channels,
+        *args,
+        fiber_delays=False,
+        colors=sns.color_palette(),
+        axis=None,
+        fig_size=(10, 5),
+        spread_parameters=False,
+        **kwargs
+    ):
+
+        # Create a new figure and axis
+        fig, ax = _plt_setup_fig_axis(axis, fig_size)
+
+        # Call the plot method from the parent class with the new axis
+        result, plot_info = super().plot(
+            channels,
+            *args,
+            axis=ax,
+            colors=colors,
+            spread_parameters=spread_parameters,
+            **kwargs
+        )
+
+        if fiber_delays:
+            dax = _plt_add_ax_connected_top(fig, ax, ratio=0.2)
+            # Get the delay windows for each channel
+            delay_windows = self.neural_windows(channels, fiber_delays)
+            # Create a list to store fiber types
+            fiber_types = []
+            # Plot the delay windows on the dax axis
+            for i, (channel, windows) in enumerate(delay_windows.items()):
+                for j, (fiber, window) in enumerate(windows.items()):
+                    dax.broken_barh(
+                        [(window[0], window[1] - window[0])],
+                        (i + j * (len(windows) - 1), 1.5),
+                        facecolors=colors[i],
+                    )
+                    # Add the fiber type to the list
+                    if i == 0:
+                        fiber_types.append(fiber)
+            # Set the y-tick labels to the fiber types
+            dax.set_yticks([j * tick + i / 2 for tick in range(len(windows))])
+            dax.set_yticklabels(fiber_types)
+            dax.set_ylim([0, i + j * len(windows) + 1])
+
+        # Use the new axis in the result
+        if spread_parameters:
+            return (
+                _plt_show_fig(fig, [ax, result[1]], kwargs.get("show", True)),
+                plot_info,
+            )
+        else:
+            return _plt_show_fig(fig, ax, kwargs.get("show", True)), plot_info
 
     def plot_average_EMG(self, condition, amplitude, rec_channel):
         ### under construction
