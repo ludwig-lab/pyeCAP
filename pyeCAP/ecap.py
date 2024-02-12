@@ -55,7 +55,7 @@ class ECAP(_EpochData):
         self.ephys = ephys_data
         self.stim = stim_data
         self.fs = ephys_data.sample_rate
-        self.ephys = self.ephys.set_ch_types(["ENG"] * self.ephys.shape[0])
+        # self.ephys = self.ephys.set_ch_types(["ENG"] * self.ephys.shape[0])
         self.neural_channels = np.arange(0, self.ephys.shape[0])
 
         self.neural_window_indicies = self.calculate_neural_window_lengths()
@@ -178,16 +178,16 @@ class ECAP(_EpochData):
                 stop_idx = window[1]
             elif window_units == "sec":
                 print("Window units defined in seconds (sec).")
-                start_idx = self.ts_data._time_to_index(window[0])
-                stop_idx = self.ts_data._time_to_index(window[1])
+                start_idx = self._time_to_index(window[0])
+                stop_idx = self._time_to_index(window[1])
             elif window_units == "ms":
                 print("Window units defined in milliseconds (ms).")
-                start_idx = self.ts_data._time_to_index(window[0], units="milliseconds")
-                stop_idx = self.ts_data._time_to_index(window[1], units="milliseconds")
+                start_idx = self._time_to_index(window[0], units="milliseconds")
+                stop_idx = self._time_to_index(window[1], units="milliseconds")
             elif window_units == "us":
                 print("Window units defined in microseconds (us)")
-                start_idx = self.ts_data._time_to_index(window[0], units="microseconds")
-                stop_idx = self.ts_data._time_to_index(window[1], units="microseconds")
+                start_idx = self._time_to_index(window[0], units="microseconds")
+                stop_idx = self._time_to_index(window[1], units="microseconds")
             else:
                 raise ValueError(
                     "Unit type of AUC window not recognized. Acceptable units are 'sec', 'ms', 'us' or 'samples'."

@@ -36,11 +36,9 @@ class EMG(_EpochData):
             Ephys data object.
         stim_data : Stim class instance
             Stimulation data object.
-        distance_log : array of distances from recording electrode(s) to stimulating electrode [=] cm
         """
         # todo: differentiate recording channels
         # todo: improve unit checking i.e. [2 cm, 1 mm]
-        # TODO: check len(distances) == len(rec_electrodes)
 
         self.ephys = ephys_data
         self.stim = stim_data
@@ -67,16 +65,16 @@ class EMG(_EpochData):
             stop_idx = window[1]
         elif window_units == "sec":
             print("Window units defined in seconds (sec).")
-            start_idx = self.ts_data._time_to_index(window[0])
-            stop_idx = self.ts_data._time_to_index(window[1])
+            start_idx = self._time_to_index(window[0])
+            stop_idx = self._time_to_index(window[1])
         elif window_units == "ms":
             print("Window units defined in milliseconds (ms).")
-            start_idx = self.ts_data._time_to_index(window[0], units="milliseconds")
-            stop_idx = self.ts_data._time_to_index(window[1], units="milliseconds")
+            start_idx = self._time_to_index(window[0], units="milliseconds")
+            stop_idx = self._time_to_index(window[1], units="milliseconds")
         elif window_units == "us":
             print("Window units defined in microseconds (us)")
-            start_idx = self.ts_data._time_to_index(window[0], units="microseconds")
-            stop_idx = self.ts_data._time_to_index(window[1], units="microseconds")
+            start_idx = self._time_to_index(window[0], units="microseconds")
+            stop_idx = self._time_to_index(window[1], units="microseconds")
         else:
             raise ValueError(
                 "Unit type of AUC window not recognized. Acceptable units are 'sec', 'ms', 'us' or 'samples'."
@@ -134,14 +132,19 @@ class EMG(_EpochData):
         print(toc - tic, "seconds elapsed")
 
     # IN DEVELOPMENT
-    def calc_AUC2(self, window=None, window_units=None, method="mean"):
+    def calc_AUC2(
+        self,
+        parameters=None,
+        channels=None,
+        window=None,
+        window_units=None,
+        method="mean",
+    ):
 
         column_headers = self.stim.parameters.columns
-        metadata_list = [self.stim.parameters[p].to_numpy() for p in column_headers]
-        channelNAMES = np.array(self.ephys.ch_names)
-        master_list = []
+        masterLIST = []
 
-        data = self.avg_data_for_AUC2(method=method)
+        self._avg_data_for_AUC(method=method)
 
         if window_units is None:
             raise ValueError(
@@ -153,32 +156,60 @@ class EMG(_EpochData):
             stop_idx = window[1]
         elif window_units == "sec":
             print("Window units defined in seconds (sec).")
-            start_idx = self.ts_data._time_to_index(window[0])
-            stop_idx = self.ts_data._time_to_index(window[1])
+            start_idx = self._time_to_index(window[0])
+            stop_idx = self._time_to_index(window[1])
         elif window_units == "ms":
             print("Window units defined in milliseconds (ms).")
-            start_idx = self.ts_data._time_to_index(window[0], units="milliseconds")
-            stop_idx = self.ts_data._time_to_index(window[1], units="milliseconds")
+            start_idx = self._time_to_index(window[0], units="milliseconds")
+            stop_idx = self._time_to_index(window[1], units="milliseconds")
         elif window_units == "us":
             print("Window units defined in microseconds (us)")
-            start_idx = self.ts_data._time_to_index(window[0], units="microseconds")
-            stop_idx = self.ts_data._time_to_index(window[1], units="microseconds")
+            start_idx = self._time_to_index(window[0], units="microseconds")
+            stop_idx = self._time_to_index(window[1], units="microseconds")
         else:
             raise ValueError(
                 "Unit type of AUC window not recognized. Acceptable units are 'sec', 'ms', 'us' or 'samples'."
             )
 
-        # Outer Loop iterates through each parameter/pulse train within the TDT block
-        for stimIDX, avgDATA in enumerate(self.AUC_traces):
+        if parameters is not None:
+            paramLIST = parameters
+        else:
+            paramLIST = self.stim.parameters.index.tolist()
 
+        if channels is not None:
+            chanLIST = channels
+        else:
+            chanLIST = self.ch_names
+
+        data = self.mean(paramLIST, chanLIST)
+
+        for param in data:
+            mean_traces = data[param]
             # Inner loop iterates through each active recording electrode
-            for chanIDX, trace in enumerate(avgDATA):
-                metadata = [*[p[stimIDX] for p in metadata_list], channelNAMES[chanIDX]]
-                RMS = self._calc_RMS(trace, window=(start_idx, stop_idx))
-                master_list.append([RMS, window, window_units, *metadata])
+            for idx, chan in enumerate(chanLIST):
+
+                if isinstance(chan, int):
+                    channel_name = self.ch_names[chan]
+                else:
+                    channel_name = chan
+
+                RMS = self._calc_RMS(
+                    data=mean_traces[idx], window=(start_idx, stop_idx)
+                )
+                window_str = str(window[0]) + " - " + str(window[1])
+
+                masterLIST.append(
+                    [
+                        RMS,
+                        window_str,
+                        window_units,
+                        *self.stim.parameters.loc[param].tolist(),
+                        channel_name,
+                    ]
+                )
 
         new_df = pd.DataFrame(
-            master_list,
+            masterLIST,
             columns=[
                 "AUC (Vs)",
                 "Calculation Window",
@@ -192,33 +223,3 @@ class EMG(_EpochData):
             self.master_df = new_df
         else:
             self.master_df = pd.concat([self.master_df, new_df], ignore_index=True)
-
-    # IN DEVELOPMENT
-    def avg_data_for_AUC2(self, parameter_index=None, channels=None, method="mean"):
-
-        # tic = time.perf_counter()
-
-        # data frame with onset and offsets
-        self.df_epoc_idx = self.epoc_index()
-
-        if parameter_index is None:
-            parameter_index = self.df_epoc_idx.index
-
-        if channels is None:
-            channels = self.ch_names
-
-        # Collect array of desired data
-        data_array = self.array(parameter_index.tolist(), channels=channels)
-
-        # Iterate through array and calculate mean or median values
-        trace_avg_dict = {}
-        if method == "mean":
-            for params in data_array:
-                trace_avg_dict[params] = np.mean(data_array[params], axis=1)
-        elif method == "median":
-            for params in data_array:
-                trace_avg_dict[params] = np.median(data_array[params], axis=1)
-
-        # toc = time.perf_counter()
-        # print(toc - tic, "seconds elapsed")
-        return trace_avg_dict
