@@ -179,11 +179,17 @@ class EMG(_EpochData):
         else:
             chanLIST = self.ch_names
 
+        # Returns a dictionary of mean values where the key is the parameter and the value is a numpyarray of 2
+        # dimensions where the first dimension corresponding to channels and second dimension corresponding to data
+        # points
         data = self.mean(paramLIST, chanLIST)
 
+        # Outer loop iterates through each parameter
         for param in data:
             mean_traces = data[param]
-            # Inner loop iterates through each active recording electrode
+
+            # Inner loop iterates through each channel. Note, channels in chanLIST must be in order for the
+            # arrays in mean_traces to correctly align with the channel.
             for idx, chan in enumerate(chanLIST):
 
                 if isinstance(chan, int):
