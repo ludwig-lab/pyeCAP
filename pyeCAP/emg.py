@@ -144,8 +144,6 @@ class EMG(_EpochData):
         column_headers = self.stim.parameters.columns
         masterLIST = []
 
-        self._avg_data_for_AUC(method=method)
-
         if window_units is None:
             raise ValueError(
                 "EMG AUC calculation requires user specified 'window' and 'window_units'. Specify window_units in 'sec', 'ms','us' or 'samples'."
