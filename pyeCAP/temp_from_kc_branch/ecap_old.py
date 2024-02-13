@@ -51,10 +51,13 @@ class ECAP(_EpochData):
 
         # Lists to look through for ranges
         self.neural_fiber_names = ["A-alpha", "A-beta", "A-gamma", "A-delta", "B"]
+
         self.ephys = ephys_data
         self.stim = stim_data
         self.fs = ephys_data.sample_rate
-        self.master_df = pd.DataFrame()
+        # self.ephys = self.ephys.set_ch_types(["ENG"] * self.ephys.shape[0])
+        self.neural_channels = np.arange(0, self.ephys.shape[0])
+
         self.neural_window_indicies = self.calculate_neural_window_lengths()
 
         if type(self.distance_log) == list and self.distance_log != [0]:
@@ -73,6 +76,11 @@ class ECAP(_EpochData):
                 raise ValueError(
                     "Recording lengths don't match recording channel lengths"
                 )
+
+        self.AUC_traces = []
+        self.master_df = pd.DataFrame()
+        self.master_df2 = pd.DataFrame()
+        self.parameters_dictionary = self.create_parameter_to_traces_dict()
 
         if distance_log == "Experimental Log.xlsx":
             self.log_path = ephys_data.base_path + distance_log
@@ -137,20 +145,105 @@ class ECAP(_EpochData):
         velocity_matrix = np.array([a_alpha, a_beta, a_gamma, a_delta, B])
         # create time_windows based on fiber type activation for every recording
         # time_window[rec_electrode][fiber_type][start/stop]
-
-        num_rec_electrode = len(self.ephys.array)
+        rec_electrode = len(self.neural_channels)
         fiber_type = len(self.neural_fiber_names)
-        time_windows = np.zeros((num_rec_electrode, fiber_type, 2))
+        time_windows = np.zeros((rec_electrode, fiber_type, 2))
         for i, vel in enumerate(velocity_matrix):
             for j, length_cm in enumerate(self.distance_log):
                 time_windows[j][i] = [length_cm / 100 * (1 / ii) for ii in vel]
 
         time_windows *= self.fs
-        time_windows = np.round(time_windows).astype(int)
+        time_windows = np.round(time_windows)
 
+        np.round(time_windows)
+        time_windows = time_windows.astype(int)
         return time_windows
 
-    def calc_AUC(
+    def calc_AUC(self, window=None, window_units=None, method="mean"):
+
+        column_headers = self.stim.parameters.columns
+        metadata_list = [self.stim.parameters[p].to_numpy() for p in column_headers]
+        channelNAMES = np.array(self.ephys.ch_names)[self.neural_channels]
+        master_list = []
+
+        self._avg_data_for_AUC(method=method)
+
+        if window is not None:
+            if window_units is None:
+                raise ValueError(
+                    "User-specified limits for AUC calculation have been specified, however the units for window limits are not defined. Specify window_units in 'sec', 'ms','us' or 'samples'."
+                )
+            elif window_units == "samples":
+                print("Window units defined by sample #")
+                start_idx = window[0]
+                stop_idx = window[1]
+            elif window_units == "sec":
+                print("Window units defined in seconds (sec).")
+                start_idx = self._time_to_index(window[0])
+                stop_idx = self._time_to_index(window[1])
+            elif window_units == "ms":
+                print("Window units defined in milliseconds (ms).")
+                start_idx = self._time_to_index(window[0], units="milliseconds")
+                stop_idx = self._time_to_index(window[1], units="milliseconds")
+            elif window_units == "us":
+                print("Window units defined in microseconds (us)")
+                start_idx = self._time_to_index(window[0], units="microseconds")
+                stop_idx = self._time_to_index(window[1], units="microseconds")
+            else:
+                raise ValueError(
+                    "Unit type of AUC window not recognized. Acceptable units are 'sec', 'ms', 'us' or 'samples'."
+                )
+        else:
+            print("Utilizing standard neural windows for calculation.")
+            windowNAMES = self.neural_fiber_names
+            print(windowNAMES)
+
+        # Outer Loop iterates through each parameter/pulse train within the TDT block
+        for stimIDX, avgDATA in enumerate(self.AUC_traces):
+
+            # Inner loop iterates through each active recording electrode
+            for chanIDX, trace in enumerate(avgDATA):
+
+                metadata = [*[p[stimIDX] for p in metadata_list], channelNAMES[chanIDX]]
+                if window is None:
+                    RMS = []
+                    for standard_window_idx, standard_window in enumerate(
+                        self.neural_window_indicies[chanIDX]
+                    ):
+                        start_idx = standard_window[0]
+                        stop_idx = standard_window[1]
+                        RMS.append(self._calc_RMS(trace, window=(start_idx, stop_idx)))
+
+                    for idx, vals in enumerate(RMS):
+                        master_list.append([vals, windowNAMES[idx], *metadata])
+                else:
+                    RMS = self._calc_RMS(trace, window=(start_idx, stop_idx))
+                    customNAME = (
+                        "Custom: "
+                        + str(window[0])
+                        + " to "
+                        + str(window[1])
+                        + " "
+                        + window_units
+                    )
+                    master_list.append([RMS, customNAME, *metadata])
+
+        new_df = pd.DataFrame(
+            master_list,
+            columns=[
+                "AUC (Vs)",
+                "Calculation Window",
+                *column_headers,
+                "Recording Electrode",
+            ],
+        )
+
+        if self.master_df.empty:
+            self.master_df = new_df
+        else:
+            self.master_df = pd.concat([self.master_df, new_df], ignore_index=True)
+
+    def calc_AUC2(
         self,
         parameters=None,
         channels=None,
@@ -189,6 +282,8 @@ class ECAP(_EpochData):
                 )
         else:
             print("Utilizing standard neural windows for calculation.")
+            # windowNAMES = self.neural_fiber_names
+            # print(windowNAMES)
 
         if parameters is not None:
             paramLIST = parameters
@@ -263,10 +358,43 @@ class ECAP(_EpochData):
             ],
         )
 
-        if self.master_df.empty:
-            self.master_df = new_df
+        if self.master_df2.empty:
+            self.master_df2 = new_df
         else:
-            self.master_df = pd.concat([self.master_df, new_df], ignore_index=True)
+            self.master_df2 = pd.concat([self.master_df, new_df], ignore_index=True)
+
+    def _avg_data_for_AUC(self, parameter_index=None, method="mean"):
+        # data frame with onset and offsets
+        self.df_epoc_idx = self.epoc_index()
+
+        if parameter_index is None:
+            parameter_index = self.df_epoc_idx.index.tolist()
+
+        if method == "mean":
+            if len(parameter_index) == 1:
+                self.AUC_traces = self.mean(parameter_index)[np.newaxis, :, :]
+            else:
+                self.AUC_traces = np.concatenate(
+                    [
+                        self.mean(parameter_index)[p][np.newaxis, :, :]
+                        for p in parameter_index
+                    ],
+                    axis=0,
+                )
+        elif method == "median":
+            if len(parameter_index) == 1:
+                self.AUC_traces = self.median(parameter_index)[np.newaxis, :, :]
+            else:
+                self.AUC_traces = np.concatenate(
+                    [
+                        self.median(parameter_index)[p][np.newaxis, :, :]
+                        for p in parameter_index
+                    ],
+                    axis=0,
+                )
+        print("Finished Averaging Data")
+        # toc = time.perf_counter()
+        # print(toc - tic, "seconds elapsed")
 
     def filter_averages(
         self,
