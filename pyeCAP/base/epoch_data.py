@@ -416,6 +416,15 @@ class _EpochData:
                         & (df["bipolar channel"] == bipolar_ch)
                     ].index
 
+        # If only a sort argument is passed, then use all parameters
+        if (
+            (channel is None)
+            and (bipolar_ch is None)
+            and (amp_cutoff is None)
+            and (amplitude == [None])
+        ):
+            paramLIST = self.stim.parameters.index
+
         if sort is not None:
             if sort == "ascending":
                 sorted_params = (
@@ -709,18 +718,22 @@ class _EpochData:
 
         return _plt_show_fig(fig, ax, show)
 
-    def plot_raster(
+    def plot_heatmap(
         self,
-        channel,
+        channels,
         parameters,
         *args,
         method="mean",
-        axis=None,
         x_lim=None,
         c_lim="auto",
-        c_map="RdYlBu",
-        fig_size=(10, 4),
+        fig_size=(10, 3),
         show=True,
+        show_window=None,
+        fig_title=None,
+        sort="ascending",
+        colormap="viridis",
+        save=False,
+        vlines=None,
         **kwargs,
     ):
         """
@@ -762,69 +775,86 @@ class _EpochData:
             If show is False, returns a matplotlib axis. Otherwise, plots the figure and returns None.
 
         """
-        fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
+        # If a string is passed because the user only specified a single channel, will convert to list before proceeding
+        if isinstance(channels, str):
+            channels = [channels]
+
+        # If multiple channels and parameters are passed raise exception
+        if len(channels) > 1 and len(parameters) > 1:
+            raise Exception(
+                "Multiple channels and parameters passed. Heatmap plots can only contain a single channel "
+                "with multiple parameters or a single parameter across multiple channels."
+            )
+
+        if show_window == True and len(channels) > 1:
+            warnings.warn(
+                "Multiple channels passed. Neural fiber window displays with respect to first channel only."
+            )
+
+        if sort == "ascending":
+            sorted_params = (
+                self.parameters.parameters.loc[parameters]
+                .sort_values("pulse amplitude (μA)", ascending=False)
+                .index
+            )
+        elif sort == "descending":
+            sorted_params = (
+                self.parameters.parameters.loc[parameters]
+                .sort_values("pulse amplitude (μA)", ascending=True)
+                .index
+            )
+        else:
+            raise Exception(
+                "Sort argument must be 'ascending' or 'descending'. Default is 'ascending'."
+            )
+
+        fig, ax = plt.subplots(figsize=fig_size)
+        fig.suptitle(fig_title, fontsize="medium")
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.95, hspace=0.25, wspace=0.15)
+
+        # Construct data array for heatmap plotting
+        dataLIST = []
+        currentLIST = []
         calc_c_lim = [0, 0]
 
-        plot_data = []
+        # Pulls time values into sorted ndarray from first parameter.  Assumes that pulse count/frequency of stim trains within TDT kept constant
+        plot_time = self.time(sorted_params[0])
 
-        for p in _to_parameters(parameters):
-            plot_time = self.time(p)
-            if method == "mean":
-                p_data = self.mean(p, channels=channel)
-            elif method == "median":
-                p_data = self.median(p, channels=channel)
-            else:
-                raise ValueError(
-                    "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
-                    "and 'median'."
-                )
+        # Iterates through parameter(s) and channel(s) to create a list of ndarrays containing the data from each parameter/channel combination
+        for param in sorted_params:
+            currentLIST.append(
+                self.parameters.parameters["pulse amplitude (μA)"][param]
+            )
+            for chan in channels:
+                dataLIST.append(self.mean(param, chan))
 
-            # compute appropriate y_limits
-            if c_lim is None or c_lim == "auto":
-                std_data = np.std(p_data)
-                calc_c_lim = [
-                    np.min([-std_data * 6, calc_c_lim[0]]),
-                    np.max([std_data * 6, calc_c_lim[1]]),
-                ]
-            elif c_lim == "max":
-                calc_c_lim = None
-            else:
-                calc_c_lim = _to_numeric_array(c_lim)
+        if c_lim is None or c_lim == "auto":
+            std_data = np.std(dataLIST)
+            calc_c_lim = [
+                np.min([-std_data * 6, calc_c_lim[0]]),
+                np.max([std_data * 6, calc_c_lim[1]]),
+            ]
+        elif c_lim == "max":
+            calc_c_lim = None
+        else:
+            calc_c_lim = _to_numeric_array(c_lim)
 
-            # add p data to plot data list
-
-            plot_data.append(p_data[0, :])
-
-        plot_data = np.stack(plot_data)
-
-        # Set up plot labels so that axis dimensions are correct
-        ax.set_xlabel("time (s)")
-        ax.set_ylabel("parameter")
-
-        ax.set_yticks(np.arange(plot_data.shape[0]) + 0.5)
-        ax.set_yticklabels(parameters)
-        ax.set_ylim(0, plot_data.shape[0])
+        dataARRAY = np.squeeze(np.stack(dataLIST, axis=1))
 
         _plt_add_cbar_axis(
-            fig, ax, c_label="amplitude (V)", c_lim=calc_c_lim, c_map=c_map
+            fig, ax, c_label="amplitude (V)", c_lim=calc_c_lim, c_map=colormap
         )
 
-        # if aspect is None:
-        #     _plt_ax_aspect(fig, ax)
-        #     a_ratio = ((plot_time[-1]-plot_time[0])/(plot_data.shape[0]))*_plt_ax_aspect(fig, ax)
-        # else:
-        #     a_ratio = ((plot_time[-1]-plot_time[0])/plot_data.shape[0])*aspect
-
-        ax.imshow(
-            plot_data,
-            *args,
-            cmap=c_map,
-            extent=[plot_time[0], plot_time[-1], 0, plot_data.shape[0]],
+        im = ax.imshow(
+            dataARRAY,
+            aspect="auto",
+            origin="lower",
+            extent=[plot_time[0], plot_time[-1], 0, len(currentLIST)],
             vmin=calc_c_lim[0],
             vmax=calc_c_lim[1],
-            aspect="auto",
-            **kwargs,
+            cmap=colormap,
         )
 
         if x_lim is None:
@@ -832,6 +862,11 @@ class _EpochData:
         else:
             ax.set_xlim(x_lim)
 
+        ax.set_yticks(np.arange(len(currentLIST)))
+        ax.set_yticklabels(currentLIST)
+        ax.set_xlabel("Time (ms)")
+        ax.set_ylabel("Current Amplitude (uA)")
+        ax.set_title(fig_title)
         return _plt_show_fig(fig, ax, show)
 
     def plot_binned_traces(
