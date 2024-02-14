@@ -96,7 +96,7 @@ class _EpochData:
         """
         self._cache = (
             OrderedDict()
-        )  # Initialize a cahce across all instances of _EpochData
+        )  # Initialize a cache across all instances of _EpochData
         self._cache_size = 0.5e9  # Set the maximum cache size in bytes
         if (
             isinstance(ts_data, _TsData)
@@ -279,7 +279,7 @@ class _EpochData:
         return da.moveaxis(event_data_reshaped, 1, 0)
 
     def get_parameters(
-        self, channel=None, bipolar_ch=None, amplitude=None, amp_cutoff=None
+        self, channel=None, bipolar_ch=None, amplitude=None, amp_cutoff=None, sort=None
     ):
 
         # TODO: make function work with lists of channels and bipolar channels
@@ -416,15 +416,27 @@ class _EpochData:
                         & (df["bipolar channel"] == bipolar_ch)
                     ].index
 
-        # If only channel is specified, return all params that use that channel
+        if sort is not None:
+            if sort == "ascending":
+                sorted_params = (
+                    self.parameters.parameters.loc[paramLIST]
+                    .sort_values("pulse amplitude (μA)", ascending=False)
+                    .index
+                )
+            elif sort == "descending":
+                sorted_params = (
+                    self.parameters.parameters.loc[paramLIST]
+                    .sort_values("pulse amplitude (μA)", ascending=True)
+                    .index
+                )
+            else:
+                raise ValueError(
+                    "The 'sort' argument must be set to either 'ascending', 'descending', or 'None' (default)."
+                )
+        else:
+            sorted_params = paramLIST
 
-        # If only bipolar channel is specified, return all params that use that bipolar channel
-
-        # If channel and bipolar channel are specified, return all params that use that pairing
-
-        # If amplitude is specified and has a cutoff type, return params based on the type. Above/Below etc., This cannot be used if a list of amplitudes is passed
-
-        return paramLIST.tolist()
+        return sorted_params.tolist()
 
     def plot(
         self,
@@ -609,7 +621,7 @@ class _EpochData:
 
         Examples
         ________
-        >>> ecap_data.plot("RawE 1", (0,0))     # doctest: +SKIP
+        >>> ecap_data.plot_channel("RawE 1", (0,0))     # doctest: +SKIP
         """
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
 
@@ -1035,20 +1047,20 @@ class _EpochData:
                 )
 
                 if method == "mean":
-                    plot_data = self.mean(param, channels=chan)
+                    plot_data = self.mean(param, channels=chan) * 1e6
                     # print('mean')   #Check to make sure 'if' loop functions
                 elif method == "median":
-                    plot_data = self.median(param, channels=chan)
+                    plot_data = self.median(param, channels=chan) * 1e6
                     # print('median')
                 elif method == "std":
-                    plot_data = self.std(param, channels=chan)
+                    plot_data = self.std(param, channels=chan) * 1e6
                 else:
                     raise ValueError(
                         "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
                         "and 'median'."
                     )
 
-                plot_time = self.time(param)
+                plot_time = self.time(param) * 1e3
                 # Baseline correction
                 if baseline_ms is not None:
                     baseline_correction_window = int(baseline_ms * 0.001 * self.fs)
@@ -1062,8 +1074,8 @@ class _EpochData:
                     std_data = np.std(plot_data)
                     # print(std_data.compute())
                     calc_y_lim = [
-                        np.min([-std_data.compute() * 7, calc_y_lim[0]]),
-                        np.max([std_data.compute() * 7, calc_y_lim[1]]),
+                        np.min([-std_data * 7, calc_y_lim[0]]),
+                        np.max([std_data * 7, calc_y_lim[1]]),
                     ]
                     # print(calc_y_lim)
                     # calc_y_lim = [-std_data * 7, std_data * 7]
@@ -1075,9 +1087,9 @@ class _EpochData:
                 ax[idx].plot(plot_time, plot_data[0, :], label=chan, *args, **kwargs)
 
                 ax[idx].set_ylim(calc_y_lim)
-                ax[idx].set_xlabel("time (s)")
-                ax[idx].set_ylabel("amplitude (V)")
-                ax[idx].legend()
+                ax[idx].set_xlabel("time (ms)")
+                ax[idx].set_ylabel("amplitude (uV)")
+                ax[idx].legend(loc="upper right")
                 ax[idx].set_title(name)
 
                 if x_lim is None:
