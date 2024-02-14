@@ -842,7 +842,7 @@ class _EpochData:
         **kwargs,
     ):
         """
-        Plots the raw data response to each individual stimulation pulse over a specified range for a given channel.
+        Plots the raw data responses to each individual stimulation pulse over a specified range for a given channel.
 
         Parameters
         ----------
