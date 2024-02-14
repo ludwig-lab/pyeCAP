@@ -81,34 +81,6 @@ class ECAP(_EpochData):
 
         super().__init__(ephys_data, stim_data, stim_data)
 
-    def gather_num_conditions(self):
-        all_indices = self.stim.parameters.index
-        if len(all_indices[0]) == 1:
-            return 1
-        elif len(all_indices[0]) == 2:
-            count = 1
-            previous_index = all_indices[0]
-            for i in all_indices[1:]:
-                if i[0] != previous_index[0]:
-                    count += 1
-                previous_index = i
-            return count
-        else:
-            sys.exit("Improper dimensions.")
-
-    def gather_num_amplitudes(self):
-        max_num_amps = 0
-        all_indices = self.stim.parameters.index
-        if len(all_indices[0]) == 1:
-            return len(all_indices)
-        elif len(all_indices[0]) == 2:
-            for i in all_indices:
-                if i[1] + 1 > max_num_amps:
-                    max_num_amps = i[1] + 1
-            return max_num_amps
-        else:
-            sys.exit("Improper Dimensions.")
-
     def calculate_neural_window_lengths(self):
         """
         :return: time_windows[recording_electrode][fiber_type][start/stop]
