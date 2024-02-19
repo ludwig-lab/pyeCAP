@@ -57,6 +57,7 @@ def test_to_array_error_handling():
 
 # Tests for _generate_state_identifier
 
+
 # Define TestClass at the module level
 # Test if the function correctly uses pickle.dumps for objects without _state_identifier attribute
 class TestClassWithStateIdentifier:

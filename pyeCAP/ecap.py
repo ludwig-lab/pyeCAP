@@ -129,6 +129,7 @@ class ECAP(_EpochData):
         window=None,
         window_units=None,
         method="mean",
+        new_df=False,
     ):
 
         column_headers = self.stim.parameters.columns
@@ -224,7 +225,7 @@ class ECAP(_EpochData):
                         ]
                     )
 
-        new_df = pd.DataFrame(
+        data_df = pd.DataFrame(
             masterLIST,
             columns=[
                 "AUC (Vs)",
@@ -235,10 +236,10 @@ class ECAP(_EpochData):
             ],
         )
 
-        if self.master_df.empty:
-            self.master_df = new_df
+        if self.master_df.empty or new_df == True:
+            self.master_df = data_df
         else:
-            self.master_df = pd.concat([self.master_df, new_df], ignore_index=True)
+            self.master_df = pd.concat([self.master_df, data_df], ignore_index=True)
 
     def filter_averages(
         self,

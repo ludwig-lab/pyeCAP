@@ -1181,7 +1181,6 @@ class _EpochData:
         return _plt_show_fig(fig, ax, show)
 
     def plot_interactive(self, channels, parameter, *args, method="mean", **kwargs):
-
         """
         Creates an interactive plot of the specified channels and parameter. Hovering over lines in the plot
         displays data point specific information.

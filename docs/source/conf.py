@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent / ".."))
 
+
 # mock modules that cause errors
 class Mock(MagicMock):
     @classmethod
