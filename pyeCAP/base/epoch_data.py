@@ -934,16 +934,16 @@ class _EpochData:
         print("Plotting trace #s " + str(bin[0]) + " to " + str(bin[1]))
 
         # Creates numpy array of binned traces for plotting
-        bin_data = self.array(parameter, channel)[bin[0] : bin[1], :, :]
+        bin_data = self.array(parameter, channel)[bin[0] : bin[1], :, :] * 1e6
 
         for data in bin_data:
             ax.plot(plot_time, data[0, :], alpha=opacity)
 
         if show_mean == True:
             if method == "median":
-                avg_trace = self.median(parameter, channel)
+                avg_trace = self.median(parameter, channel) * 1e6
             else:
-                avg_trace = self.mean(parameter, channel)
+                avg_trace = self.mean(parameter, channel) * 1e6
             ax.plot(plot_time, avg_trace[0, :], "r")
 
         if fig_title is not None:
@@ -979,7 +979,6 @@ class _EpochData:
                 raise Exception(
                     "Vertical line inputs must be integer (for single line), or a list of integers."
                 )
-        # ax.set_ylim(y_lim)
         return _plt_show_fig(fig, ax, show)
 
     def multiplot(
@@ -1223,9 +1222,9 @@ class _EpochData:
         # TODO: Make function work with multiple parameters
         for chan in ch_names:
             if method == "mean":
-                plotDF[chan] = self.mean(parameter, channels=chan).T
+                plotDF[chan] = self.mean(parameter, channels=chan).T * 1e6
             elif method == "median":
-                plotDF[chan] = self.median(parameter, channels=chan).T
+                plotDF[chan] = self.median(parameter, channels=chan).T * 1e6
             nameLIST.append(chan)
         fig = px.line(
             plotDF,
@@ -1235,7 +1234,7 @@ class _EpochData:
             hover_data=["Sample Number"],
         )
         fig.update_xaxes(title_text="Time (ms)")
-        fig.update_yaxes(title_text="Voltage (V)")
+        fig.update_yaxes(title_text="Voltage (uV)")
         fig.show()
         return
 
