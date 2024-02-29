@@ -124,11 +124,20 @@ class _TsData:
         # Setup metadata for different data sets
         self.metadata = metadata
 
-        # Setup data, converting to dask if required
-        if daskify:
-            self.data = [da.from_array(d, lock=lock, fancy=fancy_index) for d in data]
-        else:
-            self.data = data
+        # Setup data, converting to dask if required and not already in dask format, and adjust for 2D arrays or convert 1D arrays to 2D
+        self.data = []
+        for d in data:
+            if d.ndim == 1:
+                d = d.reshape(1, -1)  # Convert 1D array to 2D array with shape (1, x)
+            elif d.ndim != 2:
+                raise ValueError(
+                    "Each array must have 2 dimensions: num_channels x num_data_points"
+                )
+            if daskify and not isinstance(d, da.Array):
+                self.data.append(da.from_array(d, lock=lock, fancy=fancy_index))
+            else:
+                self.data.append(d)
+
         if ch_offsets is not None:
             for meta in metadata:
                 if "ch_offsets" not in meta.keys():
@@ -670,11 +679,7 @@ class _TsData:
         >>> ephys_data.time      # doctest: +SKIP
 
         """
-        # Chunk size is arbitrary
-        time_points = [
-            da.arange(d.shape[1], chunks=c[1] * 10)
-            for d, c in zip(self.data, self.chunks)
-        ]
+        time_points = [da.arange(d.shape[1]) for d in self.data]
         sample_rates = self.sample_rate
         for i in range(1, self.ndata):
             time_points[i] = time_points[i] + time_points[i - 1][-1] + 1

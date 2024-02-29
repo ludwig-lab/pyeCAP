@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 from functools import cached_property
 
@@ -18,7 +19,7 @@ class _DioData:
     Class for stimulation start/stop data.
     """
 
-    def __init__(self, dio, metadata, indicators=None):
+    def __init__(self, dio, metadata, dio_indicators=None):
         """
 
         Parameters
@@ -36,12 +37,12 @@ class _DioData:
             dio = [dio]
         if not isinstance(metadata, list):
             metadata = [metadata]
-        if indicators is not None:
-            if not isinstance(indicators, list):
-                indicators = [indicators]
+        if dio_indicators is not None:
+            if not isinstance(dio_indicators, list):
+                dio_indicators = [dio_indicators]
         self._dio = dio
         self._metadata = metadata
-        self._dio_indicators = indicators
+        self._dio_indicators = dio_indicators
 
     @cached_property
     def _state_identifier(self):
@@ -96,14 +97,57 @@ class _DioData:
         start_times = [meta["start_time"] for meta in self.metadata]
         return start_times
 
+    def _ch_to_keys(self, channels):
+        """
+        Converts channel identifiers (names or indexes) to the channel names.
+
+        Parameters
+        ----------
+        channels : str, int, or list of str/int
+            Channel name(s) or index(es).
+
+        Returns
+        -------
+        list
+            The channel names corresponding to the given identifiers.
+
+        Raises
+        ------
+        ValueError
+            If any of the channels do not exist.
+        TypeError
+            If the channel identifiers are not of type str, int, or list of str/int.
+        """
+        if not isinstance(channels, list):
+            channels = [channels]
+
+        channel_names = []
+        for channel in channels:
+            if isinstance(channel, int):
+                try:
+                    channel_names.append(self.ch_names[channel])
+                except IndexError:
+                    raise ValueError(f"Channel index {channel} is out of range.")
+            elif isinstance(channel, str):
+                if channel in self.ch_names:
+                    channel_names.append(channel)
+                else:
+                    raise ValueError(f"Channel name '{channel}' does not exist.")
+            else:
+                raise TypeError(
+                    "Channel identifier must be a string (channel name), an integer (channel index), or a list of such identifiers."
+                )
+
+        return channel_names
+
     def dio(self, channel, start_times=None, reference=None, remove_gaps=False):
         """
         Outputs an array containing starting and stopping times for stimulation periods for a given channel.
 
         Parameters
         ----------
-        channel : str
-            Name of channel.
+        channel : str or int
+            Name or index of the channel. Only one channel can be specified.
         start_times : None, list
             Specify a list of start times or specify None to use the start_times property default.
         reference : None, pyCAP.base.ts_data._TsData or subclass
@@ -118,6 +162,16 @@ class _DioData:
         numpy.ndarray
             Array containing start and stop times of the stimulation data.
         """
+        # Ensure channel is a single identifier, not a list
+        if isinstance(channel, list):
+            raise TypeError(
+                "Multiple channels are not supported. Please specify a single channel as a string or integer."
+            )
+
+        # Convert channel identifier to channel name
+        channel_name = self._ch_to_keys([channel])[
+            0
+        ]  # _ch_to_keys now always receives a list and returns the first element
 
         # If start_times is None, use the start_times property method default or specify a reference object to match start times.
         if start_times is None:
@@ -129,15 +183,16 @@ class _DioData:
                 else:
                     start_times = reference.start_times
 
-        # If channel is a string and exists in the channel names, return the events for that channel.
-        if isinstance(channel, str):
-            if channel in self.ch_names:
-                events = [e[channel] + s for e, s in zip(self._dio, start_times)]
-                return np.concatenate(events)
+        # Return the events for the channel.
+        events = [
+            np.asarray(e[channel_name]) + s
+            for e, s in zip(self._dio, start_times)
+            if e.get(channel_name)
+        ]
+        if events:  # Check if events list is not empty
+            return np.concatenate(events)
         else:
-            raise TypeError(
-                "_DioData class can only be indexed using 'str' or 'int' types"
-            )
+            return np.array([])  # Return an empty numpy array if no events
 
     def dio_indicators(self, channel):
         """
@@ -176,7 +231,7 @@ class _DioData:
         display="span",
         show=True,
         dio=None,
-        **kwargs
+        **kwargs,
     ):
         """
         Plots electrical stimulation time periods in a raster format.
@@ -253,14 +308,14 @@ class _DioData:
                                 *args,
                                 ymin=i * 1 / channels,
                                 ymax=(i + 1) * 1 / channels,
-                                **kwargs
+                                **kwargs,
                             )
                             ax.axvline(
                                 event[0],
                                 *args,
                                 ymin=i * 1 / channels,
                                 ymax=(i + 1) * 1 / channels,
-                                **kwargs
+                                **kwargs,
                             )
                         else:
                             ax.axvspan(
@@ -269,14 +324,14 @@ class _DioData:
                                 *args,
                                 ymin=i * 1 / channels,
                                 ymax=(i + 1) * 1 / channels,
-                                **kwargs
+                                **kwargs,
                             )
                             ax.axvline(
                                 datetime.fromtimestamp(event[0]),
                                 *args,
                                 ymin=i * 1 / channels,
                                 ymax=(i + 1) * 1 / channels,
-                                **kwargs
+                                **kwargs,
                             )
                 elif display == "lines":
                     if remove_gaps:
@@ -387,3 +442,110 @@ class _DioData:
             raise TypeError(
                 "_DioData class can only be indexed using 'str' or 'int' types"
             )
+
+    def remove_events(self, events_to_remove, channels=None, use_timestamps=True):
+        """
+        Removes events and associated indicators from a copy of the _DioData object based on a list of event times to remove.
+        Can remove events from specific channels if the channels parameter is provided. Can operate in two modes:
+        direct removal of specified times or removal based on matching timestamps, ensuring matching pairs of on/off events
+        and their indicators are always removed together.
+
+        Parameters
+        ----------
+        events_to_remove : list
+            A list of event times to remove from the _DioData object.
+        channels : list, optional
+            A list of channel names from which events should be removed. If None, events will be removed from all channels.
+        use_timestamps : bool, optional
+            If True, uses self.dio to convert _dio data to timestamps and removes entries where the timestamps match.
+            If False, operates on direct event times removal.
+
+        Returns
+        -------
+        _DioData
+            A new _DioData instance with specified events removed.
+        """
+        # Manually create a new instance of _DioData
+        new_obj = _DioData([], [], [])
+
+        events_to_remove = np.array(events_to_remove)
+
+        if channels is not None:
+            channels = self._ch_to_keys(
+                channels
+            )  # Convert channels to a list of channel names using _ch_to_keys
+
+        for channel in channels if channels is not None else self.ch_names:
+            if use_timestamps:
+                # Retrieve the timestamps for the channel
+                timestamps = self.dio(channel)
+                # Determine which timestamps to keep by checking pairs
+                keep_pairs = []
+                for i in range(0, len(timestamps), 2):  # Process in pairs
+                    start, stop = timestamps[i], timestamps[i + 1]
+                    # Use np.isin to check if start or stop is in events_to_remove
+                    if (
+                        not np.isin(start, events_to_remove).any()
+                        and not np.isin(stop, events_to_remove).any()
+                    ):
+                        print((start, stop))
+                        keep_pairs.extend([start, stop])
+            else:
+                # Direct removal mode, not using timestamps
+                keep_pairs = None  # This will be used to indicate direct mode
+
+            # Process each dio and dio_indicator for the channel
+            for i, dio_channel in enumerate(self._dio):
+                if channel in dio_channel:
+                    if keep_pairs is not None:
+                        # Filter events based on the keep_pairs
+                        filtered_events = [
+                            event
+                            for event in dio_channel[channel]
+                            if event in keep_pairs
+                        ]
+                    else:
+                        # Direct removal mode
+                        events = dio_channel[channel]
+                        filtered_events = []
+                        for j in range(0, len(events), 2):
+                            if (
+                                events[j] not in events_to_remove
+                                and events[j + 1] not in events_to_remove
+                            ):
+                                filtered_events.extend([events[j], events[j + 1]])
+
+                    # Update the new object's _dio
+                    if i >= len(new_obj._dio):
+                        new_obj._dio.append({})
+                    new_obj._dio[i][channel] = filtered_events
+
+                    # Update the new object's _dio_indicators if necessary
+                    if (
+                        self._dio_indicators
+                        and len(self._dio_indicators) > i
+                        and channel in self._dio_indicators[i]
+                    ):
+                        if i >= len(new_obj._dio_indicators):
+                            new_obj._dio_indicators.append({})
+                        if keep_pairs is not None:
+                            filtered_indicators = [
+                                self._dio_indicators[i][channel][j // 2]
+                                for j, event in enumerate(dio_channel[channel])
+                                if event in keep_pairs
+                            ]
+                        else:
+                            indicators = self._dio_indicators[i][channel]
+                            filtered_indicators = [
+                                indicators[k]
+                                for k in range(len(indicators))
+                                if 2 * k in range(0, len(filtered_events), 2)
+                            ]
+                        new_obj._dio_indicators[i][channel] = filtered_indicators
+
+        # Manually copy metadata and other necessary attributes
+        new_obj._metadata = [
+            dict(meta) for meta in self._metadata
+        ]  # Deep copy each metadata dictionary
+
+        return new_obj

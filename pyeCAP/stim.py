@@ -110,7 +110,7 @@ class Stim(_EventData, _DioData, _ParameterData):
             self.file_path = file_path
             self.io = io
             _EventData.__init__(self, events, metadata, indicators=event_indicators)
-            _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
+            _DioData.__init__(self, dio, metadata, dio_indicators=dio_indicators)
             _ParameterData.__init__(self, parameters, metadata)
         elif isinstance(file_path, str):
             # Read in Ripple data files
@@ -165,7 +165,7 @@ class Stim(_EventData, _DioData, _ParameterData):
                     f'"{file_extension}" is not a supported file extension for file {file_path}'
                 )
             _EventData.__init__(self, events, metadata, indicators=event_indicators)
-            _DioData.__init__(self, dio, metadata, indicators=dio_indicators)
+            _DioData.__init__(self, dio, metadata, dio_indicators=dio_indicators)
             _ParameterData.__init__(self, parameters, metadata)
         elif _is_iterable(file_path, str):
             with ThreadPoolExecutor() as executor:
@@ -189,6 +189,7 @@ class Stim(_EventData, _DioData, _ParameterData):
                 metadata,
             )
         else:
+            print(file_path)
             raise ValueError(
                 f"file_path expected to be a string or a list of strings, but got {type(file_path)}"
             )

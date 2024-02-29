@@ -1,386 +1,294 @@
-# scientific imports
-import datetime as dt
-import struct
-import warnings
+from datetime import datetime, timedelta
+from typing import Union
 
+import adi
+import dask
 import dask.array as da
 import numpy as np
-import scipy.io as sio
+
+from ..base.dio_data import _DioData
+from ..base.ts_data import _TsData
 
 
-def check_data(raw_data):
+class AdiIO:
     """
-    Warns user of potential errors in reading in the data.
-
-    Parameters
-    ----------
-    raw_data : dict
-        Python dictionary with keys corresponding to matlab variables and numpy data arrays as values.
-
-    Returns
-    -------
-    None
+    This class is responsible for handling Analog Devices data files in an adict format.
+    It reads the data, handles errors, and extracts metadata.
     """
 
-    # TODO: add more tests to catch unworkable data
+    def __init__(self, file_path: str):
+        """
+        Initializes the AdiIO object with a file path.
 
-    # check for proper array dimensions
-    num_blocks = len(raw_data["blocktimes"].flatten())
-    num_channels = len(raw_data["titles"].flatten())
-    # short circuit each and operator to check if arrays are named properly before using them as keys
-    if "data" in raw_data and raw_data["data"].shape[0] != 1:
-        warnings.warn("Improperly formatted array 'data'")
-    if "datastart" in raw_data and raw_data["datastart"].shape != (
-        num_channels,
-        num_blocks,
-    ):
-        warnings.warn("Improperly formatted array 'datastart'")
-    if "dataend" in raw_data and raw_data["dataend"].shape != (
-        num_channels,
-        num_blocks,
-    ):
-        warnings.warn("Improperly formatted array 'dataend'")
-    if "samplerate" in raw_data and raw_data["samplerate"].shape != (
-        num_channels,
-        num_blocks,
-    ):
-        warnings.warn("Improperly formatted array 'samplerate'")
-    if "firstsampleoffset" in raw_data and raw_data["firstsampleoffset"].shape != (
-        num_channels,
-        num_blocks,
-    ):
-        warnings.warn("Improperly formatted array 'firstsampleoffset'")
-    if "tickrate" in raw_data and raw_data["tickrate"].shape != (1, num_blocks):
-        warnings.warn("Improperly formatted vector 'tickrate'")
-    if "blocktimes" in raw_data and raw_data["blocktimes"].shape != (1, num_blocks):
-        warnings.warn("Improperly formatted vector 'blocktimes'")
-    if "unittext" in raw_data and raw_data["unittext"].ndim != 1:
-        warnings.warn("Improperly formatted vector 'unittext'")
-    if "unittextmap" in raw_data and raw_data["unittextmap"].shape != (
-        num_channels,
-        num_blocks,
-    ):
-        warnings.warn("Improperly formatted array 'unittextmap'")
+        This constructor checks if the provided file path is a string and if it ends with the '.adicht' extension,
+        indicating it is an adinstruments file. If these conditions are met, it reads the file using the adi library.
+        Otherwise, it raises appropriate errors.
 
-    # check for consistent sample rates
-    sample = raw_data["samplerate"]
-    for block_idx in range(len(sample.transpose())):
-        if len(np.unique(sample.transpose()[block_idx])) != 1:
-            warnings.warn("Block {} has inconsistent sample rates".format(block_idx))
-    if len(np.unique(raw_data["tickrate"][0])) != 1:
-        warnings.warn("Inconsistent sample rates between blocks")
+        Parameters:
+        - file_path (str): The path to the adinstruments file.
 
-    # check for nan values
-    warnings.filterwarnings(action="ignore", module="numpy")
-    if np.isnan(np.sum(raw_data["data"])):
-        warnings.warn("Encountered NaN values in data")
-
-    # check for offsets in samples
-    if np.sum(raw_data["firstsampleoffset"].flatten()) != 0:
-        warnings.warn("Offset in data block(s)")
-
-    # check for unit inconsistencies
-    for channel in range(len(raw_data["unittextmap"])):
-        if len(np.unique(raw_data["unittextmap"][channel])) != 1:
-            warnings.warn(
-                "Inconsistent units in channel {}".format(raw_data["titles"][channel])
-            )
-
-    # check for missing data
-    if True in np.unique(raw_data["datastart"] == -1):
-        warnings.warn(
-            "Channel data does not align into a rectangular array."
-            " Try padding the data with the pyeCAP.phys.pad_array function"
-        )
-
-
-def convert_time(matlab_time):
-    """
-    Converts matlab datetime format to python timestamp.
-
-    Parameters
-    ----------
-    matlab_time : float
-        Matlab datetime format
-
-    Returns
-    -------
-    float
-        Time since the Unix Epoch in seconds.
-    """
-    py_time = (
-        dt.datetime.fromordinal(int(matlab_time))
-        + dt.timedelta(days=matlab_time % 1)
-        - dt.timedelta(days=366)
-    )
-    return py_time.timestamp()
-
-
-def to_array(raw_array, index_start_array, index_end_array, mult_data):
-    """
-    Creates a properly formatted dask array to insert into the Phys or _TsData constructor.
-
-    Parameters
-    ----------
-    raw_array : numpy.ndarray
-        Array of all raw data points. ('data')
-    index_start_array : numpy.ndarray
-        Array of matlab start indices for each channel and block combination. ('datastart')
-    index_end_array : numpy.ndarray
-        Array of matlab end indices for each channel and block combination. ('dataend')
-    mult_data : bool
-        Indicator of whether or not to treat the file as one data set or multiple.
-
-    Returns
-    -------
-    dask.array.core.Array
-        Raw data formatted into an array.
-    """
-    # get shape of the array
-    shape = index_start_array.shape
-    num_channels = shape[0]
-    num_divisions = shape[1]
-
-    # data sets by blocks
-    da_blocks = []
-    for i in range(num_divisions):
-        # for each block, create an array
-        da_col = []
-        for j in range(num_channels):
-            start_idx = int(index_start_array[j][i] - 1)  # matlab indices start from 1
-            end_idx = int(index_end_array[j][i])
-            if start_idx >= 0 and end_idx > 0:  # ensures channel is not empty
-                da_col.append(raw_array[0, start_idx:end_idx])
-        da_blocks.append(da.rechunk(da.stack(da_col, axis=0), (1, 204800)))
-
-    if mult_data:
-        # return list of block arrays
-        return da_blocks
-    else:
-        # return concatenated array
-        return [da.rechunk(da.concatenate(da_blocks, axis=1), (1, 204800))]
-
-
-def to_meta(
-    start_indices, end_indices, tick, channels, units, units_map, start_times, mult_data
-):
-    """
-    Generates metadata for a Phys object.
-
-    Parameters
-    ----------
-    start_indices : numpy.ndarray
-        Array of matlab start indices for each channel and block combination. ('datastart')
-    end_indices : numpy.ndarray
-        Array of matlab end indices for each channel and block combination. ('dataend')
-    tick : numpy.ndarray
-        Array of highest sample rates for each block. ('tickrate')
-    channels : numpy.ndarray
-        Array of channel names. ('titles')
-    units : numpy.ndarray
-        Array of channel units. ('unittext')
-    units_map : numpy.ndarray
-        Array of indices linking units to channel and block. ('unittextmap')
-    start_times : numpy.ndarray
-        Array of start times for each block (matlab datetime format). ('blocktimes')
-    mult_data : bool
-        Indicator of whether or not to treat the file as one data set or multiple.
-
-    Returns
-    -------
-    list
-        Metadata dictionaries for each data set.
-
-    """
-    # generate lists for each metadata value
-    sample_rate = list(tick.flatten())
-    ch_names = [list(channels)] * len(sample_rate)
-    unit_names = []
-    for i in range(len(sample_rate)):
-        unit_names.append(
-            [units[int(units_map[j][i]) - 1] for j in range(len(channels))]
-        )
-    starts = [convert_time(st) for st in list(start_times.flatten())]
-    ends = [
-        starts[i] + (end_indices[0, i] - start_indices[0, i]) / float(sample_rate[i])
-        for i in range(len(sample_rate))
-    ]  # TODO: eliminate hardcoding
-
-    # create metadata dictionaries for each block
-    metas = ["start_time", "end_time", "ch_names", "sample_rate", "units"]
-    meta_dicts = []
-    for i in range(len(sample_rate)):
-        meta_dicts.append(
-            dict(
-                zip(
-                    metas,
-                    [starts[i], ends[i], ch_names[i], sample_rate[i], unit_names[i]],
-                )
-            )
-        )
-
-    if mult_data:
-        # return metadata for each block
-        return meta_dicts
-    else:
-        # return metadata for the entire data set, use end time of last block
-        meta_dicts[0]["end_time"] = meta_dicts[-1]["end_time"]
-        return [meta_dicts[0]]
-
-
-def read_headers(file_header, channel_headers):
-    # function for reading ADInstruments binary file headers
-    num_samples = file_header[14]
-    data_format = file_header[16]
-    num_channels = len(channel_headers)
-
-    # get time/sample rate metadata
-    start_time = dt.datetime(
-        file_header[6],
-        file_header[7],
-        file_header[8],
-        file_header[9],
-        file_header[10],
-        int(file_header[11]),
-        int(np.round((np.round(file_header[11], 6) - int(file_header[11])) * 10**6)),
-    ).timestamp()
-    end_time = start_time + file_header[5] * num_samples
-    metadata = {
-        "start_time": start_time,
-        "end_time": end_time,
-        "ch_names": [],
-        "sample_rate": 1 / file_header[5],
-        "units": [],
-    }
-    # read channel headers to add to metadata
-    for channel_header in channel_headers:
-        channel_text = "".join(
-            [c.decode("iso-8859-1") for c in channel_header[:32] if c != b"\x00"]
-        )
-        unit_text = "".join(
-            [c.decode("iso-8859-1") for c in channel_header[32:64] if c != b"\x00"]
-        )
-        metadata["ch_names"].append(channel_text)
-        metadata["units"].append(unit_text)
-
-    return metadata, num_samples, num_channels, data_format
-
-
-class AdInstrumentsIO:
-    # class for AD instruments files IO
-    def __init__(self, data, mult_data, check):
-        # create a reader for the file
-        if data.endswith(".mat"):
-            self.reader = ADInstrumentsMAT(data, mult_data, check)
-        elif data.endswith(".adibin"):
-            self.reader = ADInstrumentsBin(data)
+        Raises:
+        - TypeError: If the file_path is not a string.
+        - ValueError: If the file_path does not end with '.adicht'.
+        """
+        if not isinstance(file_path, str):
+            raise TypeError("The file path must be a string.")
+        self.file_path = file_path
+        if file_path.endswith(".adicht"):
+            self.file_object = adi.read_file(file_path)
         else:
-            raise IOError("Unreadable file. Files must be .mat or .adibin")
+            raise ValueError("The file is not an adinstruments file.")
 
-        # get data from the reader
-        self.array = self.reader.array
-        self.metadata = self.reader.metadata
-        self.chunks = self.reader.chunks
+    def close_file(self):
+        """
+        Closes the file associated with this AdiIO object.
+        """
+        self.file_object.close_file()
+
+    @property
+    def num_channels(self):
+        """
+        Returns the number of channels in the ADI file.
+
+        This property accesses the underlying file object to retrieve the total number of channels available in the ADI file.
+
+        Returns:
+            int: The number of channels.
+        """
+        return self.file_object.get_n_channels()
+
+    @property
+    def num_data(self):
+        """
+        Returns the number of records in the ADI file.
+
+        This property accesses the underlying file object to retrieve the total number of records available in the ADI file.
+
+        Returns:
+            int: The number of records.
+        """
+        return self.file_object.get_n_records()
+
+    @property
+    def records(self):
+        """
+        Provides access to the records in the ADI file.
+
+        This property accesses the underlying file object to retrieve the records available in the ADI file. Each record contains data and metadata for a specific recording session.
+
+        Returns:
+            list: A list of records from the ADI file.
+        """
+        return self.file_object.records
+
+    @property
+    def channels(self):
+        """
+        Provides access to the channel information in the ADI file.
+
+        This property accesses the underlying file object to retrieve information about the channels available in the ADI file. Each channel represents a separate data stream within the file.
+
+        Returns:
+            list: A list of channels from the ADI file.
+        """
+        return self.file_object.channels
+
+    @property
+    def ch_names(self):
+        """
+        Retrieves the names of all channels in the ADI file.
+
+        This method accesses the underlying file object to extract the names of all channels available in the ADI file.
+
+        Returns:
+            list[str]: A list containing the names of all channels.
+        """
+        return [channel.name for channel in self.file_object.channels]
 
 
-class ADInstrumentsMAT:
-    # class for AD Instruments .mat files
-    def __init__(self, data, mult_data, check):
-        try:
-            raw = sio.loadmat(data)
-        except ValueError as e:
-            raise IOError(f"{e} \n \n Unreadable .mat file, file may be too large")
-        except Exception as e:
-            raise IOError(f"Exception {e} occured during file reading")
+class AdiChannel(_TsData):
+    """
+    Class for handling ADI channel data, inheriting from _TsData for time series data manipulation.
+    Data is loaded lazily using Dask.
+    """
 
-        # check data for bad structure, ect
-        if check:
-            # TODO: add check for missing data
-            check_data(raw)
+    def __init__(
+        self, file_path_or_adiio: Union[str, AdiIO], channel_id: Union[int, str]
+    ):
+        """
+        Initializes the AdiChannel object with data from an ADI file for a specific channel.
+        Data loading is deferred until explicitly requested.
 
-            # map parameters in as numpy arrays
-            mapping = [
-                raw["data"],
-                raw["datastart"],
-                raw["dataend"],
-                raw["tickrate"],
-                raw["titles"],
-                raw["blocktimes"],
-                raw["unittext"],
-                raw["unittextmap"],
-            ]
-            (
-                raw_array,
-                start_indices,
-                end_indices,
-                tick,
-                channels,
-                start_times,
-                units,
-                unit_map,
-            ) = mapping
+        Parameters:
+        - file_path_or_adiio (Union[str, AdiIO]): The path to the ADI file or an AdiIO object.
+        - channel_id (Union[int, str]): The ID or name of the channel to extract data from.
+        """
+        # Determine if file_path_or_adiio is a string or an AdiIO object and act accordingly
+        if isinstance(file_path_or_adiio, str):
+            self.file_path = file_path_or_adiio
+            self.adi_file = AdiIO(file_path_or_adiio)
+        elif isinstance(file_path_or_adiio, AdiIO):
+            self.file_path = (
+                file_path_or_adiio.file_path
+            )  # Assuming AdiIO object has a file_path attribute
+            self.adi_file = file_path_or_adiio
+        else:
+            raise ValueError("file_path_or_adiio must be a string or an AdiIO object.")
 
-            # define properties by calling array and metadata functions
-            self.array = to_array(raw_array, start_indices, end_indices, mult_data)
-            self.metadata = to_meta(
-                start_indices,
-                end_indices,
-                tick,
-                channels,
-                units,
-                unit_map,
-                start_times,
-                mult_data,
+        # Handle channel_id as either an integer or a string
+        if isinstance(channel_id, int):
+            channel_index = channel_id - 1  # Adjust for 0-based indexing
+        elif isinstance(channel_id, str):
+            channel_names = [channel.name for channel in self.adi_file.channels]
+            if channel_names.count(channel_id) == 1:
+                channel_index = channel_names.index(channel_id)
+            elif channel_names.count(channel_id) > 1:
+                raise ValueError(
+                    f"Multiple channels found with the name '{channel_id}'. Please specify by channel ID."
+                )
+            else:
+                raise ValueError(f"No channel found with the name '{channel_id}'.")
+        else:
+            raise ValueError("channel_id must be an integer or a string.")
+
+        # Extract the specified channel
+        channel = self.adi_file.channels[channel_index]
+
+        # Prepare a list to hold Dask arrays for each record and metadata
+        dask_arrays = []
+        metadata = []
+        for record_id in range(1, channel.n_records + 1):
+            # Get the number of samples for the current record to define the Dask array shape
+            n_samples = channel.n_samples[record_id - 1]
+
+            # Create a Dask array for the record data
+            record_dask_array = da.from_delayed(
+                dask.delayed(
+                    lambda ch_id, r_id: self.adi_file.channels[ch_id].get_data(r_id)
+                )(channel_index, record_id),
+                shape=(n_samples,),
+                dtype=np.float32,
             )
-            self.chunks = [(1, 204800)] * len(self.metadata)
+            dask_arrays.append(record_dask_array)
+
+            # Assuming self.adi_file.records[record_id-1].record_time returns a RecordTime object
+            record_time = self.adi_file.records[record_id - 1].record_time
+
+            # Example metadata extraction with start time and trigger time
+            record_metadata = {
+                "sample_rate": channel.fs[record_id - 1],
+                "start_time": record_time.rec_datetime.timestamp(),  # Convert recording start datetime to timestamp
+                "trigger_time": record_time.trig_datetime.timestamp(),  # Convert trigger datetime to timestamp
+                "ch_names": [channel.name],
+                "ch_types": [None],  # Placeholder for actual channel type
+                "units": channel.units,
+            }
+            metadata.append(record_metadata)
+
+        # Initialize the parent class with the Dask array and metadata
+        super().__init__(dask_arrays, metadata)
 
 
-class ADInstrumentsBin:
-    # ADInstruments binary file reader class
-    # info on binary files:
-    # http://cdn.adinstruments.com/adi-web/manuals/translatebinary/LabChartBinaryFormat.pdf
+class AdiDIO(_DioData):
+    """
+    Class for handling ADI digital input/output (DIO) channel data, inheriting from _DioData.
+    Processes the time series data to identify on/off periods based on a specified voltage threshold,
+    ensuring that transitions are always correctly paired as on/off events.
+    """
 
-    def __init__(self, filename):
-        # read in binary headers
-        with open(filename, "rb") as f:
-            file_head = struct.unpack("<4cld5l2d4l", f.read(68))
+    def __init__(
+        self,
+        file_path_or_adiio: Union[str, AdiIO],
+        channel_id: Union[int, str],
+        threshold=2.5,
+    ):
+        """
+        Initializes the AdiDIO object with data from an ADI file for a specific channel.
+        Identifies on/off periods in the signal based on a threshold and creates an object inheriting from _DioData,
+        ensuring transitions are always paired as on/off events.
 
-            if (
-                file_head[0].decode("iso-8859-1") != "C"
-            ):  # file header always begins with "CWFB"
-                raise ValueError("File is missing header")
+        Parameters:
+        - file_path_or_adiio (Union[str, AdiIO]): The path to the ADI file or an AdiIO object.
+        - channel_id (Union[int, str]): The ID or name of the channel to extract data from.
+        """
+        # Determine if file_path_or_adiio is a string or an AdiIO object and act accordingly
+        if isinstance(file_path_or_adiio, str):
+            self.adi_file = AdiIO(file_path_or_adiio)
+        elif isinstance(file_path_or_adiio, AdiIO):
+            self.adi_file = file_path_or_adiio
+        else:
+            raise ValueError("file_path_or_adiio must be a string or an AdiIO object.")
 
-            channel_heads = []
-            for i in range(file_head[13]):
-                channel_heads.append(struct.unpack("<64c4d", f.read(96)))
+        # Handle channel_id as either an integer or a string
+        if isinstance(channel_id, int):
+            channel_index = channel_id - 1  # Adjust for 0-based indexing
+        elif isinstance(channel_id, str):
+            channel_names = [channel.name for channel in self.adi_file.channels]
+            if channel_names.count(channel_id) == 1:
+                channel_index = channel_names.index(channel_id)
+            elif channel_names.count(channel_id) > 1:
+                raise ValueError(
+                    f"Multiple channels found with the name '{channel_id}'. Please specify by channel ID."
+                )
+            else:
+                raise ValueError(f"No channel found with the name '{channel_id}'.")
+        else:
+            raise ValueError("channel_id must be an integer or a string.")
 
-        # get metadata from headers
-        metadata, num_samples, num_channels, data_format = read_headers(
-            file_head, channel_heads
-        )
-        dtype_dict = {1: "double", 2: "float32", 3: "short"}
+        # Extract the specified channel
+        channel = self.adi_file.channels[channel_index]
 
-        # read in the binary array from metadata
-        if data_format == 1:
-            # TODO: implement scaling and offset for adinstruments integer files
-            raise NotImplementedError(
-                "Reading of integer binary files is not yet implemented"
+        # Prepare the dio list and metadata list
+        dio = []
+        metadata = []
+
+        # Loop through each record in the channel
+        for record_id in range(1, channel.n_records + 1):
+            # Load the data for the current record
+            data = channel.get_data(record_id)
+
+            # Find indices where the signal crosses the threshold (default is 2.5V)
+            above_threshold = data > threshold
+            transitions = np.diff(above_threshold.astype(int))
+            start_indices = (
+                np.where(transitions == 1)[0] + 1
+            )  # +1 to correct for diff offset
+            stop_indices = np.where(transitions == -1)[0] + 1
+
+            # Ensure the first index is a start index and the last index is a stop index
+            if start_indices.size and stop_indices.size:
+                if start_indices[0] > stop_indices[0]:
+                    # Remove the first stop index if it comes before the first start index
+                    stop_indices = stop_indices[1:]
+                if stop_indices.size and start_indices[-1] > stop_indices[-1]:
+                    # Remove the last start index if it comes after the last stop index
+                    start_indices = start_indices[:-1]
+
+            # Adjust for differences in the sizes of the lists, if any remain
+            if start_indices.size > stop_indices.size:
+                # Remove extra start indices from the end
+                start_indices = start_indices[: stop_indices.size]
+            elif stop_indices.size > start_indices.size:
+                # Remove extra stop indices from the end
+                stop_indices = stop_indices[: start_indices.size]
+
+            # Convert indices to times relative to the start of the record
+            times = []
+            for start_idx, stop_idx in zip(start_indices, stop_indices):
+                start_time = start_idx / channel.fs[record_id - 1]
+                stop_time = stop_idx / channel.fs[record_id - 1]
+                times.extend([start_time, stop_time])
+
+            # Create a dictionary for this record with channel name as key and times as value
+            dio.append({channel.name: times})
+
+            # Assuming self.adi_file.records[record_id-1].record_time returns a RecordTime object with recording start datetime
+            record_time = self.adi_file.records[record_id - 1].record_time.rec_datetime
+
+            # Add metadata for this record
+            metadata.append(
+                {"ch_names": [channel.name], "start_time": record_time.timestamp()}
             )
 
-        raw_array = np.memmap(
-            filename,
-            mode="r",
-            dtype=dtype_dict[data_format],
-            offset=68 + 96 * num_channels,
-        )
-        if (
-            not raw_array.size == num_samples * num_channels
-        ):  # check for improperly formatted data
-            raise ValueError(
-                "Improper array size. Ensure that arrays are exported without time data"
-            )
-        self.array = [
-            da.from_array(raw_array.reshape(num_samples, num_channels).T, (1, 204800))
-        ]
-        self.metadata = [metadata]
-        self.chunks = [(1, 204800)] * num_channels
+        # Initialize the parent class with the dio and metadata
+        super().__init__(dio, metadata)
