@@ -644,12 +644,22 @@ class TdtArray:
                     np.unique(self.tdt_io.tdt_block.stores[key].chan)
                 )
                 for channel in channel_list:
-                    data_offsets = np.array(
-                        self.tdt_io.tdt_block.stores[key].data[
-                            self.tdt_io.tdt_block.stores[key].chan == channel
-                        ],
-                        dtype=np.int64,
-                    )  # needs to by an int64 for datasets greater than >4GB
+                    # This if statement was added to address situation where there is only a single channel in the data stream
+                    if len(channel_list) == 1:
+                        data_offsets = np.array(
+                            self.tdt_io.tdt_block.stores[key].data[
+                                self.tdt_io.tdt_block.stores[key].chan == [channel]
+                            ][0],
+                            dtype=np.int64,
+                        )
+                    else:
+                        data_offsets = np.array(
+                            self.tdt_io.tdt_block.stores[key].data[
+                                self.tdt_io.tdt_block.stores[key].chan == channel
+                            ],
+                            dtype=np.int64,
+                        )
+                    # needs to by an int64 for datasets greater than >4GB
                     # Check for sev file that will exist if files saved seperately
                     sev_file = (
                         os.path.splitext(tev_file)[0]

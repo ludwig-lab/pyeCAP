@@ -112,7 +112,6 @@ class _TsData:
             data = [data]
         if not isinstance(metadata, list):
             metadata = [metadata]
-
         # Setup expected chunking values for each data set
         if chunks is None:
             self.chunks = [d.chunks for d in data]
@@ -120,9 +119,9 @@ class _TsData:
             if not isinstance(chunks, list):
                 chunks = [chunks]
             self.chunks = chunks
-
         # Setup metadata for different data sets
         self.metadata = metadata
+        self.ch_names
 
         # Setup data, converting to dask if required
         if daskify:
@@ -391,11 +390,24 @@ class _TsData:
         ['RawE 1', 'RawE 2', 'RawE 3', 'RawE 4', 'RawG 1', 'RawG 2', 'RawG 3', 'RawG 4', 'LIFt 1', 'LIFt 2', 'LIFt 3', 'LIFt 4', 'EMGt 1', 'EMGt 2', 'EMGt 3', 'EMGt 4']
 
         """
-        ch_names = [tuple(meta["ch_names"]) for meta in self.metadata]
-        if len(set(ch_names)) == 1:
-            return list(ch_names[0])
+
+        for meta in self.metadata:
+            if isinstance(meta["ch_names"], str):
+                ch_names = [(meta["ch_names"],)]
+            else:
+                ch_names = [tuple(meta["ch_names"]) for meta in self.metadata]
+
+        if (
+            len(self.metadata) > 1
+        ):  # Only check that data sets have consistent channel names if more than one dataset is imported
+            if len(set(ch_names)) == 1:
+                return list(ch_names[0])
+            else:
+                raise ValueError(
+                    "Import data sets do not have consistent channel names."
+                )
         else:
-            raise ValueError("Import data sets do not have consistent channel names.")
+            return list(ch_names[0])
 
     def set_ch_names(self, ch_names):
         """
@@ -1349,6 +1361,7 @@ class _TsData:
         else:
             d_min = y_lim[0]
             d_max = y_lim[1] + tick_locations[-1]
+
         ax.set_ylim(d_min, d_max)
 
         px_width, _ = _plt_ax_to_pix(fig, ax)
