@@ -97,7 +97,7 @@ class _EpochData:
         self._cache = (
             OrderedDict()
         )  # Initialize a cache across all instances of _EpochData
-        self._cache_size = 0.5e9  # Set the maximum cache size in bytes
+        self._cache_size = 1e9  # Set the maximum cache size in bytes
         if (
             isinstance(ts_data, _TsData)
             and isinstance(event_data, _EventData)
@@ -658,16 +658,16 @@ class _EpochData:
 
         for p, c in zip(_to_parameters(sorted_params), colors):
             if method == "mean":
-                plot_data = self.mean(p, channels=channel)
+                plot_data = self.mean(p, channels=channel) * 1e6
                 # print(plot_data.shape)
             elif method == "median":
-                plot_data = self.median(p, channels=channel)
+                plot_data = self.median(p, channels=channel) * 1e6
             else:
                 raise ValueError(
                     "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
                     "and 'median'."
                 )
-            plot_time = self.time(p)
+            plot_time = self.time(p) * 1e3
 
             # compute appropriate y_limits
             if y_lim is None or y_lim == "auto":
@@ -692,8 +692,8 @@ class _EpochData:
             )
 
         ax.set_ylim(calc_y_lim)
-        ax.set_xlabel("time (s)")
-        ax.set_ylabel("amplitude (V)")
+        ax.set_xlabel("time (ms)")
+        ax.set_ylabel("amplitude (uV)")
         ax.legend(loc=1)
 
         if fig_title is not None:
