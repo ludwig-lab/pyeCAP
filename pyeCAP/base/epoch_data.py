@@ -656,12 +656,13 @@ class _EpochData:
         else:
             sorted_params = parameters
 
+        # TODO: Fix situation where if a list of channels is passed, it only plots the last one
         for p, c in zip(_to_parameters(sorted_params), colors):
             if method == "mean":
-                plot_data = self.mean(p, channels=channel) * 1e6
+                plot_data = self.mean(p, channels=channel)[p] * 1e6
                 # print(plot_data.shape)
             elif method == "median":
-                plot_data = self.median(p, channels=channel) * 1e6
+                plot_data = self.median(p, channels=channel)[p] * 1e6
             else:
                 raise ValueError(
                     "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
@@ -828,7 +829,7 @@ class _EpochData:
                 self.parameters.parameters["pulse amplitude (μA)"][param]
             )
             for chan in channels:
-                dataLIST.append(self.mean(param, chan))
+                dataLIST.append(self.mean(param, chan)[param])
 
         if c_lim is None or c_lim == "auto":
             std_data = np.std(dataLIST)
@@ -929,22 +930,27 @@ class _EpochData:
         """
         fig, ax = _plt_setup_fig_axis(axis, fig_size)
         calc_y_lim = [0, 0]
-        plot_time = self.time(parameter)
+        plot_time = self.time(parameter) * 1e3
         print(_to_parameters(parameter))
         print("Plotting trace #s " + str(bin[0]) + " to " + str(bin[1]))
 
         # Creates numpy array of binned traces for plotting
-        bin_data = self.array(parameter, channel)[bin[0] : bin[1], :, :] * 1e6
+        bin_data = (
+            self.array(parameter, channel)[parameter][bin[0] : bin[1], :, :] * 1e6
+        )
+        # print(bin_data.shape)
 
         for data in bin_data:
             ax.plot(plot_time, data[0, :], alpha=opacity)
 
         if show_mean == True:
             if method == "median":
-                avg_trace = self.median(parameter, channel) * 1e6
+                avg_trace = self.median(parameter, channel)[parameter] * 1e6
             else:
-                avg_trace = self.mean(parameter, channel) * 1e6
+                avg_trace = self.mean(parameter, channel)[parameter] * 1e6
             ax.plot(plot_time, avg_trace[0, :], "r")
+
+        ax.set(xlabel="Time (ms)", ylabel="amplitude (uV)")
 
         if fig_title is not None:
             ax.set_title(fig_title)
@@ -1081,13 +1087,13 @@ class _EpochData:
                 )
 
                 if method == "mean":
-                    plot_data = self.mean(param, channels=chan) * 1e6
+                    plot_data = self.mean(param, channels=chan)[param] * 1e6
                     # print('mean')   #Check to make sure 'if' loop functions
                 elif method == "median":
-                    plot_data = self.median(param, channels=chan) * 1e6
+                    plot_data = self.median(param, channels=chan)[param] * 1e6
                     # print('median')
                 elif method == "std":
-                    plot_data = self.std(param, channels=chan) * 1e6
+                    plot_data = self.std(param, channels=chan)[param] * 1e6
                 else:
                     raise ValueError(
                         "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
@@ -1222,9 +1228,9 @@ class _EpochData:
         # TODO: Make function work with multiple parameters
         for chan in ch_names:
             if method == "mean":
-                plotDF[chan] = self.mean(parameter, channels=chan).T * 1e6
+                plotDF[chan] = self.mean(parameter, channels=chan)[parameter].T * 1e6
             elif method == "median":
-                plotDF[chan] = self.median(parameter, channels=chan).T * 1e6
+                plotDF[chan] = self.median(parameter, channels=chan)[parameter].T * 1e6
             nameLIST.append(chan)
         fig = px.line(
             plotDF,
@@ -1296,15 +1302,15 @@ class _EpochData:
             )
             for parameter in parameters
         }
-        if len(parameters) == 1:
-            return result[parameters[0]]
-        else:
-            return result
+        # if len(parameters) == 1:
+        #     return result[parameters[0]]
+        # else:
+        return result
 
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def mean(self, parameters, channels=None):
+    def mean(self, parameters, channels=None, bin=None):
         """
         Computes an array of mean values of the data from a parameter for each pulse
         across given channels. The result is stored in a cache for faster computing.
@@ -1329,8 +1335,29 @@ class _EpochData:
         if not isinstance(parameters, list):
             parameters = [parameters]
 
-        if len(parameters) == 1:
-            return np.mean(self.array(parameters, channels=channels), axis=0)
+        # if len(parameters) == 1:
+        #
+        #     if bin is not None:
+        #         return {
+        #             parameters[0]: np.mean(
+        #                 self.array(parameters, channels=channels)[
+        #                     bin[0] : bin[1], :, :
+        #                 ],
+        #                 axis=0,
+        #             )
+        #         }
+        #     else:
+        #         return {
+        #             parameters[0]: np.mean(
+        #                 self.array(parameters, channels=channels), axis=0
+        #             )
+        #         }
+        # else:
+        if bin is not None:
+            return {
+                p: np.mean(v[bin[0] : bin[1], :, :], axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
         else:
             return {
                 p: np.mean(v, axis=0)
@@ -1364,13 +1391,12 @@ class _EpochData:
         if not isinstance(parameters, list):
             parameters = [parameters]
 
-        if len(parameters) == 1:
-            return np.median(self.array(parameters, channels=channels), axis=0)
-        else:
-            return {
-                p: np.median(v, axis=0)
-                for p, v in self.array(parameters, channels).items()
-            }
+        # if len(parameters) == 1:
+        #     return np.median(self.array(parameters, channels=channels), axis=0)
+        # else:
+        return {
+            p: np.median(v, axis=0) for p, v in self.array(parameters, channels).items()
+        }
 
     # @lru_cache(
     #     maxsize=None
@@ -1399,13 +1425,12 @@ class _EpochData:
         if not isinstance(parameters, list):
             parameters = [parameters]
 
-        if len(parameters) == 1:
-            return np.std(self.array(parameters, channels=channels), axis=0)
-        else:
-            return {
-                p: np.std(v, axis=0)
-                for p, v in self.array(parameters, channels).items()
-            }
+        # if len(parameters) == 1:
+        #     return np.std(self.array(parameters, channels=channels), axis=0)
+        # else:
+        return {
+            p: np.std(v, axis=0) for p, v in self.array(parameters, channels).items()
+        }
 
     def _time_to_index(self, time, units="seconds"):
         # TODO: calculate index accounting for

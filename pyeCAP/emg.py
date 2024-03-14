@@ -52,6 +52,7 @@ class EMG(_EpochData):
         channels=None,
         window=None,
         window_units=None,
+        bin=None,
         method="mean",
         new_df=False,
     ):
@@ -97,7 +98,8 @@ class EMG(_EpochData):
         # Returns a dictionary of mean values where the key is the parameter and the value is a numpyarray of 2
         # dimensions where the first dimension corresponding to channels and second dimension corresponding to data
         # points
-        data = self.mean(paramLIST, chanLIST)
+
+        data = self.mean(paramLIST, chanLIST)  # ,bin)
 
         # Outer loop iterates through each parameter
         for param in data:
@@ -122,6 +124,7 @@ class EMG(_EpochData):
                         RMS,
                         window_str,
                         window_units,
+                        bin,
                         *self.stim.parameters.loc[param].tolist(),
                         channel_name,
                     ]
@@ -133,6 +136,7 @@ class EMG(_EpochData):
                 "AUC (Vs)",
                 "Calculation Window",
                 "Window Units",
+                "Pulse Bin",
                 *column_headers,
                 "Recording Electrode",
             ],
