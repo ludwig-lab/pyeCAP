@@ -99,7 +99,7 @@ class EMG(_EpochData):
         # dimensions where the first dimension corresponding to channels and second dimension corresponding to data
         # points
 
-        data = self.mean(paramLIST, chanLIST)  # ,bin)
+        data = self.mean(paramLIST, chanLIST, bin)
 
         # Outer loop iterates through each parameter
         for param in data:

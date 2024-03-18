@@ -447,6 +447,48 @@ class _EpochData:
 
         return sorted_params.tolist()
 
+    def baseline_array(self, parameter, channel, baseline_start=-3, baseline_stop=-1):
+        """
+        Returns a time series array of data from a channel from a user specified period before stimulation for a specified parameter.
+
+        Parameters
+        ----------
+        parameter : tuple
+            Stimulation parameter. Composed of index for the data set and index for the stimulation.
+        channel : str
+            Channel name.
+        first_onset : int, float
+            Time to start measuring baseline before stimulation onset (Negative numbers reference times before
+            stimulation onset).
+        second_onset : int, float
+            Time to finish measuring baseline before stimulation onset (Negative numbers reference times before
+            stimulation onset).
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of floats representing the baseline for each channel.
+
+        Examples
+        ________
+        >>> # get baseline for Channel 0 of parameter (0,0) for the time period 5 to 1 seconds prior to stimulation
+        >>> baseline = ecap.baseline_array((0,0), channel=0, baseline_start=-5, baseline_stop=-1)       # doctest: +SKIP
+        """
+        # get array of data to compute baseline from, find and return the mean
+        stim_onset = self.parameters.parameters.loc[parameter, "onset time (s)"]
+        start_idx = self.ts_data._time_to_index(stim_onset + baseline_start)
+        stop_idx = self.ts_data._time_to_index(stim_onset + baseline_stop)
+
+        chan = self.ts_data._ch_to_index(channel)
+
+        baseline_data = np.squeeze(
+            self.ts_data.array[chan, start_idx:stop_idx].compute()
+        )
+        baseline_time = np.squeeze(self.ts_data.time()[start_idx:stop_idx].compute())
+        baseline_array = np.vstack((baseline_time, baseline_data))
+
+        return baseline_array
+
     def plot(
         self,
         channels,
