@@ -844,22 +844,66 @@ class _TsData:
             raise ValueError("Value of input 'btype'")
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_gaussian(self, Wn, btype='lowpass', order=0, truncate=4.0):
+    # def filter_gaussian(self, Wn, btype='lowpass', order=0, truncate=4.0):
+    #     """
+    #     Filters the channels using a gaussian filter using the scipy.ndimage.guassian_filter1d method.
+
+    #     Parameters
+    #     ----------
+    #     Wn : int, float
+    #         Corner frequency
+    #     btype : str
+    #         Use 'lowpass' or 'low' to attenuate high frequency signals. Use 'highpass' or 'high to attenuate low
+    #         frequency signals.
+    #     order : int
+    #         The order of the kernel. 0 corresponds to a filter with a Gaussian kernel. 1 corresponds to the derivative,
+    #         ect.
+    #     truncate : float
+    #         Number of standard deviations to include in Gaussian filter kernel
+
+    #     Returns
+    #     -------
+    #     _TsData or subclass
+    #         New class instance of the same type as self which contains the filtered data.
+    #     """
+    #     s_c = Wn / self.sample_rate
+    #     # sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
+        
+    #     # Calculate sigma in the time domain from the desired cut-off frequency 'Wn'
+    #     sigma = self.sample_rate / (2 * np.pi * Wn) # see https://en.wikipedia.org/wiki/Gaussian_filter
+        
+    #     lw = int(truncate * sigma + 0.5)
+    #     if btype in ('lowpass', 'low'):
+    #         data = [da.map_overlap(d, lambda x: scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order), (0, lw),
+    #                                dtype=d.dtype) for d in self.data]
+    #     elif btype in ('highpass', 'high'):
+    #         data = [
+    #             da.map_overlap(d, lambda x: x - scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order), (0, lw),
+    #                            dtype=d.dtype) for d in self.data]
+    #     else:
+    #         raise ValueError("Value of input 'btype'")
+    #     return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
+    
+    
+    def filter_gaussian(self, Wn, btype='lowpass', order=0, truncate=4.0, bidirectional=True):
         """
-        Filters the channels using a gaussian filter using the scipy.ndimage.guassian_filter1d method.
+        Filters the channels using a Gaussian filter. This version allows for both bidirectional and unidirectional
+        filtering options.
 
         Parameters
         ----------
         Wn : int, float
             Corner frequency
         btype : str
-            Use 'lowpass' or 'low' to attenuate high frequency signals. Use 'highpass' or 'high to attenuate low
+            Use 'lowpass' or 'low' to attenuate high frequency signals. Use 'highpass' or 'high' to attenuate low
             frequency signals.
         order : int
             The order of the kernel. 0 corresponds to a filter with a Gaussian kernel. 1 corresponds to the derivative,
-            ect.
+            etc.
         truncate : float
             Number of standard deviations to include in Gaussian filter kernel
+        bidirectional : bool
+            If True, applies bidirectional filtering. If False, applies unidirectional filtering.
 
         Returns
         -------
@@ -867,17 +911,35 @@ class _TsData:
             New class instance of the same type as self which contains the filtered data.
         """
         s_c = Wn / self.sample_rate
-        sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
+        # sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))  <= incorrect calculation of sigma
+        
+        # Calculate sigma in the time domain from the desired cut-off frequency 'Wn'
+        sigma = self.sample_rate / (2 * np.pi * Wn) # see https://en.wikipedia.org/wiki/Gaussian_filter
+        
         lw = int(truncate * sigma + 0.5)
+
+        def uni_filter_func(x, sigma, order):
+            return scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order)
+
+        def bi_filter_func(x, sigma, order):
+            # Apply the unidirectional filter to the original input.
+            filtered_x = uni_filter_func(x, sigma, order)
+            # Then apply the unidirectional filter again after flipping the array, 
+            # and finally, flip the result back.
+            return scipy.ndimage.gaussian_filter1d(filtered_x[:, ::-1], sigma, axis=1, order=order)[:, ::-1]
+
+
+        filter_func = bi_filter_func if bidirectional else uni_filter_func
+
         if btype in ('lowpass', 'low'):
-            data = [da.map_overlap(d, lambda x: scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order), (0, lw),
-                                   dtype=d.dtype) for d in self.data]
+            data = [da.map_overlap(d, lambda x: filter_func(x, sigma, order), (0, lw),
+                                dtype=d.dtype) for d in self.data]
         elif btype in ('highpass', 'high'):
-            data = [
-                da.map_overlap(d, lambda x: x - scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order), (0, lw),
-                               dtype=d.dtype) for d in self.data]
+            data = [da.map_overlap(d, lambda x: x - filter_func(x, sigma, order), (0, lw),
+                                dtype=d.dtype) for d in self.data]
         else:
-            raise ValueError("Value of input 'btype'")
+            raise ValueError("Invalid 'btype' value. Use 'lowpass', 'low', 'highpass', or 'high'.")
+
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
     def filter_powerline(self, frequencies=[60, 120, 180], notch_width=None, trans_bandwidth=1.0):
