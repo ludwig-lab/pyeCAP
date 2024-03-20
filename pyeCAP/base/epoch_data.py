@@ -924,7 +924,8 @@ class _EpochData:
         opacity=1,
         x_lim=None,
         y_lim="auto",
-        colors=sns.color_palette(),
+        format="trace",
+        cmap="viridis",
         fig_size=(10, 3),
         show=True,
         fig_title=None,
@@ -980,29 +981,7 @@ class _EpochData:
         bin_data = (
             self.array(parameter, channel)[parameter][bin[0] : bin[1], :, :] * 1e6
         )
-        # print(bin_data.shape)
 
-        for data in bin_data:
-            ax.plot(plot_time, data[0, :], alpha=opacity)
-
-        if show_mean == True:
-            if method == "median":
-                avg_trace = self.median(parameter, channel)[parameter] * 1e6
-            else:
-                avg_trace = self.mean(parameter, channel)[parameter] * 1e6
-            ax.plot(plot_time, avg_trace[0, :], "r")
-
-        ax.set(xlabel="Time (ms)", ylabel="amplitude (uV)")
-
-        if fig_title is not None:
-            ax.set_title(fig_title)
-
-        if x_lim is None:
-            ax.set_xlim(plot_time[0], plot_time[-1])
-        else:
-            ax.set_xlim(x_lim)
-
-        # compute appropriate y_limits
         if y_lim is None or y_lim == "auto":
             std_data = np.std(bin_data)
             calc_y_lim = [
@@ -1013,20 +992,67 @@ class _EpochData:
             calc_y_lim = None
         else:
             calc_y_lim = _to_numeric_array(y_lim)
-        ax.set_ylim(calc_y_lim)
 
-        if vlines is not None:
-            # TODO: Change so that this argument uses time instead of sample #
-            if isinstance(vlines, int):  # For case where only one line is passed
-                # ax[idx].axvline(vlines * self.fs)
-                ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
-            elif isinstance(vlines, list):
-                for line in vlines:
-                    ax.axvline(line * (1 / self.fs), linestyle="--", c="red")
+        if format == "trace":
+            for data in bin_data:
+                ax.plot(plot_time, data[0, :], alpha=opacity)
+
+            if show_mean == True:
+                if method == "median":
+                    avg_trace = self.median(parameter, channel)[parameter] * 1e6
+                else:
+                    avg_trace = self.mean(parameter, channel)[parameter] * 1e6
+                ax.plot(plot_time, avg_trace[0, :], "r")
+
+            ax.set(xlabel="Time (ms)", ylabel="amplitude (uV)")
+            ax.set_ylim(calc_y_lim)
+
+            if x_lim is None:
+                ax.set_xlim(plot_time[0], plot_time[-1])
             else:
-                raise Exception(
-                    "Vertical line inputs must be integer (for single line), or a list of integers."
-                )
+                ax.set_xlim(x_lim)
+
+            if fig_title is not None:
+                ax.set_title(fig_title)
+
+            if vlines is not None:
+                # TODO: Change so that this argument uses time instead of sample #
+                if isinstance(vlines, int):  # For case where only one line is passed
+                    # ax[idx].axvline(vlines * self.fs)
+                    ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+                elif isinstance(vlines, list):
+                    for line in vlines:
+                        ax.axvline(line * (1 / self.fs), linestyle="--", c="red")
+                else:
+                    raise Exception(
+                        "Vertical line inputs must be integer (for single line), or a list of integers."
+                    )
+        elif format == "heatmap":
+
+            _plt_add_cbar_axis(
+                fig, ax, c_label="amplitude (uV)", c_lim=calc_y_lim, c_map=cmap
+            )
+
+            im = ax.imshow(
+                np.squeeze(bin_data),
+                aspect="auto",
+                origin="lower",
+                extent=[plot_time[0], plot_time[-1], bin[0], bin[1]],
+                vmin=calc_y_lim[0],
+                vmax=calc_y_lim[1],
+                cmap=cmap,
+                interpolation="none",
+            )
+
+            if x_lim is not None:
+                ax.set_xlim(x_lim)
+
+            ax.set_yticks(np.arange(bin[0], bin[1]))
+            ax.set_yticklabels(np.arange(bin[0], bin[1]))
+            ax.set_xlabel("Time (ms)")
+            ax.set_ylabel("Pulse #")
+        else:
+            raise Exception('"format" argument must be either "trace" or "heatmap".')
         return _plt_show_fig(fig, ax, show)
 
     def multiplot(
