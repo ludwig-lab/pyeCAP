@@ -750,10 +750,10 @@ class _EpochData:
         if vlines is not None:
             # Add vline at specific sample # -- TODO: Incorporate adding it in at a specific time
             if isinstance(vlines, int):  # For case where only one line is passed
-                ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+                ax.axvline(vlines * (1 / self.fs) * 1e3, linestyle="--", c="red")
             elif isinstance(vlines, list):
                 for line in vlines:
-                    ax.axvline(line * (1 / self.fs), linestyle="--", c="red")
+                    ax.axvline(line * (1 / self.fs) * 1e3, linestyle="--", c="red")
             else:
                 raise Exception(
                     "Vertical line inputs must be integer (for single line), or a list of integers."
@@ -776,7 +776,6 @@ class _EpochData:
         sort="ascending",
         colormap="viridis",
         save=False,
-        vlines=None,
         **kwargs,
     ):
         """
@@ -994,6 +993,7 @@ class _EpochData:
             calc_y_lim = _to_numeric_array(y_lim)
 
         if format == "trace":
+
             for data in bin_data:
                 ax.plot(plot_time, data[0, :], alpha=opacity)
 
@@ -1019,10 +1019,10 @@ class _EpochData:
                 # TODO: Change so that this argument uses time instead of sample #
                 if isinstance(vlines, int):  # For case where only one line is passed
                     # ax[idx].axvline(vlines * self.fs)
-                    ax.axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+                    ax.axvline(vlines * (1 / self.fs) * 1e3, linestyle="--", c="red")
                 elif isinstance(vlines, list):
                     for line in vlines:
-                        ax.axvline(line * (1 / self.fs), linestyle="--", c="red")
+                        ax.axvline(line * (1 / self.fs) * 1e3, linestyle="--", c="red")
                 else:
                     raise Exception(
                         "Vertical line inputs must be integer (for single line), or a list of integers."
@@ -1047,8 +1047,15 @@ class _EpochData:
             if x_lim is not None:
                 ax.set_xlim(x_lim)
 
-            ax.set_yticks(np.arange(bin[0], bin[1]))
-            ax.set_yticklabels(np.arange(bin[0], bin[1]))
+            if bin[1] - bin[0] > 50:
+                ticks = np.arange(
+                    start=bin[0], stop=bin[1], step=int((bin[1] - bin[0]) / 11)
+                )
+            else:
+                ticks = np.arange(bin[0], bin[1])
+
+            ax.set_yticks(ticks)
+            ax.set_yticklabels(ticks)
             ax.set_xlabel("Time (ms)")
             ax.set_ylabel("Pulse #")
         else:
@@ -1211,11 +1218,13 @@ class _EpochData:
                         vlines, int
                     ):  # For case where only one line is passed
                         # ax[idx].axvline(vlines * self.fs)
-                        ax[idx].axvline(vlines * (1 / self.fs), linestyle="--", c="red")
+                        ax[idx].axvline(
+                            vlines * (1 / self.fs) * 1e3, linestyle="--", c="red"
+                        )
                     elif isinstance(vlines, list):
                         for line in vlines:
                             ax[idx].axvline(
-                                line * (1 / self.fs), linestyle="--", c="red"
+                                line * (1 / self.fs) * 1e3, linestyle="--", c="red"
                             )
                     else:
                         raise Exception(
