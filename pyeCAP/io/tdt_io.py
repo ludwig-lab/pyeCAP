@@ -566,16 +566,16 @@ class TdtArray:
                         num_channels = int(
                             max(self.tdt_io.tdt_block.stores[current_stream].chan)
                         )
-                        self.tdt_io.tdt_block.stores[current_stream].data = (
-                            self.tdt_io.tdt_block.stores[current_stream].data[
-                                :-num_channels
-                            ]
-                        )
-                        self.tdt_io.tdt_block.stores[current_stream].chan = (
-                            self.tdt_io.tdt_block.stores[current_stream].chan[
-                                :-num_channels
-                            ]
-                        )
+                        self.tdt_io.tdt_block.stores[
+                            current_stream
+                        ].data = self.tdt_io.tdt_block.stores[current_stream].data[
+                            :-num_channels
+                        ]
+                        self.tdt_io.tdt_block.stores[
+                            current_stream
+                        ].chan = self.tdt_io.tdt_block.stores[current_stream].chan[
+                            :-num_channels
+                        ]
                         dump = 1
             else:
                 store_options = ""
