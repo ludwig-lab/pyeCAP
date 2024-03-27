@@ -54,7 +54,7 @@ class ECAP(_EpochData):
         self.ephys = ephys_data
         self.stim = stim_data
         self.fs = ephys_data.sample_rate
-        self.master_df = pd.DataFrame()
+        # self.master_df = pd.DataFrame()
         self.neural_window_indicies = self.calculate_neural_window_lengths()
 
         if type(self.distance_log) == list and self.distance_log != [0]:
@@ -169,7 +169,10 @@ class ECAP(_EpochData):
             paramLIST = self.stim.parameters.index.tolist()
 
         if channels is not None:
-            chanLIST = channels
+            if not isinstance(channels, list):
+                chanLIST = [channels]
+            else:
+                chanLIST = channels
         else:
             chanLIST = self.ch_names
 
@@ -235,11 +238,11 @@ class ECAP(_EpochData):
                 "Recording Electrode",
             ],
         )
-
-        if self.master_df.empty or new_df == True:
-            self.master_df = data_df
-        else:
-            self.master_df = pd.concat([self.master_df, data_df], ignore_index=True)
+        return data_df
+        # if self.master_df.empty or new_df == True:
+        #     self.master_df = data_df
+        # else:
+        #     self.master_df = pd.concat([self.master_df, data_df], ignore_index=True)
 
     def filter_averages(
         self,
