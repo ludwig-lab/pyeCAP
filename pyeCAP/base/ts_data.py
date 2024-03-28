@@ -910,9 +910,10 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
-        s_c = Wn / self.sample_rate
+        # s_c = 
         # sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))  <= incorrect calculation of sigma
-        
+        # sigma =  np.sqrt(2 * np.log(2)) / (2 * np.pi * s_c)  <= incorrect calculation of sigma
+        # sigma =  np.sqrt(2 * np.log(2)) * self.sample_rate / (2 * np.pi * Wn )  <= incorrect calculation of sigma
         # Calculate sigma in the time domain from the desired cut-off frequency 'Wn'
         sigma = self.sample_rate / (2 * np.pi * Wn) # see https://en.wikipedia.org/wiki/Gaussian_filter
         
