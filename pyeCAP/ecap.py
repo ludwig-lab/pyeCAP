@@ -16,6 +16,7 @@ from scipy.signal import find_peaks, medfilt, savgol_filter
 
 from .base.epoch_data import _EpochData
 from .base.utils.numeric import _to_numeric_array
+from .base.utils.visualization import _plt_setup_fig_axis, _plt_show_fig
 from .utilities.ancillary_functions import check_make_dir
 
 
@@ -141,19 +142,19 @@ class ECAP(_EpochData):
                     "User-specified limits for AUC calculation have been specified, however the units for window limits are not defined. Specify window_units in 'sec', 'ms','us' or 'samples'."
                 )
             elif window_units == "samples":
-                print("Window units defined by sample #")
+                # print("Window units defined by sample #")
                 start_idx = window[0]
                 stop_idx = window[1]
             elif window_units == "sec":
-                print("Window units defined in seconds (sec).")
+                # print("Window units defined in seconds (sec).")
                 start_idx = self._time_to_index(window[0])
                 stop_idx = self._time_to_index(window[1])
             elif window_units == "ms":
-                print("Window units defined in milliseconds (ms).")
+                # print("Window units defined in milliseconds (ms).")
                 start_idx = self._time_to_index(window[0], units="milliseconds")
                 stop_idx = self._time_to_index(window[1], units="milliseconds")
             elif window_units == "us":
-                print("Window units defined in microseconds (us)")
+                # print("Window units defined in microseconds (us)")
                 start_idx = self._time_to_index(window[0], units="microseconds")
                 stop_idx = self._time_to_index(window[1], units="microseconds")
             else:
@@ -325,3 +326,68 @@ class ECAP(_EpochData):
             or (filter_powerline is True)
         ):
             print("Finished Filtering Averages")
+
+    def plot_phase(
+        self,
+        channels,
+        parameter,
+        *args,
+        method="mean",
+        axis=None,
+        x_lim=None,
+        y_lim="auto",
+        fig_size=(10, 3),
+        show=True,
+        fig_title=None,
+        vlines=None,
+        **kwargs
+    ):
+
+        fig, ax = _plt_setup_fig_axis(axis, fig_size)
+
+        calc_y_lim = [0, 0]
+        print("Parameter index: " + str(parameter))
+
+        for chan in channels:
+            if method == "mean":
+                plot_data = np.squeeze(
+                    self.mean(parameter, channels=chan)[parameter] * 1e6
+                )
+            elif method == "median":
+                plot_data = np.squeeze(
+                    self.median(parameter, channels=chan)[parameter] * 1e6
+                )
+            else:
+                raise ValueError(
+                    "Unrecognized value received for 'method'. Implemented averaging methods include 'mean' "
+                    "and 'median'."
+                )
+            plot_time = self.time(parameter) * 1e3
+            # compute appropriate y_limits
+            if y_lim is None or y_lim == "auto":
+                std_data = np.std(plot_data)
+                calc_y_lim = [
+                    np.min([-std_data * 6, calc_y_lim[0]]),
+                    np.max([std_data * 6, calc_y_lim[1]]),
+                ]
+            elif y_lim == "max":
+                calc_y_lim = None
+            else:
+                calc_y_lim = _to_numeric_array(y_lim)
+
+            ax.plot(plot_time, plot_data, label=self.ch_names[chan], *args, **kwargs)
+
+        ax.set_ylim(calc_y_lim)
+        ax.set_xlabel("time (ms)")
+        ax.set_ylabel("amplitude (uV)")
+        ax.legend(loc="upper right")
+
+        if fig_title is not None:
+            ax.set_title(fig_title)
+
+        if x_lim is None:
+            ax.set_xlim(plot_time[0], plot_time[-1])
+        else:
+            ax.set_xlim(x_lim)
+
+        return _plt_show_fig(fig, ax, show)

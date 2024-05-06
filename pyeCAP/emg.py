@@ -65,19 +65,19 @@ class EMG(_EpochData):
                 "EMG AUC calculation requires user specified 'window' and 'window_units'. Specify window_units in 'sec', 'ms','us' or 'samples'."
             )
         elif window_units == "samples":
-            print("Window units defined by sample #")
+            # print("Window units defined by sample #")
             start_idx = window[0]
             stop_idx = window[1]
         elif window_units == "sec":
-            print("Window units defined in seconds (sec).")
+            # print("Window units defined in seconds (sec).")
             start_idx = self._time_to_index(window[0])
             stop_idx = self._time_to_index(window[1])
         elif window_units == "ms":
-            print("Window units defined in milliseconds (ms).")
+            # print("Window units defined in milliseconds (ms).")
             start_idx = self._time_to_index(window[0], units="milliseconds")
             stop_idx = self._time_to_index(window[1], units="milliseconds")
         elif window_units == "us":
-            print("Window units defined in microseconds (us)")
+            # print("Window units defined in microseconds (us)")
             start_idx = self._time_to_index(window[0], units="microseconds")
             stop_idx = self._time_to_index(window[1], units="microseconds")
         else:
