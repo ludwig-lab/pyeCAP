@@ -375,7 +375,12 @@ class ECAP(_EpochData):
             else:
                 calc_y_lim = _to_numeric_array(y_lim)
 
-            ax.plot(plot_time, plot_data, label=self.ch_names[chan], *args, **kwargs)
+            if isinstance(chan, int):
+                ax.plot(
+                    plot_time, plot_data, label=self.ch_names[chan], *args, **kwargs
+                )
+            elif isinstance(chan, str):
+                ax.plot(plot_time, plot_data, label=chan, *args, **kwargs)
 
         ax.set_ylim(calc_y_lim)
         ax.set_xlabel("time (ms)")
