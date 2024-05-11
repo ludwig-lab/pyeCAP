@@ -25,6 +25,9 @@ version_reqs = ['pandas<2.0.0',
                 'tqdm',
                 'plotly==5.15.0', 
                 'plotly_resampler==0.8.3.2'
+                'dash==2.14.2'
+                'dash-bootstrap-components==1.5.0'
+                'dash-extensions==1.0.7'
                 ]
 
 setup(
