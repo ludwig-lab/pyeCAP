@@ -16,10 +16,10 @@ cached_property
 dask[complete]==2022.12.1
 ipympl
 sphinx-rtd-theme
-h5py
+h5py==3.10.0
 xlrd
 openpyxl
-pillow>=7.1.0
+Pillow==10.1.0
 cycler>=0.10
 tqdm
 ipykernel
@@ -29,3 +29,9 @@ nbformat
 dash==2.14.2
 dash-bootstrap-components==1.5.0
 dash-extensions==1.0.7
+scikit-learn==1.4.2
+matplotlib-inline==0.1.6
+
+
+
+
