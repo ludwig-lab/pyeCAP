@@ -922,7 +922,10 @@ class _TsData:
         overlap = max(len(a), len(b))
         data = [
             da.map_overlap(
-                d, lambda x: signal.sosfiltfilt(sos, x), (0, overlap), dtype=d.dtype
+                lambda x: signal.sosfiltfilt(sos, x),
+                d,
+                depth=(0, overlap),
+                dtype=d.dtype,
             )
             for d in self.data
         ]
@@ -996,7 +999,6 @@ class _TsData:
         else:
             data = [
                 da.map_overlap(
-                    d,
                     lambda x: np.flip(
                         signal.fftconvolve(
                             np.flip(
@@ -1006,7 +1008,8 @@ class _TsData:
                             mode="same",
                         )
                     )[None, :],
-                    (0, numtaps),
+                    d,
+                    depth=(0, numtaps),
                     dtype=d.dtype,
                 )
                 for d in self.data
@@ -1087,17 +1090,30 @@ class _TsData:
         _TsData or subclass
             New class instance of the same type as self which contains the filtered data.
         """
+
+        # s_c = Wn / self.sample_rate
+        # sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))  <= incorrect calculation of sigma
+        # sigma =  np.sqrt(2 * np.log(2)) / (2 * np.pi * s_c)  <= incorrect calculation of sigma
+        # sigma =  np.sqrt(2 * np.log(2)) * self.sample_rate / (2 * np.pi * Wn )  <= incorrect calculation of sigma
+
+        # Calculate sigma in the time domain from the desired cut-off frequency 'Wn'
+        sigma = self.sample_rate / (
+            2 * np.pi * Wn
+        )  # see https://en.wikipedia.org/wiki/Gaussian_filter
+
+        lw = int(truncate * sigma + 0.5)
+
         s_c = Wn / self.sample_rate
         sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
         lw = int(truncate * sigma + 0.5)
         if btype in ("lowpass", "low"):
             data = [
                 da.map_overlap(
-                    d,
                     lambda x: scipy.ndimage.gaussian_filter1d(
                         x, sigma, axis=1, order=order
                     ),
-                    (0, lw),
+                    d,
+                    depth=(0, lw),
                     dtype=d.dtype,
                 )
                 for d in self.data
@@ -1105,10 +1121,10 @@ class _TsData:
         elif btype in ("highpass", "high"):
             data = [
                 da.map_overlap(
-                    d,
                     lambda x: x
                     - scipy.ndimage.gaussian_filter1d(x, sigma, axis=1, order=order),
-                    (0, lw),
+                    d,
+                    depth=(0, lw),
                     dtype=d.dtype,
                 )
                 for d in self.data
