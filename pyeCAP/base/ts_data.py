@@ -989,9 +989,9 @@ class _TsData:
                 c_chunks = tuple(c_chunks + [last_chunk])
                 data.append(
                     da.map_overlap(
+                        lambda x: convfft(x),
                         da.rechunk(d, (r_chunks, c_chunks)),
-                        convfft,
-                        (0, numtaps),
+                        depth=(0, numtaps),
                         dtype=d.dtype,
                     )
                 )
