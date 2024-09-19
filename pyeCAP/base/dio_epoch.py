@@ -518,6 +518,9 @@ class _DioEpoch:
         )
         ticks = np.add(ticklabels, start_time)
         plt.xticks(ticks=ticks, labels=ticklabels)
+        fig.tight_layout()
+
+        # TODO: Fix y axis labels from running all over each other
 
         # handle event data plotting
         if events:
@@ -675,6 +678,8 @@ class _DioEpoch:
 
         if parameters is None:
             parameters = list(self.parameters.parameters.index)
+        elif not isinstance(parameters, list):
+            parameters = [parameters]
 
         stim_end_times = [
             self.parameter_time(p)[1] for p in self.parameters.parameters.index
@@ -755,7 +760,12 @@ class _DioEpoch:
             warnings_dict["Plot Figures"] = []
             for p in parameters:
                 fig, ax = self.plot_parameter(
-                    p, onset=(-1 * baseline), offset=5, show=False, events=True
+                    p,
+                    onset=(-1 * baseline),
+                    offset=1 * baseline,
+                    show=True,
+                    events=True,
+                    fig_size=(10, 15),
                 )
                 plt.title(p)
                 warnings_dict["Plot Figures"].append(fig)
