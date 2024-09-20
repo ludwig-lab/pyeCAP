@@ -5,6 +5,8 @@ import numpy as np
 import scipy.io as sio
 import seaborn as sns
 from matplotlib.collections import LineCollection
+from scipy import signal
+from scipy.ndimage import uniform_filter1d
 
 # neuro base class imports
 from .base.ts_data import _TsData
@@ -387,3 +389,87 @@ class Phys(_TsData):
                 channel_ax.add_collection(lines)
 
         return _plt_show_fig(fig, ax, show)
+
+    def find_peaks(self, peak_height, min_distance):
+        pass
+
+    def pan_tompkins_algorithm(self, ecg_ch_name=None):
+        ch_slice = self._ch_to_index(ecg_ch_name)
+
+        "Bandpass filter parameters for 5 - 15 Hz bandpass filter"
+        sos = signal.butter(
+            4, [5, 15], btype="bandpass", fs=self.sample_rate, output="sos"
+        )
+        a, b = signal.sos2tf(sos)
+        overlap = max(len(a), len(b))
+
+        """Filtering"""
+        filt_data = [
+            da.map_overlap(
+                lambda x: signal.sosfiltfilt(sos, x),
+                d[ch_slice],
+                depth=(0, overlap),
+                dtype=d[ch_slice].dtype,
+            )
+            for d in self.data
+        ]
+        data_diff_sq = [
+            da.map_overlap(
+                lambda x: np.square(np.diff(x, append=1)),
+                d,
+                depth=(0, 10),
+                dtype=d.dtype,
+            )
+            for d in filt_data
+        ]
+        data_moving_average = [
+            da.map_overlap(
+                lambda x: uniform_filter1d(x, size=150),
+                d,
+                depth=(0, 150),
+                dtype=d.dtype,
+            )
+            for d in data_diff_sq
+        ]
+
+        # new_data_array = [filt_data, data_diff_sq, data_moving_average]
+
+        # data = [ da.stack(d, new_data_array[idx]) for d,idx in enumerate(self.data)]
+
+        return filt_data, data_diff_sq, data_moving_average  #
+
+
+"""remove_ch function from ts_data.py -- provides examples of manipulating channels in self.data"""
+# def remove_ch(self, channels, invert=False):
+#     """
+#     Method for removing channels from time series data objects.
+#
+#     Parameters
+#     ----------
+#     channels : int, str, list
+#         Name of a channel in the form of a string or index of the channel list from property method ch_names.
+#         This method will also accept a list of channel names or indices.
+#     invert : bool
+#         Default false will remove the specified channels. Invert = True will remove all channels except the ones
+#         specified in the channels parameter.
+#
+#     Returns
+#     -------
+#     _TsData or subclass
+#         New class instance with specified channel names removed.
+#
+#     Examples
+#     ________
+#     >>> ephys_data.remove_ch("RawE 1")       # doctest: +SKIP
+#
+#     """
+#     ch_idx = self._ch_to_index(channels)
+#     if not invert:
+#         ch_idx = np.logical_not(ch_idx)
+#     data = [d[ch_idx, :] for d in self.data]
+#     metadata = copy.deepcopy(self.metadata)
+#     for m in metadata:
+#         for k in m.keys():
+#             if isinstance(m[k], list) and len(m[k]) == len(ch_idx):
+#                 m[k] = [ch_m for ch_m, idx_bool in zip(m[k], ch_idx) if idx_bool]
+#     return type(self)(data, metadata, chunks=self.chunks, daskify=False)
