@@ -1,3 +1,6 @@
+# python standard library imports
+import copy
+
 # scientific library imports
 import dask.array as da
 import matplotlib.pyplot as plt
@@ -390,7 +393,28 @@ class Phys(_TsData):
 
         return _plt_show_fig(fig, ax, show)
 
+    # def remove_cautery(self, ecg_ch_name=None):
+    #     # Find indices where ECG signal is huge due to cautery
+    #     # Create index of those points
+    #     # when doing downstream calculations like mean or std -- remove those points from the calculation during peak detection
+    #     def large_val_idx(x):
+    #         ignore_index = []
+    #         for idx, val in enumerate(x):
+    #             print(idx,val)
+    #             if val > 10 or val < -10:
+    #                 ignore_index.append(idx)
+    #         return x
+    #
+    #     ch_slice = self._ch_to_index(ecg_ch_name)
+    #     #print(ch_slice)
+    #     #ignore = [da.map_overlap(lambda x: large_val_idx(x), d[ch_slice]) for d in self.data]
+    #
+    #     for d in self.data:
+    #         ignore = large_val_idx(d[ch_slice])
+    #     return ignore
+
     def find_peaks(self, peak_height, min_distance):
+        # Need to remove super large values from the calculation
         pass
 
     def pan_tompkins_algorithm(self, ecg_ch_name=None):
@@ -408,14 +432,14 @@ class Phys(_TsData):
             da.map_overlap(
                 lambda x: signal.sosfiltfilt(sos, x),
                 d[ch_slice],
-                depth=(0, overlap),
+                depth=(0, 3000),
                 dtype=d[ch_slice].dtype,
             )
             for d in self.data
         ]
         data_diff_sq = [
             da.map_overlap(
-                lambda x: np.square(np.diff(x, append=1)),
+                lambda x: np.square(np.diff(x, append=0)),
                 d,
                 depth=(0, 10),
                 dtype=d.dtype,
@@ -432,11 +456,27 @@ class Phys(_TsData):
             for d in data_diff_sq
         ]
 
-        # new_data_array = [filt_data, data_diff_sq, data_moving_average]
+        metadata = copy.deepcopy(self.metadata)
+        ch_names = self.ch_names + [
+            "ECG BP Filtered",
+            "ECG DiffSq",
+            "ECG Moving Average",
+        ]
+        units = self.units + ["V", "V", "V"]
 
-        # data = [ da.stack(d, new_data_array[idx]) for d,idx in enumerate(self.data)]
+        for m in metadata:
+            m["ch_names"] = ch_names
+            m["units"] = units
 
-        return filt_data, data_diff_sq, data_moving_average  #
+        data = [
+            da.concatenate([d1, d2, d3, d4], axis=0)
+            for d1, d2, d3, d4 in zip(
+                self.data, filt_data, data_diff_sq, data_moving_average
+            )
+        ]
+        return type(self)(data, metadata, chunks=self.chunks, daskify=False)
+
+        # return filt_data, data_diff_sq, data_moving_average  #
 
 
 """remove_ch function from ts_data.py -- provides examples of manipulating channels in self.data"""
