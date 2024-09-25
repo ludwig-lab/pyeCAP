@@ -1,3 +1,6 @@
+# python standard library imports
+import copy
+
 # scientific library imports
 import dask.array as da
 import matplotlib.pyplot as plt
@@ -390,84 +393,90 @@ class Phys(_TsData):
 
         return _plt_show_fig(fig, ax, show)
 
+    # def remove_cautery(self, ecg_ch_name=None):
+    #     # Find indices where ECG signal is huge due to cautery
+    #     # Create index of those points
+    #     # when doing downstream calculations like mean or std -- remove those points from the calculation during peak detection
+    #     def large_val_idx(x):
+    #         ignore_index = []
+    #         for idx, val in enumerate(x):
+    #             print(idx,val)
+    #             if val > 10 or val < -10:
+    #                 ignore_index.append(idx)
+    #         return x
+    #
+    #     ch_slice = self._ch_to_index(ecg_ch_name)
+    #     #print(ch_slice)
+    #     #ignore = [da.map_overlap(lambda x: large_val_idx(x), d[ch_slice]) for d in self.data]
+    #
+    #     for d in self.data:
+    #         ignore = large_val_idx(d[ch_slice])
+    #     return ignore
+
     def find_peaks(self, peak_height, min_distance):
+        # Need to remove super large values from the calculation
         pass
 
     def pan_tompkins_algorithm(self, ecg_ch_name=None):
         ch_slice = self._ch_to_index(ecg_ch_name)
 
-        # "Bandpass filter parameters for 5 - 15 Hz bandpass filter"
-        # sos = signal.butter(
-        #     4, [5, 15], btype="bandpass", fs=self.sample_rate, output="sos"
-        # )
-        # a, b = signal.sos2tf(sos)
-        # overlap = max(len(a), len(b))
-        #
-        fs = self.sample_rate
-        transition_width = 0.5
-        filter_cutoffs = [5, 15]
-        numtaps = 1000
-        filter_weights = signal.firwin(
-            numtaps,
-            filter_cutoffs,
-            width=transition_width,
-            window="Hamming",
-            pass_zero="bandpass",
-            fs=self.sample_rate,
+        "Bandpass filter parameters for 5 - 15 Hz bandpass filter"
+        sos = signal.butter(
+            4, [5, 15], btype="bandpass", fs=self.sample_rate, output="sos"
         )
+        a, b = signal.sos2tf(sos)
+        overlap = max(len(a), len(b))
 
-        ecg_BP_filt = [
+        """Filtering"""
+        filt_data = [
             da.map_overlap(
-                lambda x: np.flip(
-                    signal.fftconvolve(
-                        np.flip(
-                            signal.fftconvolve(x[0, :], filter_weights, mode="same")
-                        ),
-                        filter_weights,
-                        mode="same",
-                    )[None, :]
-                ),
+                lambda x: signal.sosfiltfilt(sos, x),
                 d[ch_slice],
-                depth=(0, 30 * numtaps),
-                dtype=d.dtype,
+                depth=(0, 3000),
+                dtype=d[ch_slice].dtype,
             )
             for d in self.data
         ]
-
-        """Filtering"""
-        # ecg_BP_filt = [
-        #     da.map_overlap(
-        #         lambda x: signal.sosfiltfilt(sos, x),
-        #         d[ch_slice],
-        #         depth=(0, 1000),
-        #         dtype=d[ch_slice].dtype,
-        #     )
-        #     for d in self.data
-        # ]
-        ecg_diff_sq = [
+        data_diff_sq = [
             da.map_overlap(
-                lambda x: np.diff(x, append=0),  # np.square(np.diff(x, append =1)),
+                lambda x: np.square(np.diff(x, append=0)),
                 d,
-                depth=(0, 300),
+                depth=(0, 10),
                 dtype=d.dtype,
             )
-            for d in ecg_BP_filt
+            for d in filt_data
         ]
-        ecg_moving_average = [
+        data_moving_average = [
             da.map_overlap(
                 lambda x: uniform_filter1d(x, size=150),
                 d,
                 depth=(0, 150),
                 dtype=d.dtype,
             )
-            for d in ecg_diff_sq
+            for d in data_diff_sq
         ]
 
-        # new_data_array = [filt_data, data_diff_sq, data_moving_average]
+        metadata = copy.deepcopy(self.metadata)
+        ch_names = self.ch_names + [
+            "ECG BP Filtered",
+            "ECG DiffSq",
+            "ECG Moving Average",
+        ]
+        units = self.units + ["V", "V", "V"]
 
-        # data = [ da.stack(d, new_data_array[idx]) for d,idx in enumerate(self.data)]
+        for m in metadata:
+            m["ch_names"] = ch_names
+            m["units"] = units
 
-        return ecg_BP_filt, ecg_diff_sq, ecg_moving_average  #
+        data = [
+            da.concatenate([d1, d2, d3, d4], axis=0)
+            for d1, d2, d3, d4 in zip(
+                self.data, filt_data, data_diff_sq, data_moving_average
+            )
+        ]
+        return type(self)(data, metadata, chunks=self.chunks, daskify=False)
+
+        # return filt_data, data_diff_sq, data_moving_average  #
 
 
 """remove_ch function from ts_data.py -- provides examples of manipulating channels in self.data"""
