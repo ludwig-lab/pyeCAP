@@ -413,11 +413,118 @@ class Phys(_TsData):
     #         ignore = large_val_idx(d[ch_slice])
     #     return ignore
 
-    def find_peaks(self, peak_height, min_distance):
+    def find_peaks(self, data, threshold=None, distance=None):
         # Need to remove super large values from the calculation
-        pass
+        peaks = signal.find_peaks(data, height=threshold, distance=distance)[0]
+        return peaks
 
-    def pan_tompkins_algorithm(self, ecg_ch_name=None):
+    def apply_pan_tompkins(self, ecg_ch_name=None, get_peaks=False, get_HR=False):
+        ch_slice = self._ch_to_index(ecg_ch_name)
+
+        "Bandpass filter parameters for 5 - 15 Hz bandpass filter"
+        sos = signal.butter(
+            4, [5, 15], btype="bandpass", fs=self.sample_rate, output="sos"
+        )
+
+        raw_ecg = np.squeeze(self.array[ch_slice].compute())
+
+        """Apply steps of Pan Tompkins Algorithm"""
+        bp_filt_ecg = signal.sosfiltfilt(sos, raw_ecg)
+        sq_diff_ecg = np.square(np.diff(bp_filt_ecg, append=bp_filt_ecg[-1]))
+        mva_ecg = uniform_filter1d(sq_diff_ecg, size=150)
+        # pt_ecg_out = np.stack([raw_ecg, bp_filt_ecg, sq_diff_ecg, mva_ecg], axis=0)
+
+        pt_ecg_out = {
+            "raw ecg": raw_ecg,
+            "bandpass ecg": bp_filt_ecg,
+            "squared diff ecg": sq_diff_ecg,
+            "moving average ecg": mva_ecg,
+        }
+
+        if get_peaks:
+            distance = 0.25 * self.sample_rate  # 250 ms minimum distance between peaks
+            # Need to determine a threshold by excluding periods of the signal subject to large artifacts i.e. cautery
+
+            artifact_mask = np.ma.array(
+                mva_ecg, mask=(raw_ecg > 0.001) | (raw_ecg < -0.001)
+            )
+
+            threshold = np.mean(artifact_mask)
+            peaks_index = self.find_peaks(mva_ecg, threshold, distance)
+            pt_ecg_out.update({"peaks idx": peaks_index})
+
+        if get_HR:
+            distance = 0.25 * self.sample_rate  # 250 ms minimum distance between peaks
+            # Need to determine a threshold by excluding periods of the signal subject to large artifacts i.e. cautery
+            artifact_mask = np.ma.array(
+                mva_ecg, mask=(raw_ecg > 0.001) | (raw_ecg < -0.001)
+            )
+            threshold = np.mean(artifact_mask)
+            peaks_idx = self.find_peaks(mva_ecg, threshold, distance)
+
+            time_per_sample = 1 / self.sample_rate
+            hr_bpm = []
+            for i, peak in enumerate(peaks_idx):
+                if i > 0:
+                    RR_interval = (peaks_idx[i] - peaks_idx[i - 1]) * time_per_sample
+                    hr_bpm.append([60 / RR_interval, int(peak)])
+            hr_array = np.asarray(hr_bpm)
+            pt_ecg_out.update({"HR (bpm)": hr_array})
+
+        return pt_ecg_out
+
+        # """Filtering"""
+        # filt_data = [
+        #     da.map_overlap(
+        #         lambda x: signal.sosfiltfilt(sos, x),
+        #         d[ch_slice],
+        #         depth=(0, 3000),
+        #         dtype=d[ch_slice].dtype,
+        #     )
+        #     for d in self.data
+        # ]
+        # data_diff_sq = [
+        #     da.map_overlap(
+        #         lambda x: np.square(np.diff(x, append=0)),
+        #         d,
+        #         depth=(0, 10),
+        #         dtype=d.dtype,
+        #     )
+        #     for d in filt_data
+        # ]
+        # data_moving_average = [
+        #     da.map_overlap(
+        #         lambda x: uniform_filter1d(x, size=150),
+        #         d,
+        #         depth=(0, 150),
+        #         dtype=d.dtype,
+        #     )
+        #     for d in data_diff_sq
+        # ]
+        #
+        # metadata = copy.deepcopy(self.metadata)
+        # ch_names = self.ch_names + [
+        #     "ECG BP Filtered",
+        #     "ECG DiffSq",
+        #     "ECG Moving Average",
+        # ]
+        # units = self.units + ["V", "V", "V"]
+        #
+        # for m in metadata:
+        #     m["ch_names"] = ch_names
+        #     m["units"] = units
+        #
+        # data = [
+        #     da.concatenate([d1, d2, d3, d4], axis=0)
+        #     for d1, d2, d3, d4 in zip(
+        #         self.data, filt_data, data_diff_sq, data_moving_average
+        #     )
+        # ]
+        # return type(self)(data, metadata, chunks=self.chunks, daskify=False)
+
+    """WIP: attempt at using dask to apply algorithm"""
+
+    def pan_tompkins_algorithm_dask(self, ecg_ch_name=None):
         ch_slice = self._ch_to_index(ecg_ch_name)
 
         "Bandpass filter parameters for 5 - 15 Hz bandpass filter"
@@ -475,8 +582,6 @@ class Phys(_TsData):
             )
         ]
         return type(self)(data, metadata, chunks=self.chunks, daskify=False)
-
-        # return filt_data, data_diff_sq, data_moving_average  #
 
 
 """remove_ch function from ts_data.py -- provides examples of manipulating channels in self.data"""
