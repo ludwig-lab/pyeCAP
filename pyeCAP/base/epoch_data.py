@@ -978,7 +978,7 @@ class _EpochData:
 
         # Creates numpy array of binned traces for plotting
         bin_data = (
-            self.array(parameter, channel)[parameter][bin[0] : bin[1], :, :] * 1e6
+            self.array(parameter, channel)[parameter][bin[0] : (bin[1] + 1), :, :] * 1e6
         )
 
         if y_lim is None or y_lim == "auto":
@@ -992,10 +992,11 @@ class _EpochData:
         else:
             calc_y_lim = _to_numeric_array(y_lim)
 
+        trace_range = np.arange(bin[0], (bin[1] + 1))
         if format == "trace":
 
-            for data in bin_data:
-                ax.plot(plot_time, data[0, :], alpha=opacity)
+            for idx, data in enumerate(bin_data):
+                ax.plot(plot_time, data[0, :], alpha=opacity, label=trace_range[idx])
 
             if show_mean == True:
                 if method == "median":
@@ -1508,6 +1509,46 @@ class _EpochData:
         return {
             p: np.std(v, axis=0) for p, v in self.array(parameters, channels).items()
         }
+
+    def pulse_RMS(self, parameters, channels=None, window=None, pulses=None):
+        """
+        Computes the root mean square (RMS) of each individual pulse for the given parameter and channels. The
+        result is a dictionary where 'keys' are the parameter multindex and the 'values' is a numpy array with
+        the first dimension equal to the pulse # and second dimension equal to the channel index.
+
+        Parameters
+        ----------
+        parameters : tuple, list
+            Stimulation parameter or list of parameters. Composed of index for the data set and index for the stimulation.
+        channels : None, str, int, tuple, list
+            Channels or channel indices to include in the array.
+        window : None, tuple
+            WIP: Specifies the RMS calculation window
+        pulses: None, tuple
+            WIP: Specifies the pulses to include in the dictionary.
+
+        Returns
+        -------
+        dict
+
+        Examples
+        ________
+        """
+        if pulses is not None:
+            data = self.array(parameters=parameters, channels=channels)[
+                pulses[0] : pulses[1], :, :
+            ]
+        else:
+            data = self.array(parameters=parameters, channels=channels)
+
+        # Code that returns dictionary of pulse RMS values
+        if window is not None:
+            return {
+                p: np.sqrt(np.mean(v[:, :, window[0] : window[1]] ** 2, axis=2))
+                for p, v in data.items()
+            }
+        else:
+            return {p: np.sqrt(np.mean(v**2, axis=2)) for p, v in data.items()}
 
     def _time_to_index(self, time, units="seconds"):
         # TODO: calculate index accounting for
