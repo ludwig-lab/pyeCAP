@@ -54,7 +54,6 @@ class EMG(_EpochData):
         window_units=None,
         bin=None,
         method="mean",
-        new_df=False,
     ):
 
         column_headers = self.stim.parameters.columns

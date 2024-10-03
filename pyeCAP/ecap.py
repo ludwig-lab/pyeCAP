@@ -129,8 +129,8 @@ class ECAP(_EpochData):
         channels=None,
         window=None,
         window_units=None,
+        bin=None,
         method="mean",
-        new_df=False,
     ):
 
         column_headers = self.stim.parameters.columns
@@ -177,7 +177,7 @@ class ECAP(_EpochData):
         else:
             chanLIST = self.ch_names
 
-        data = self.mean(paramLIST, chanLIST)
+        data = self.mean(paramLIST, chanLIST, bin)
 
         # Outer loop iterates through each parameter passed
         for param in data:
