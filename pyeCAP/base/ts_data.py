@@ -1068,7 +1068,7 @@ class _TsData:
             raise ValueError("Value of input 'btype'")
         return type(self)(data, self.metadata, chunks=self.chunks, daskify=False)
 
-    def filter_gaussian(self, Wn, btype="lowpass", order=0, truncate=4.0):
+    def filter_gaussian(self, Wn, btype="lowpass", order=0, truncate=4.0, sigma=None):
         """
         Filters the channels using a gaussian filter using the scipy.ndimage.guassian_filter1d method.
 
@@ -1097,9 +1097,12 @@ class _TsData:
         # sigma =  np.sqrt(2 * np.log(2)) * self.sample_rate / (2 * np.pi * Wn )  <= incorrect calculation of sigma
 
         # Calculate sigma in the time domain from the desired cut-off frequency 'Wn'
-        sigma = self.sample_rate / (
-            2 * np.pi * Wn
-        )  # see https://en.wikipedia.org/wiki/Gaussian_filter
+        if sigma is None:
+            sigma = self.sample_rate / (
+                2 * np.pi * Wn
+            )  # see https://en.wikipedia.org/wiki/Gaussian_filter
+        else:
+            sigma = sigma
 
         lw = int(truncate * sigma + 0.5)
         if btype in ("lowpass", "low"):
