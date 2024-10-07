@@ -1102,10 +1102,6 @@ class _TsData:
         )  # see https://en.wikipedia.org/wiki/Gaussian_filter
 
         lw = int(truncate * sigma + 0.5)
-
-        s_c = Wn / self.sample_rate
-        sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
-        lw = int(truncate * sigma + 0.5)
         if btype in ("lowpass", "low"):
             data = [
                 da.map_overlap(
