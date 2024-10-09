@@ -1059,6 +1059,7 @@ class _EpochData:
             ax.set_yticklabels(ticks)
             ax.set_xlabel("Time (ms)")
             ax.set_ylabel("Pulse #")
+            ax.grid(False)
         else:
             raise Exception('"format" argument must be either "trace" or "heatmap".')
         return _plt_show_fig(fig, ax, show)

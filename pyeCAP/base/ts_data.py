@@ -1987,6 +1987,72 @@ class _TsData:
         else:
             return np.round(np.multiply(time, self.sample_rate)).astype(int)
 
+    def _index_to_time(
+        self, index, units="seconds", time_ref="single", remove_gaps=True
+    ):
+        """
+        Converts an index to time or elapsed time. This time can correspond to the time of the index relative
+        to the computer's internal clock (time_ref = 'absolute'), the elapsed time relative to the start of the
+        file in which it was created (time_ref = 'single'), or the elapsed time relative to the start of all currently
+        data loaded for the channel (time_ref = 'multi').
+
+        Parameters
+        ----------
+        index : int, str
+            Array index of the data point to convert to time or elapsed time.
+        units : str
+            Unit of time to return. Enter 'seconds', 'milliseconds', or 'microseconds'.
+        time_ref: str
+            Frame of reference for the returned time value, can be 'absolute', 'single', or 'multi'
+            'absolute' : returns the time of the index relative to the computer's internal clock
+            'single' : returns the time of the index relative to the start of the file in which it was recorded
+            'multi' : returns the time of the index relative to the start time of all currently loaded data. If
+            only a single dataset is loaded 'single' and 'multi' will returnt he same value.
+        remove_gaps : bool
+            Set to False to take into account time gaps in the data.
+
+        Returns
+        -------
+        float
+            Time value corresponding to the array index and time reference input.
+
+        Examples
+        ________
+        >>> ephys_data._index_to_time(5, time_ref='single')
+        12345.67 sec
+
+        """
+        # Determine which array the desired index is contained in and pull that array's start time
+        # Eventually edit so that you can send a list of times?
+        for idx, start_index in enumerate(self.start_indices):
+            if index > start_index:
+                start_time = self.start_times[idx]
+                array_idx = idx
+                break
+
+        if time_ref == "absolute":
+            elapsed_time = (index - self.start_indices[array_idx]) * (
+                1 / self.sample_rate
+            )
+            time = start_time + elapsed_time
+        elif time_ref == "single":
+            elapsed_time = (index - self.start_indices[array_idx]) * (
+                1 / self.sample_rate
+            )
+            time = elapsed_time
+        elif time_ref == "multi":
+            elapsed_time = index * (1 / self.sample_rate)
+            time = elapsed_time
+        else:
+            raise ValueError("Unrecognized time reference type.")
+
+        if units == "milliseconds":
+            time = time * 1e3
+        elif units == "microseconds":
+            time = time * 1e6
+
+        return time.astype(float)
+
     def _to_mne_raw(self):  # TODO make this work with all data if list of dask arrays
         """
         Loads raw data set into an array. This method is very computationally and memory intensive.
