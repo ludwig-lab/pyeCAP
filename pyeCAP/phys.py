@@ -337,43 +337,32 @@ class Phys(_TsData):
         # initialize x limits, figure, and channels
         if channels is None:
             channels = self.ch_names
+
         fig, ax = _plt_setup_fig_axis(axis, fig_size=fig_size)
         x_lim = self._time_lim_validate(x_lim, remove_gaps=remove_gaps)
         x_index = (
             self._time_to_index(x_lim[0], remove_gaps=remove_gaps),
             self._time_to_index(x_lim[1], remove_gaps=remove_gaps) + 1,
         )
-        plt.yticks([])
-
-        # create a subplot for each channel
-        for i, channel in enumerate(channels):
-            # set up axes limits and labels
-            plt.xticks([])
-            channel_ax = fig.add_subplot(len(channels) + events, 1, i + 1 + events)
-            channel_ax.set_xlim(x_lim)
-            if ch_labels is not None:
-                channel_ax.set_ylabel(ch_labels[i])
-            else:
-                channel_ax.set_ylabel(
-                    "{} ({})".format(channel, self.units[-1][channel])
-                )
-            ch_slice = self._ch_to_index(channel)
+        if axis is not None:
+            ax.set_xlim(x_lim)
+            ch_slice = self._ch_to_index(channels)
             plot_array = self.array[ch_slice, x_index[0] : x_index[1]].compute()
+
             try:
                 if y_lim == "max":
                     datamax = np.nanmax(plot_array)
                     datamin = np.nanmin(plot_array)
-                    channel_ax.set_ylim(
+                    ax.set_ylim(
                         datamin - (datamax - datamin) * 0.1,
                         datamax + (datamax - datamin) * 0.1,
                     )
                 else:
-                    channel_ax.set_ylim(y_lim[i])
+                    ax.set_ylim(y_lim)
             except ValueError:
-                channel_ax.set_ylim(0, 1)
+                ax.set_ylim(0, 1)
 
-            # plot data on the axes
-            px_width, _ = _plt_ax_to_pix(fig, channel_ax)
+            px_width, _ = _plt_ax_to_pix(fig, ax)
             plot_data = self._to_plt_line_collection(
                 x_lim, ch_slice, px_width, remove_gaps=remove_gaps
             )
@@ -382,8 +371,116 @@ class Phys(_TsData):
                     data[0],
                     linewidths=np.ones(plot_array.shape[0]),
                     transOffset=None,
-                    colors=colors[i % len(colors)],
+                    # colors=colors[i % len(colors)],
                 )
-                channel_ax.add_collection(lines)
-
+                ax.add_collection(lines)
         return _plt_show_fig(fig, ax, show)
+
+    # def plot(
+    #     self,
+    #     axis=None,
+    #     channels=None,
+    #     events=False,
+    #     x_lim=None,
+    #     y_lim="max",
+    #     ch_labels=None,
+    #     colors=sns.color_palette(),
+    #     fig_size=(15, 6),
+    #     down_sample=True,
+    #     show=True,
+    #     remove_gaps=True,
+    # ):
+    #     """
+    #     Plotting method for Phys data. This method overrides the method in _TsData to provide better scaling for Phys
+    #     objects.
+    #
+    #     Parameters
+    #     ----------
+    #     axis : None, matplotlib.axis.Axis
+    #         Either None to use a new axis or matplotlib axis to plot on.
+    #     channels : int, str, list, tuple, np.ndarray
+    #         Channels to plot. Can be a boolean numpy array with the same length as the number of channels, an integer
+    #         array, or and array of strings containing channel names.
+    #     events : _DioData, _EventData, or subclass
+    #         Event data plotting for Phys objects not yet supported. Consider using the Phys_Response class to plot
+    #          stimulation events.
+    #     x_lim : None, list, tuple, np.ndarray
+    #         None to plot the entire data set. Otherwise tuple, list, or numpy array of length 2 containing the start of
+    #         end times for data to plot.
+    #     y_lim : str, list
+    #         String 'max' to show all data within the y-limits, or List of two item tuples to assign a y-limit to each
+    #         channel individually.
+    #     ch_labels : list, tuple, np.ndarray
+    #         Iterable of strings to use as channel labels in the plot. Must match length of channels being displayed.
+    #     colors : list
+    #         Color palette or list of colors to use for channels.
+    #     fig_size : list, tuple, np.ndarray
+    #         The size of the matplotlib figure to plot axis on if axis=None.
+    #     down_sample : bool
+    #         Down sample data to optimize display speed. WARNING: This changes the frequency components of the plot.
+    #         Defaults to True.
+    #     show : str, bool
+    #         String 'notebook' to plot interactively in a jupyter notebook or boolean value indicating if the plot should
+    #         be displayed.
+    #     remove_gaps : bool
+    #         Set to False to plot gaps in the data
+    #
+    #     Returns
+    #     -------
+    #      matplotlib.axis.Axis
+    #         matplotlib axis containing the plot.
+    #
+    #     """
+    #     # initialize x limits, figure, and channels
+    #     if channels is None:
+    #         channels = self.ch_names
+    #     fig, ax = _plt_setup_fig_axis(axis, fig_size=fig_size)
+    #     x_lim = self._time_lim_validate(x_lim, remove_gaps=remove_gaps)
+    #     x_index = (
+    #         self._time_to_index(x_lim[0], remove_gaps=remove_gaps),
+    #         self._time_to_index(x_lim[1], remove_gaps=remove_gaps) + 1,
+    #     )
+    #     plt.yticks([])
+    #
+    #     # create a subplot for each channel
+    #     for i, channel in enumerate(channels):
+    #         # set up axes limits and labels
+    #         plt.xticks([])
+    #         channel_ax = fig.add_subplot(len(channels) + events, 1, i + 1 + events)
+    #         channel_ax.set_xlim(x_lim)
+    #         if ch_labels is not None:
+    #             channel_ax.set_ylabel(ch_labels[i])
+    #         else:
+    #             channel_ax.set_ylabel(
+    #                 "{} ({})".format(channel, self.units[-1][channel])
+    #             )
+    #         ch_slice = self._ch_to_index(channel)
+    #         plot_array = self.array[ch_slice, x_index[0] : x_index[1]].compute()
+    #         try:
+    #             if y_lim == "max":
+    #                 datamax = np.nanmax(plot_array)
+    #                 datamin = np.nanmin(plot_array)
+    #                 channel_ax.set_ylim(
+    #                     datamin - (datamax - datamin) * 0.1,
+    #                     datamax + (datamax - datamin) * 0.1,
+    #                 )
+    #             else:
+    #                 channel_ax.set_ylim(y_lim[i])
+    #         except ValueError:
+    #             channel_ax.set_ylim(0, 1)
+    #
+    #         # plot data on the axes
+    #         px_width, _ = _plt_ax_to_pix(fig, channel_ax)
+    #         plot_data = self._to_plt_line_collection(
+    #             x_lim, ch_slice, px_width, remove_gaps=remove_gaps
+    #         )
+    #         for data in plot_data:
+    #             lines = LineCollection(
+    #                 data[0],
+    #                 linewidths=np.ones(plot_array.shape[0]),
+    #                 transOffset=None,
+    #                 colors=colors[i % len(colors)],
+    #             )
+    #             channel_ax.add_collection(lines)
+    #
+    #     return _plt_show_fig(fig, ax, show)

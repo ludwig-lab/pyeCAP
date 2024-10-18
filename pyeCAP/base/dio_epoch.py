@@ -11,7 +11,18 @@ import pandas as pd
 from .dio_data import _DioData
 from .parameter_data import _ParameterData
 from .ts_data import _TsData
-from .utils.visualization import _plt_add_ax_connected_top, _plt_setup_fig_axis
+from .utils.visualization import (
+    _plt_add_ax_connected_top,
+    _plt_setup_fig_axis,
+    _plt_show_fig,
+)
+
+# from .base.utils.visualization import (
+#     _plt_add_ax_connected_top,
+#     _plt_ax_to_pix,
+#     _plt_setup_fig_axis,
+#
+# )
 
 
 class _DioEpoch:
@@ -515,9 +526,9 @@ class _DioEpoch:
         step_size = int(elapsed_time * 10 ** (-1 * order)) * 10 ** (order - 1)
         ticklabels = np.round(
             np.arange(onset, onset + elapsed_time, step_size), decimals=-1 * order + 3
-        )
+        ).astype(int)
         ticks = np.add(ticklabels, start_time)
-        plt.xticks(ticks=ticks, labels=ticklabels)
+        ax.set_xticks(ticks=ticks, labels=ticklabels)
 
         # handle event data plotting
         if events:
@@ -528,7 +539,9 @@ class _DioEpoch:
         if show:
             plt.show()
         else:
-            return fig, fig.axes[0]
+            _plt_show_fig(fig, ax, show)
+            # return fig, fig.axes[0]
+            # return ax
 
     def baseline(self, parameter, channel, first_onset=-3, second_onset=-1):
         """
