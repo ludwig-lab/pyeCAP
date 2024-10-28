@@ -447,7 +447,9 @@ class _EpochData:
 
         return sorted_params.tolist()
 
-    def baseline_array(self, parameter, channel, baseline_start=-3, baseline_stop=-1):
+    def baseline_array(
+        self, parameter, channel, baseline_start=-3, baseline_stop=-1, period="pre"
+    ):
         """
         Returns a time series array of data from a channel from a user specified period before stimulation for a specified parameter.
 
@@ -459,10 +461,12 @@ class _EpochData:
             Channel name.
         first_onset : int, float
             Time to start measuring baseline before stimulation onset (Negative numbers reference times before
-            stimulation onset).
+            stimulation onset during 'pre' period or offset during 'post' period).
         second_onset : int, float
             Time to finish measuring baseline before stimulation onset (Negative numbers reference times before
-            stimulation onset).
+            stimulation onset during 'pre' period or offset during 'post' period).
+        period: str
+            Specify whether to take baseline data from before 'pre' or after 'post' stimulation
 
         Returns
         -------
@@ -475,9 +479,22 @@ class _EpochData:
         >>> baseline = ecap.baseline_array((0,0), channel=0, baseline_start=-5, baseline_stop=-1)       # doctest: +SKIP
         """
         # get array of data to compute baseline from, find and return the mean
-        stim_onset = self.parameters.parameters.loc[parameter, "onset time (s)"]
-        start_idx = self.ts_data._time_to_index(stim_onset + baseline_start)
-        stop_idx = self.ts_data._time_to_index(stim_onset + baseline_stop)
+        """Use the first element of the parameter Multi-Index to get the starting index of the specific tank that the"
+         "parameter came from"""
+        tank_start_idx = self.ts_data.start_indices[parameter[0]]
+
+        "Grab the specific parameter stim start time from within its tank"
+        if period == "pre":
+            stim_time = self.parameters.parameters.loc[parameter, "onset time (s)"]
+        elif period == "post":
+            stim_time = self.parameters.parameters.loc[parameter, "offset time (s)"]
+
+        start_idx = tank_start_idx + self.ts_data._time_to_index(
+            stim_time + baseline_start
+        )
+        stop_idx = tank_start_idx + self.ts_data._time_to_index(
+            stim_time + baseline_stop
+        )
 
         chan = self.ts_data._ch_to_index(channel)
 
