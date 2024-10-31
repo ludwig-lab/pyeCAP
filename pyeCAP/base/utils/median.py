@@ -144,9 +144,9 @@ def remove_from_min_heap(heap, end, item, min_heap_indices, index_window):
     # Swap the last element with the one to be removed
     heap[index], min_heap_indices[index] = heap[end - 1], min_heap_indices[end - 1]
     end -= 1
-    index_window[min_heap_indices[index]] = (
-        index  # Update index_window for the swapped element
-    )
+    index_window[
+        min_heap_indices[index]
+    ] = index  # Update index_window for the swapped element
 
     if index == 0 or heap[index] > heap[(index - 1) >> 1]:
         simple_siftup_min(heap, index, end, min_heap_indices, index_window)
@@ -164,9 +164,9 @@ def remove_index_from_min_heap(
     # Swap the last element with the one to be removed
     heap[index], heap_indices[index] = heap[end - 1], heap_indices[end - 1]
     end -= 1
-    index_window[heap_indices[index]] = (
-        index  # Update index_window for the swapped element
-    )
+    index_window[
+        heap_indices[index]
+    ] = index  # Update index_window for the swapped element
 
     if index == 0 or heap[index] > heap[(index - 1) >> 1]:
         simple_siftup_min(heap, index, end, heap_indices, index_window)
@@ -191,9 +191,9 @@ def swap_index_from_min_heap(
     # Swap the last element with the one to be removed
     index_window[tracking_index] = -1
     heap[index], heap_indices[index] = new_item, new_tracking_index
-    index_window[new_tracking_index] = (
-        index  # Update index_window for the swapped element
-    )
+    index_window[
+        new_tracking_index
+    ] = index  # Update index_window for the swapped element
 
     if index == 0 or heap[index] > heap[(index - 1) >> 1]:
         simple_siftup_min(heap, index, end, heap_indices, index_window)
