@@ -1576,6 +1576,8 @@ class _TsData:
 
     def plot_psd(
         self,
+        channels=None,
+        window=None,
         axis=None,
         x_lim=None,
         y_lim=None,
@@ -1625,10 +1627,26 @@ class _TsData:
         if nperseg is None:
             nperseg = int(self.sample_rate)
 
+        if channels is None:
+            channels = slice(None, None, None)
+        else:
+            channels = self._ch_to_index(channels)
+
+        if window is None:
+            remove_gaps = True
+
+            default_x = self._time_lim_validate(window, remove_gaps=remove_gaps)
+            win = (
+                self._time_to_index(default_x[0], remove_gaps=remove_gaps),
+                self._time_to_index(default_x[1], remove_gaps=remove_gaps) + 1,
+            )
+        else:
+            win = window
+
         psd = da.apply_along_axis(
             signal.welch,
             1,
-            self.array,
+            self.array[channels, win[0] : win[1]],
             self.sample_rate,
             *args,
             shape=(2, nperseg),
