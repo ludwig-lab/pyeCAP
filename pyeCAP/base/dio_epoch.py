@@ -458,6 +458,86 @@ class _DioEpoch:
         # return an array starting at the onset time, incremented by the time between samples
         return np.add(np.arange(0, dio_length) / self.ts_data.sample_rate, onset)
 
+    def plot_phys(
+        self,
+        parameter,
+        channel=None,
+        onset=-1,
+        offset=1,
+        show=True,
+        axis=None,
+        fig_size=(10, 6),
+        **kwargs
+    ):
+        """
+        Plots a parameter with the given channels and onset and offset times.
+
+        Parameters
+        ----------
+        parameter : tuple
+            Stimulation parameter. Composed of index for the data set and index for the stimulation.
+        channels : str
+            Channel name to plot.
+        onset : int, float
+            Time to include before the stimulation start time (-2.0 will include 2.0 seconds of data before stimulation
+            onset).
+        offset : int, float
+            Time to include after the stimulation end time (2.0 will include 2.0 seconds of data after the stimulation
+            ending).
+        show : bool
+            Set to True to display the plot, False to return the axis and not display the plot.
+        events : bool
+            Set to True to display stimulation event data alongside the parameter data, False to omit event data.
+        axis : None, matplotlib.axis.Axis
+            Either None to use a new axis or matplotlib axis to plot on.
+        fig_size : list, tuple, np.ndarray
+            The size of the matplotlib figure to plot axis on if axis=None.
+        **kwargs : KeywordArguments
+            See :ref:`_TsData (parent class)` for more details.
+
+        Returns
+        -------
+        matplotlib.axes._subplots.AxesSubplot, None
+            Returns subplot and plots nothing, or returns nothing and displays the plot.
+
+        Examples
+        ________
+        >>> # plot the data for Channel 7 across parameter (0,0) with stimulation raster shown
+        >>> response_data.plot_parameter((0,0), channels=[0], events=True)        # doctest: +SKIP
+        """
+        # get start/end times
+        start_time, stop_time = self.parameter_time(parameter=parameter)
+        stim_duration = stop_time - start_time
+        # Convert start/end times to indices of the ts_data array
+        stim_start_idx = self.ts_data._time_to_index(start_time)
+        stim_stop_idx = self.ts_data._time_to_index(stop_time)
+        chan_idx = self.ts_data._ch_to_index(channel)
+
+        # Generate a new time array with time zero being stimulation start time
+        plot_time = np.arange(
+            start=onset, stop=stim_duration + offset, step=1 / self.sample_rate
+        )
+
+        # Pull plot data from ts_data array
+        plot_idx = (
+            stim_start_idx - (abs(onset) * self.sample_rate),
+            stim_stop_idx + (offset * self.sample_rate) + 1,
+        )
+        plot_data = np.squeeze(self.ts_data.array[chan_idx, plot_idx[0] : plot_idx[1]])
+
+        # plot
+        fig, ax = _plt_setup_fig_axis(axis=axis, fig_size=fig_size)
+        ax.plot(plot_time, plot_data)
+        ax.set(
+            xlabel="Time (s)",
+            ylabel=channel + " (" + self.ts_data.units[0][channel] + ")",
+        )
+
+        if show:
+            plt.show()
+        else:
+            _plt_show_fig(fig, ax, show)
+
     def plot_parameter(
         self,
         parameter,
@@ -504,12 +584,13 @@ class _DioEpoch:
         Examples
         ________
         >>> # plot the data for Channel 7 across parameter (0,0) with stimulation raster shown
-        >>> response_data.plot_parameter((0,0), channels=[0], events=True)        # doctest: +SKIP
+        >>> response_data.plot_phys((0,0), channels=[0], events=True)        # doctest: +SKIP
         """
         # get start/end times
         start_time, end_time = self.parameter_time(parameter=parameter)
         elapsed_time = end_time + offset - start_time - onset
         # call the _TsData plotting method, but return the axis instead of showing the plot
+
         fig, ax = _plt_setup_fig_axis(axis=axis, fig_size=fig_size)
         self.ts_data.plot(
             axis=ax,
