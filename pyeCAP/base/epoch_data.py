@@ -946,6 +946,8 @@ class _EpochData:
         show=True,
         fig_title=None,
         vlines=None,
+        cbar=True,
+        c_label="amplitude (uV)",
         **kwargs,
     ):
         """
@@ -1047,9 +1049,10 @@ class _EpochData:
                     )
         elif format == "heatmap":
 
-            _plt_add_cbar_axis(
-                fig, ax, c_label="amplitude (uV)", c_lim=calc_y_lim, c_map=cmap
-            )
+            if cbar:
+                _plt_add_cbar_axis(
+                    fig, ax, c_label=c_label, c_lim=calc_y_lim, c_map=cmap
+                )
 
             im = ax.imshow(
                 np.squeeze(bin_data),
