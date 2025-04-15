@@ -38,7 +38,7 @@
       let
         inherit (nixpkgs) lib;
         pkgs   = nixpkgs.legacyPackages.${system};
-        python = pkgs.python312;
+        python = pkgs.python311;
 
         # ─── Load the uv workspace (every uv project is a workspace) ─────────
         workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
@@ -50,7 +50,24 @@
         };
 
         # ─── Extra manual fix‑ups go here (rarely needed) ────────────────────
-        pyprojectOverrides = _final: _prev: { };
+        pyprojectOverrides = final: prev: {
+  # ---- Numba: provide libtbb.so.12 ----------------------------------------
+          numba = prev.numba.overrideAttrs (old: {
+            # Make libtbb.so.12 available at build‑ and run‑time
+            buildInputs = (old.buildInputs or []) ++ [ pkgs.tbb_2021_11 ];
+          });
+
+          # ---- Asciitree: add setuptools + wheel so the sdist can build -----------
+          asciitree = prev.asciitree.overrideAttrs (old: {
+            nativeBuildInputs =
+              (old.nativeBuildInputs or [])
+              ++ final.resolveBuildSystem {
+                # Both are wheels from nixpkgs/python-packages
+                setuptools = [ ];
+                wheel      = [ ];
+              };
+          });
+        };
 
         # ─── Compose final Python package set ────────────────────────────────
         pythonSet =
