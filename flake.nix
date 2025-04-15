@@ -9,7 +9,7 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     # uv‑to‑Nix bridge
-    uv2nix.url      = "github:DeterminateSystems/uv2nix";
+    uv2nix.url      = "github:pyproject-nix/uv2nix";
   };
 
   outputs = { self, nixpkgs, flake-utils, uv2nix }:
@@ -23,11 +23,11 @@
         #######################################################################
         # 1.  Reproducible build of the project (`nix build`, `nix run`)
         #######################################################################
-        # packages.default = uvLib.mkUvApplication {
-        #   projectDir = self;       # contains pyproject.toml + uv.lock
-        #   # Optional extra build inputs for wheels that need native deps
-        #   # nativeBuildInputs = [ pkgs.openssl pkgs.pkg-config ];
-        # };
+        packages.default = uvLib.mkUvApplication {
+          projectDir = self;       # contains pyproject.toml + uv.lock
+          # Optional extra build inputs for wheels that need native deps
+          # nativeBuildInputs = [ pkgs.openssl pkgs.pkg-config ];
+        };
 
         #######################################################################
         # 2.  Dev shell (`nix develop`) with the exact same uv‑locked deps
@@ -46,10 +46,10 @@
         #######################################################################
         # 3.  nix run  (optional – runs your project’s console‑script entrypoint)
         #######################################################################
-        apps.default = flake-utils.lib.mkApp {
-          drv     = self.packages.${system}.default;
-          exePath = "/bin/${self.packages.${system}.default.pname}";
-        };
+        # apps.default = flake-utils.lib.mkApp {
+        #   drv     = self.packages.${system}.default;
+        #   exePath = "/bin/${self.packages.${system}.default.pname}";
+        # };
       });
 }
 
