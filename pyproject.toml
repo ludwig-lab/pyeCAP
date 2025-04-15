@@ -61,6 +61,12 @@ dynamic = ["version"]
 source = "vcs"
 scheme = "semver"
 
+[[tool.uv.index]]
+name = "devpi"
+url = "https://devpi.ninjaneering.io/jtrevathan/dev/"
+publish-url = "https://devpi.ninjaneering.io/jtrevathan/dev/"
+explicit = true
+
 # ───── Build backend ─────
 [build-system]
 requires = [

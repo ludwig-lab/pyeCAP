@@ -139,7 +139,7 @@
                               "pyecap-editable-env" workspace.deps.all;
             in
             pkgs.mkShell {
-              packages = [ editableEnv pkgs.uv ];
+              packages = [ editableEnv pkgs.uv pkgs.git];
               env = {
                 UV_NO_SYNC          = "1";                 # keep uv from venv‑sync
                 UV_PYTHON           = "${editableEnv}/bin/python";
@@ -147,7 +147,7 @@
               };
               shellHook = ''
                 unset PYTHONPATH
-                export REPO_ROOT=$(git -C "${toString ./.}" rev-parse --show-toplevel)
+                export REPO_ROOT=${toString ./.}
               '';
             };
         };
