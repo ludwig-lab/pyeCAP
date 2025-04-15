@@ -37,7 +37,7 @@ dependencies = [
   "notebook<=6.5",
   # caret (^) becomes the compatible‑release operator (~=)
   "adi-reader",
-  "pyvisa"
+  "pyvisa",
 ]
 
 # ───── Dev / docs / test extras ─────
