@@ -1,55 +1,138 @@
 {
-  description = "Python project built with uv and packaged reproducibly through uv2nix";
+  description = "pyecap";
 
+  ##############################################################################
+  ## Inputs
+  ##############################################################################
   inputs = {
-    # Pick a nixpkgs revision / channel you trust
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # Helper utilities (matrix over x86_64‑linux, aarch64‑darwin, …)
     flake-utils.url = "github:numtide/flake-utils";
 
-    # uv‑to‑Nix bridge
-    uv2nix.url      = "github:pyproject-nix/uv2nix";
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows   = "uv2nix";
+      inputs.nixpkgs.follows  = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, uv2nix }:
+  ##############################################################################
+  ## Outputs
+  ##############################################################################
+  outputs = { self, nixpkgs, flake-utils, uv2nix, pyproject-nix
+            , pyproject-build-systems, ... }:
+
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs   = import nixpkgs { inherit system; };
-        python = pkgs.python312;               # pick the interpreter you need
-        uvLib  = uv2nix.lib { inherit pkgs python; };
+        inherit (nixpkgs) lib;
+        pkgs   = nixpkgs.legacyPackages.${system};
+        python = pkgs.python312;
+
+        # ─── Load the uv workspace (every uv project is a workspace) ─────────
+        workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+
+        # ─── Overlay generated from uv.lock ──────────────────────────────────
+        overlay = workspace.mkPyprojectOverlay {
+          sourcePreference = "wheel";   # prefer binary wheels when available
+          # environ = { platform_release = "6.6.0"; };  # customise PEP‑508 env if needed
+        };
+
+        # ─── Extra manual fix‑ups go here (rarely needed) ────────────────────
+        pyprojectOverrides = _final: _prev: { };
+
+        # ─── Compose final Python package set ────────────────────────────────
+        pythonSet =
+          (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
+          .overrideScope (lib.composeManyExtensions [
+            pyproject-build-systems.overlays.default
+            overlay
+            pyprojectOverrides
+          ]);
+
+        # ─── Convenience: a virtualenv for dev shells that should be rebuilt
+        #      only once per lock‑file change
+        devEnv = pythonSet.mkVirtualEnv "pyecap-dev-env" workspace.deps.all;
       in
       {
         #######################################################################
-        # 1.  Reproducible build of the project (`nix build`, `nix run`)
+        ## Reproducible package / nix build
         #######################################################################
-        packages.default = uvLib.mkUvApplication {
-          projectDir = self;       # contains pyproject.toml + uv.lock
-          # Optional extra build inputs for wheels that need native deps
-          # nativeBuildInputs = [ pkgs.openssl pkgs.pkg-config ];
-        };
+        packages.default =
+          pythonSet.mkVirtualEnv "pyecap-env" workspace.deps.default;
 
-        #######################################################################
-        # 2.  Dev shell (`nix develop`) with the exact same uv‑locked deps
-        #######################################################################
-        devShells.default = pkgs.mkShell {
-          # uvLib.mkUvEnvironment gives you a fully populated $VIRTUAL_ENV
-          packages = [
-            # (uvLib.mkUvEnvironment { projectDir = self; })
-            pkgs.uv      # uv CLI itself (handy for `uv pip …` inside shell)
-            pkgs.git
-          ];
-          # convenience
-          PYTHONBREAKPOINT = "ipdb.set_trace";
-        };
-
-        #######################################################################
-        # 3.  nix run  (optional – runs your project’s console‑script entrypoint)
-        #######################################################################
-        # apps.default = flake-utils.lib.mkApp {
-        #   drv     = self.packages.${system}.default;
-        #   exePath = "/bin/${self.packages.${system}.default.pname}";
+        # #######################################################################
+        # ## nix run  →  python -m pyecap  (falls back to plain python REPL)
+        # #######################################################################
+        # apps.default = {
+        #   type = "app";
+        #   program =
+        #     let drv = self.packages.${system}.default;
+        #     in  "${drv}/bin/python";
         # };
+
+        #######################################################################
+        ## Development shells
+        #######################################################################
+        devShells = {
+          # ── “Impure” mode: keep using uv directly inside an env you manage ──
+          impure = pkgs.mkShell {
+            packages = [ python pkgs.uv ];
+            env = {
+              UV_PYTHON            = python.interpreter;  # force uv to nix‑python
+              UV_PYTHON_DOWNLOADS  = "never";
+            } // lib.optionalAttrs pkgs.stdenv.isLinux {
+              LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
+            };
+            shellHook = "unset PYTHONPATH";
+          };
+
+          # ── Pure, editable mode via uv2nix (PEP‑660) ───────────────────────
+          uv2nix =
+            let
+              editableOverlay = workspace.mkEditablePyprojectOverlay {
+                root = "$REPO_ROOT";
+              };
+
+              editablePythonSet = pythonSet.overrideScope (
+                lib.composeManyExtensions [
+                  editableOverlay
+                  # example: add `editables` wheel for hatch‑vcs editable builds
+                  (final: prev: {
+                    pyecap = prev.pyecap.overrideAttrs (old: {
+                      nativeBuildInputs =
+                        old.nativeBuildInputs
+                        ++ final.resolveBuildSystem { editables = [ ]; };
+                    });
+                  })
+                ]);
+
+              editableEnv = editablePythonSet.mkVirtualEnv
+                              "pyecap-editable-env" workspace.deps.all;
+            in
+            pkgs.mkShell {
+              packages = [ editableEnv pkgs.uv ];
+              env = {
+                UV_NO_SYNC          = "1";                 # keep uv from venv‑sync
+                UV_PYTHON           = "${editableEnv}/bin/python";
+                UV_PYTHON_DOWNLOADS = "never";
+              };
+              shellHook = ''
+                unset PYTHONPATH
+                export REPO_ROOT=$(git -C "${toString ./.}" rev-parse --show-toplevel)
+              '';
+            };
+        };
       });
 }
-

@@ -4,7 +4,7 @@ description = "pyeCAP is a python package for the analysis of evoked compound ac
 readme = "README.md"
 requires-python = ">=3.9,<3.12"
 license = { text = "LGPL-2.1" }
-
+version = "0.0.4"
 authors = [
   { name = "James Trevathan", email = "jtrevathan@wisc.edu" }
 ]
@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 # ───── Dev / docs / test extras ─────
-[project.optional-dependencies.dev]
+[tool.pdm.dev-dependencies]
 dev = [
   "sphinx-rtd-theme",
   "black",
