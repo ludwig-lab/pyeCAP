@@ -212,6 +212,7 @@ class ECAP(_EpochData):
                                 RMS,
                                 window_str,
                                 window_units,
+                                bin,
                                 *self.stim.parameters.loc[param].tolist(),
                                 channel_name,
                             ]
@@ -235,6 +236,7 @@ class ECAP(_EpochData):
                 "AUC (Vs)",
                 "Calculation Window",
                 "Window Units",
+                "Pulse Bin",
                 *column_headers,
                 "Recording Electrode",
             ],
