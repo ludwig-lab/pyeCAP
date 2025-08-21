@@ -1,55 +1,77 @@
-[tool.poetry]
+[project]
 name = "pyecap"
-version = "0.0.3-post.19+317de1e"
-description = "pyeCAP is a python package for the analysis of evoked compound action potentials (CAPs) in elecytrophysiology data sets."
-authors = ["James Trevathan <jtrevathan@wisc.edu>"]
-license = "LGPL 2.1"
+description = "pyeCAP is a python package for the analysis of evoked compound action potentials (CAPs) in electrophysiology data sets."
 readme = "README.md"
+requires-python = ">=3.9,<3.12"
+license = { text = "LGPL-2.1" }
+version = "0.0.7"
+authors = [
+  { name = "James Trevathan", email = "jtrevathan@wisc.edu" }
+]
 
-[tool.poetry.dependencies]
-python = ">=3.9,<3.12"
-numpy = "*"
-dask = "*"
-pandas = "*"
-scipy = "*"
-seaborn = "*"
-ipywidgets = "*"
-mne = "*"
-numba = "*"
-cached-property = "*"
-cachey = "*"
-zarr = "*"
-xarray = "*"
-matplotlib = "*"
-tdt = "*"
-h5py = "*"
-ipympl = "*"
-xlrd = "*"
-openpyxl = "*"
-cycler = "*"
-Pillow = "*"
-tqdm = "*"
-opencv-python = "*"
-plotly = "*"
-notebook = "<=6.5"
-adi-reader = "^0.0.9"
+# ───── Runtime dependencies ─────
+dependencies = [
+  "numpy",
+  "dask",
+  "pandas",
+  "scipy",
+  "seaborn",
+  "ipywidgets",
+  "mne",
+  "numba",
+  "cached-property",
+  "cachey",
+  "zarr",
+  "xarray",
+  "matplotlib",
+  "tdt",
+  "h5py",
+  "ipympl",
+  "xlrd",
+  "openpyxl",
+  "cycler",
+  "Pillow",
+  "tqdm",
+  "opencv-python",
+  "plotly",
+  "notebook<=6.5",
+  # caret (^) becomes the compatible‑release operator (~=)
+  "adi-reader",
+  "pyvisa"
+]
 
-[tool.poetry.group.dev.dependencies]
-sphinx-rtd-theme = "*"
-black = "*"
-jupyterlab = "*"
-devpi-client = "*"
-pytest = "*"
-tox = "*"
-jupyter-contrib-nbextensions = "*"
-pre-commit = "*"
-isort = "*"
+# ───── Dev / docs / test extras ─────
+[tool.pdm.dev-dependencies]
+dev = [
+  "sphinx-rtd-theme",
+  "black",
+  "jupyterlab",
+  "devpi-client",
+  "pytest",
+  "tox",
+  "jupyter-contrib-nbextensions",
+  "pre-commit",
+  "isort"
+]
 
-[tool.poetry-dynamic-versioning]
-enable = true
-vcs = "git"
-style = "semver"
+# ───── Dynamic version from Git, Poetry‑style ─────
+# (hatch‑vcs gives the same semantics as poetry‑dynamic‑versioning)
+dynamic = ["version"]
 
+[tool.hatch.version]
+source = "vcs"
+scheme = "semver"
+
+[[tool.uv.index]]
+name = "devpi"
+url = "https://devpi.ninjaneering.io/jtrevathan/dev/"
+publish-url = "https://devpi.ninjaneering.io/jtrevathan/dev/"
+explicit = true
+
+# ───── Build backend ─────
 [build-system]
-requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
-build-backend = "poetry_dynamic_versioning.backend"
+requires = [
+  "hatchling>=1.24",
+  "hatch-vcs>=0.4"
+]
+build-backend = "hatchling.build"
