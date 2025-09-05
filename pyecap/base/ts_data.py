@@ -1105,6 +1105,7 @@ class _TsData:
             sigma = sigma
 
         lw = int(truncate * sigma + 0.5)
+
         if btype in ("lowpass", "low"):
             data = [
                 da.map_overlap(
