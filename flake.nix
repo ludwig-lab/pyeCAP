@@ -1,9 +1,6 @@
 {
   description = "pyecap";
 
-  ##############################################################################
-  ## Inputs
-  ##############################################################################
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -28,16 +25,11 @@
     };
   };
 
-  ##############################################################################
-  ## Outputs
-  ##############################################################################
   outputs = { self, nixpkgs, flake-utils, uv2nix, pyproject-nix
             , pyproject-build-systems, ... }:
-
-    flake-utils.lib.eachDefaultSystem (system:
       let
         inherit (nixpkgs) lib;
-        pkgs   = nixpkgs.legacyPackages.${system};
+        pkgs   = nixpkgs.legacyPackages.x86_64-linux;
         python = pkgs.python311;
 
         # ─── Load the uv workspace (every uv project is a workspace) ─────────
@@ -78,16 +70,12 @@
             pyprojectOverrides
           ]);
 
-        # ─── Convenience: a virtualenv for dev shells that should be rebuilt
-        #      only once per lock‑file change
-        devEnv = pythonSet.mkVirtualEnv "pyecap-dev-env" workspace.deps.all;
       in
       {
-        #######################################################################
-        ## Reproducible package / nix build
-        #######################################################################
-        packages.default =
-          pythonSet.mkVirtualEnv "pyecap-env" workspace.deps.default;
+      # Package a virtual environment as our main application.
+      #
+      # Enable no optional dependencies for production build.
+      packages.x86_64-linux.default = pythonSet.mkVirtualEnv "pyecap-env" workspace.deps.default;
 
         # #######################################################################
         # ## nix run  →  python -m pyecap  (falls back to plain python REPL)
@@ -102,54 +90,105 @@
         #######################################################################
         ## Development shells
         #######################################################################
-        devShells = {
+        devShells.x86_64-linux = {
           # ── “Impure” mode: keep using uv directly inside an env you manage ──
           impure = pkgs.mkShell {
             packages = [ python pkgs.uv ];
             env = {
-              UV_PYTHON            = python.interpreter;  # force uv to nix‑python
               UV_PYTHON_DOWNLOADS  = "never";
+              UV_PYTHON            = python.interpreter;  # force uv to nix‑python
             } // lib.optionalAttrs pkgs.stdenv.isLinux {
               LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
             };
-            shellHook = "unset PYTHONPATH";
-          };
-
-          # ── Pure, editable mode via uv2nix (PEP‑660) ───────────────────────
-          uv2nix =
-            let
-              editableOverlay = workspace.mkEditablePyprojectOverlay {
-                root = "$REPO_ROOT";
-              };
-
-              editablePythonSet = pythonSet.overrideScope (
-                lib.composeManyExtensions [
-                  editableOverlay
-                  # example: add `editables` wheel for hatch‑vcs editable builds
-                  (final: prev: {
-                    pyecap = prev.pyecap.overrideAttrs (old: {
-                      nativeBuildInputs =
-                        old.nativeBuildInputs
-                        ++ final.resolveBuildSystem { editables = [ ]; };
-                    });
-                  })
-                ]);
-
-              editableEnv = editablePythonSet.mkVirtualEnv
-                              "pyecap-editable-env" workspace.deps.all;
-            in
-            pkgs.mkShell {
-              packages = [ editableEnv pkgs.uv pkgs.git];
-              env = {
-                UV_NO_SYNC          = "1";                 # keep uv from venv‑sync
-                UV_PYTHON           = "${editableEnv}/bin/python";
-                UV_PYTHON_DOWNLOADS = "never";
-              };
-              shellHook = ''
-                unset PYTHONPATH
-                export REPO_ROOT=${toString ./.}
-              '';
-            };
+          shellHook = ''
+            unset PYTHONPATH
+          '';
         };
-      });
+
+        # This devShell uses uv2nix to construct a virtual environment purely from Nix, using the same dependency specification as the application.
+        # The notable difference is that we also apply another overlay here enabling editable mode ( https://setuptools.pypa.io/en/latest/userguide/development_mode.html ).
+        #
+        # This means that any changes done to your local files do not require a rebuild.
+        #
+        # Note: Editable package support is still unstable and subject to change.
+        uv2nix =
+          let
+            # Create an overlay enabling editable mode for all local dependencies.
+            editableOverlay = workspace.mkEditablePyprojectOverlay {
+              # Use environment variable
+              root = "$REPO_ROOT";
+              # Optional: Only enable editable for these packages
+              # members = [ "pyecap" ];
+            };
+
+            # Override previous set with our overrideable overlay.
+            editablePythonSet = pythonSet.overrideScope (
+              lib.composeManyExtensions [
+                editableOverlay
+
+                # Apply fixups for building an editable package of your workspace packages
+                (final: prev: {
+                  pyecap = prev.pyecap.overrideAttrs (old: {
+                    # It's a good idea to filter the sources going into an editable build
+                    # so the editable package doesn't have to be rebuilt on every change.
+                    src = lib.fileset.toSource {
+                      root = old.src;
+                      fileset = lib.fileset.unions [
+                        (old.src + "/pyproject.toml")
+                        (old.src + "/README.md")
+                        (old.src + "/src/pyecap/__init__.py")
+                      ];
+                    };
+
+                    # Hatchling (our build system) has a dependency on the `editables` package when building editables.
+                    #
+                    # In normal Python flows this dependency is dynamically handled, and doesn't need to be explicitly declared.
+                    # This behaviour is documented in PEP-660.
+                    #
+                    # With Nix the dependency needs to be explicitly declared.
+                    nativeBuildInputs =
+                      old.nativeBuildInputs
+                      ++ final.resolveBuildSystem {
+                        editables = [ ];
+                      };
+                  });
+
+                })
+              ]
+            );
+
+            # Build virtual environment, with local packages being editable.
+            #
+            # Enable all optional dependencies for development.
+            virtualenv = editablePythonSet.mkVirtualEnv "pyecap-dev-env" workspace.deps.all;
+
+          in
+          pkgs.mkShell {
+            packages = [
+              virtualenv
+              pkgs.uv
+            ];
+
+            env = {
+              # Don't create venv using uv
+              UV_NO_SYNC = "1";
+
+              # Force uv to use nixpkgs Python interpreter
+              UV_PYTHON = python.interpreter;
+
+              # Prevent uv from downloading managed Python's
+              UV_PYTHON_DOWNLOADS = "never";
+            };
+
+            shellHook = ''
+              # Undo dependency propagation by nixpkgs.
+              unset PYTHONPATH
+
+              # Get repository root using git. This is expanded at runtime by the editable `.pth` machinery.
+              export REPO_ROOT=$(git rev-parse --show-toplevel)
+              python -m ipykernel install --name=pyecap-dev-env
+            '';
+          };
+      };
+    };
 }
