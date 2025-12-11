@@ -272,6 +272,11 @@ class _EpochData:
             # ToDo: rewrite so that this happens blockwise in dask as opposed to all at once to speed up.
             event_data = event_data[idx_mask].compute_chunk_sizes()
 
+        print(len(event_data[0]))
+        print(self.ts_data.shape[0])
+        print(len(event_times))
+        print(sample_len)
+
         # Reshape the event data and rearrange axes for the final output.
         event_data_reshaped = da.reshape(
             event_data, (self.ts_data.shape[0], len(event_times), int(sample_len))
