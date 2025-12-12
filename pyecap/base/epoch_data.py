@@ -242,6 +242,33 @@ class _EpochData:
         # Convert event times to indices.
         event_times = self.ts_data._time_to_index(event_times)
 
+        #Check if length of each sample in event_times is consistent
+        if len(np.unique(np.diff(event_times)) == 2):
+            sample_lengths = np.unique(np.diff(event_times), return_counts=True)
+            #Find length of short pulses
+            s_len = sample_lengths[0][np.argmin(sample_lengths[1])].item()
+            #Find short pulses
+            short_pulses = np.where(np.diff(event_times) == s_len)[0]
+
+            corrected_evt_idx = []
+
+            #Update event_times array to account for short sample length.
+            #Assumes sample lengths are only off by 1 and due to rounding error in ts_data._time_to_index
+            for idx in np.arange(len(short_pulses)):
+                if idx == 0:
+                    event_segment = event_times[0: short_pulses[idx] + 1]  # Before first short sample, no modification
+                else:
+                    event_segment = np.add(event_times[short_pulses[idx - 1] + 1: short_pulses[idx] + 1],  idx)  #Increase indices of each segment by segment #
+                corrected_evt_idx.extend(event_segment)
+
+            end_segment = np.add(event_times[short_pulses[idx] + 1:], len(short_pulses))  # Increase indices of last segment by number of segments
+
+            corrected_evt_idx.extend(end_segment)
+            event_times = np.array(corrected_evt_idx)
+
+        elif len(np.unique(np.diff(event_times)) > 2): #Above code only works if there are only 2 different sample lengths
+            raise Exception('Pulses do not have same number of samples. Pulse sample lengths: ' + str(np.unique(evt_indices_diff)))
+
         # Create a boolean mask to select relevant times from the time series data.
         indices = np.zeros(self.ts_data.shape[1], dtype=bool)
         for ts in event_times:
@@ -271,11 +298,6 @@ class _EpochData:
         if len(removal_idx[0]) > 0:
             # ToDo: rewrite so that this happens blockwise in dask as opposed to all at once to speed up.
             event_data = event_data[idx_mask].compute_chunk_sizes()
-
-        print(len(event_data[0]))
-        print(self.ts_data.shape[0])
-        print(len(event_times))
-        print(sample_len)
 
         # Reshape the event data and rearrange axes for the final output.
         event_data_reshaped = da.reshape(
@@ -552,7 +574,7 @@ class _EpochData:
                 )
 
             if method == "mean":
-                plot_data = self.mean(p, channels=channels)
+                plot_data = np.squeeze(self.mean(p, channels=channels)[p])
             elif method == "median":
                 plot_data = self.median(p, channels=channels)
             else:
