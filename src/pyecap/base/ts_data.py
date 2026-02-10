@@ -43,6 +43,7 @@ from .utils.median import rolling_median, rolling_median_column
 from .utils.numeric import (
     _group_consecutive,
     _to_numeric_array,
+    _to_datetime,
     largest_triangle_three_buckets,
 )
 from .utils.visualization import (
@@ -1104,7 +1105,7 @@ class _TsData:
         lw = int(truncate * sigma + 0.5)
 
         s_c = Wn / self.sample_rate
-        sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
+        sigma = np.sqrt(2 * np.log(2)) / (2 * np.pi * s_c)
         lw = int(truncate * sigma + 0.5)
         if btype in ("lowpass", "low"):
             data = [
@@ -1912,81 +1913,95 @@ class _TsData:
                 pass
         return tuple(x_lim)
 
-    def _time_to_index(self, time, units="seconds", remove_gaps=True):
-        # TODO: calculate index accounting for
+    def _time_to_index(self, time, units="seconds", type=None, remove_gaps=True):
         """
-        Converts an elapsed time into an index. This index corresponds to the array index of the data point at the
-        specified time.
-
+        Converts an elapsed time or datetime into an index. This index corresponds to 
+        the array index of the data point at the specified time.
+    
         Parameters
         ----------
-        time : int, str
-            Elapsed time.
+        time : int, float, datetime, or iterable
+            Elapsed time (numeric) or absolute datetime.
         units : str
             Units of the 'time' parameter. Enter 'seconds', 'milliseconds', or 'microseconds'.
+        type : str, optional
+            Either 'elapsed' or 'datetime'. Defaults to 'datetime' if a datetime object 
+            is passed; otherwise defaults to 'elapsed'.
         remove_gaps : bool
             Set to False to take into account time gaps in the data.
-
-
+    
         Returns
         -------
-        int
+        int or np.ndarray
             Array index corresponding to the data at the time input.
-
-        Examples
-        ________
-        >>> ephys_data._time_to_index(5)
-        122070
-
         """
-        # Convert time units once at the beginning.
-        if units == "milliseconds":
-            time = time / 1e3
-        elif units == "microseconds":
-            time = time / 1e6
-
-        if not remove_gaps:
-            # Pre-compute as much as possible outside of the loop or vectorized function.
-            sts = np.array(self.start_times) - self.start_times[0]
-            ets = np.array(self.end_times) - self.start_times[0]
-            sis = np.array(self.start_indices)
-            sr = self.sample_rate
-
-            # converts each time to an index that takes gaps into account
-            def tti_with_gaps(
-                elapsed_time,
-                start_times=sts,
-                end_times=ets,
-                start_indices=sis,
-                sample_rate=sr,
+    
+        # Determine type automatically if not specified
+        if type is None:
+            if isinstance(time, datetime) or (
+                isinstance(time, Iterable) and all(isinstance(t, datetime) for t in time)
             ):
-                for t in range(len(start_times)):
-                    if start_times[t] <= elapsed_time <= end_times[t]:
-                        return round(
-                            start_indices[t]
-                            + sample_rate * (elapsed_time - start_times[t])
-                        )
-                    elif end_times[t - 1] <= elapsed_time <= start_times[t]:
-                        return (
-                            start_indices[t]
-                            - 1
-                            + round(
-                                (elapsed_time - end_times[t - 1])
-                                / (start_times[t] - end_times[t - 1])
-                            )
-                        )
-                return round(
-                    start_indices[-1] + sample_rate * (elapsed_time - start_times[-1])
-                )
-
-            if isinstance(time, Iterable):
-                # Apply the vectorized function to each element in 'time'.
-                return np.array([tti_with_gaps(t) for t in time]).astype(int)
+                type = "datetime"
+                
             else:
-                return int(tti_with_gaps(time))
+                type = "elapsed"
+    
+        # Handle datetime conversion
+        if type == "datetime":
+            # Ensure all inputs are datetime objects
+            time = _to_datetime(time)
 
-        else:
-            return np.round(np.multiply(time, self.sample_rate)).astype(int)
+            # Convert start_times and end_times to datetime
+            sts_dt = [datetime.fromtimestamp(st) for st in self.start_times]
+            ets_dt = [datetime.fromtimestamp(et) for et in self.end_times]
+    
+            # Normalize relative to first start_time
+            base_time = sts_dt[0]
+            sts = np.array([(st - base_time).total_seconds() for st in sts_dt])
+            ets = np.array([(et - base_time).total_seconds() for et in ets_dt])
+            sis = np.array(self.start_indices)
+    
+            # Convert input time(s) to elapsed seconds
+            if isinstance(time, Iterable) and not isinstance(time, str):
+                time = np.array([(t - base_time).total_seconds() for t in time])
+            else:
+                time = (time - base_time).total_seconds()
+    
+            # After conversion, treat as elapsed
+            type = "elapsed"
+            remove_gaps = False
+            units = "seconds"
+    
+        # Handle time unit scaling for elapsed times
+        if type == "elapsed":
+            if units == "milliseconds":
+                time = np.divide(time, 1e3)
+            elif units == "microseconds":
+                time = np.divide(time, 1e6)
+    
+            if not remove_gaps:
+                sts = np.array(self.start_times) - self.start_times[0]
+                ets = np.array(self.end_times) - self.start_times[0]
+                sis = np.array(self.start_indices)
+                sr = self.sample_rate
+    
+                def tti_with_gaps(elapsed_time, start_times=sts, end_times=ets,
+                                  start_indices=sis, sample_rate=sr):
+                    for t in range(len(start_times)):
+                        if start_times[t] <= elapsed_time <= end_times[t]:
+                            return round(start_indices[t] + sample_rate * (elapsed_time - start_times[t]))
+                        elif t > 0 and end_times[t - 1] <= elapsed_time <= start_times[t]:
+                            return (start_indices[t] - 1 +
+                                    round((elapsed_time - end_times[t - 1]) /
+                                          (start_times[t] - end_times[t - 1])))
+                    return round(start_indices[-1] + sample_rate * (elapsed_time - start_times[-1]))
+    
+                if isinstance(time, Iterable) and not isinstance(time, str):
+                    return np.array([tti_with_gaps(t) for t in time]).astype(int)
+                else:
+                    return int(tti_with_gaps(time))
+            else:
+                return np.round(np.multiply(time, self.sample_rate)).astype(int)
 
     def _to_mne_raw(self):  # TODO make this work with all data if list of dask arrays
         """

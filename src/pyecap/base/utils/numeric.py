@@ -1,6 +1,8 @@
 # python standard library imports
 import math
 from typing import List, Union
+from datetime import datetime
+from collections.abc import Iterable
 
 import dask.array as da
 
@@ -50,6 +52,27 @@ def _to_numeric_array(array, dtype=float):
     except Exception as e:
         raise ValueError(f"Conversion to numeric array failed: {e}")
 
+
+def _to_datetime(x):
+    """Convert input to datetime (single value or iterable)."""
+    def convert_one(val):
+        if isinstance(val, datetime):
+            return val
+        elif isinstance(val, (int, float)):
+            return datetime.fromtimestamp(val)
+        elif isinstance(val, str):
+            try:
+                return datetime.fromisoformat(val)
+            except ValueError:
+                from dateutil import parser
+                return parser.parse(val)
+        else:
+            raise TypeError(f"Cannot convert {type(val)} to datetime")
+
+    if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
+        return [convert_one(v) for v in x]
+    else:
+        return convert_one(x)
 
 @njit(nogil=True)
 def largest_triangle_three_buckets(data, threshold):
