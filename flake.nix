@@ -188,6 +188,7 @@
               export REPO_ROOT=$(git rev-parse --show-toplevel)
               export PATH=$PATH:$(git rev-parse --show-toplevel)
               export PYTHONPATH=$PYTHONPATH:$(git rev-parse --show-toplevel)
+              echo $PYTHONPATH
               python -m ipykernel install --name=pyecap-dev-env
             '';
           };
