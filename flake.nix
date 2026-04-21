@@ -186,7 +186,7 @@
 
               # Get repository root using git. This is expanded at runtime by the editable `.pth` machinery.
               export REPO_ROOT=$(git rev-parse --show-toplevel)
-              export PYTHONPATH="$(pwd)"
+              export PATH=$PATH:$(git rev-parse --show-toplevel)
               python -m ipykernel install --name=pyecap-dev-env
             '';
           };
