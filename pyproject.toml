@@ -9,6 +9,8 @@ authors = [
   { name = "James Trevathan", email = "jtrevathan@wisc.edu" }
 ]
 
+packages = [{include = "*", from="src"}]
+
 # ───── Runtime dependencies ─────
 dependencies = [
   "numpy",
