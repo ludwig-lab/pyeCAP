@@ -1493,7 +1493,7 @@ class _EpochData:
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def median(self, parameters, channels=None):
+    def median(self, parameters, channels=None, bin=None):
         """
         Computes an array of median values of the data from a parameter  for each pulse across given channels. The
         result is stored in a cache for faster computing.
@@ -1520,9 +1520,16 @@ class _EpochData:
         # if len(parameters) == 1:
         #     return np.median(self.array(parameters, channels=channels), axis=0)
         # else:
-        return {
-            p: np.median(v, axis=0) for p, v in self.array(parameters, channels).items()
-        }
+        if bin is not None:
+            return {
+                p: np.median(v[bin[0] : bin[1], :, :], axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
+        else:
+            return {
+                p: np.median(v, axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
 
     # @lru_cache(
     #     maxsize=None
