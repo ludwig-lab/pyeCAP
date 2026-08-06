@@ -26,6 +26,7 @@ def download_data(url, filename, directory=os.getcwd()):
         Absolute path name of downloaded file.
     """
     r = requests.get(url)
+    complete_pathname = os.path.join(directory, filename)
     with open(complete_pathname, 'wb') as f:
         f.write(r.content)
     complete_pathname = os.path.join(directory, filename)

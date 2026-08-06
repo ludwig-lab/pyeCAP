@@ -3,9 +3,9 @@ from setuptools import setup, find_packages
 # TODO: find a way to include the neuroshare package from github
 # TODO: update requirements.txt
 version_reqs = ['pandas',
-                'numpy<1.21,>=1.17',
+                'numpy',
                 'scipy',
-                'matplotlib<3.5.0',
+                'matplotlib',
                 'seaborn',
                 'numba',
                 'pytest',
@@ -18,7 +18,7 @@ version_reqs = ['pandas',
                 'ipympl',
                 'sphinx-rtd-theme',
                 'h5py',
-                'xlrd', # Neeed to remove this excel dependency
+                'xlrd', # Need to remove this Excel dependency
                 'openpyxl',
                 'pillow>=7.1.0',
                 'cycler>=0.10',

@@ -1,15 +1,18 @@
-# python standard library imports
 from collections.abc import Iterable
-
-# scientific computing library imports
+import os
 import numpy as np
 
 
-def _is_iterable(obj, type=None):
-    if type is None:
-        return isinstance(obj, Iterable)
-    else:
-        return all([isinstance(o, type) for o in obj])
+def _is_iterable(obj, types=None):
+    try:
+        iter(obj)
+    except TypeError:
+        return False
+
+    if types is None:
+        return True
+
+    return all(isinstance(x, types) for x in obj)
 
 def _to_array(array, dtype=None):
     if dtype is None:

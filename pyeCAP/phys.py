@@ -12,8 +12,8 @@ from .base.ts_data import _TsData
 from .base.utils.base import _is_iterable
 from .base.utils.visualization import _plt_ax_to_pix, _plt_setup_fig_axis, _plt_show_fig, _plt_add_ax_connected_top
 
-# pyeCAP io class imports
-from .io.adinstruments_io import AdInstrumentsIO, convert_time, ADInstrumentsBin
+# pyeCAP acquisition_io class imports
+from .acquisition_io.adinstruments_io import AdInstrumentsIO, convert_time, ADInstrumentsBin
 
 # TODO: Comments could be used for event data
 

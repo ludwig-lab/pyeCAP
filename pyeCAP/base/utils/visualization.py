@@ -139,3 +139,10 @@ def _plt_add_ax_connected_top(fig, ax, ratio=0.1):
     dax = divider.append_axes("top", size=bbox.height*ratio, pad=0, sharex=ax)
     dax.get_xaxis().set_visible(False)
     return dax
+
+
+def plot_all_traces_per_channel(data, channels, downsample_ratio=None):
+    if downsample_ratio is None:
+        downsample_ratio = data.shape[0] / data.shape[1]
+    num_subplots = len(channels)
+    fig, ax = plt.subplots(num_subplots, 1, sharex=True, sharey=True)
