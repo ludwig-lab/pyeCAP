@@ -478,17 +478,10 @@ def detect_stim_stores(all_store_ids, gizmo_name_map):
 def _read_tdt_multichannel_chunk(tev_path, channel_sources, block_size, dtype):
     """Read one time chunk for all channels into a single 2D NumPy array.
 
-    Parameters
-    ----------
-    tev_path : str
-        Path to the shared TEV file.
-    channel_sources : sequence
-        Each entry is either ``("tev", offsets)`` or
-        ``("sev", path, sample_start, sample_count)``.
-    block_size : int
-        Number of samples in each TEV block after its header.
-    dtype : numpy dtype specifier
-        Output/sample dtype.
+    TEV payloads are gathered in NumPy rather than copied one block at a time
+    in Python. When the selected payloads occupy a reasonably compact byte
+    span, that span is read once; otherwise the file is memory-mapped and the
+    same vectorized gather is used.
     """
     dtype = np.dtype(dtype)
     block_size = int(block_size)
@@ -511,15 +504,16 @@ def _read_tdt_multichannel_chunk(tev_path, channel_sources, block_size, dtype):
 
     n_samples = sample_counts[0]
     output = np.empty((len(sources), n_samples), dtype=dtype)
-    block_bytes = int(block_size * dtype.itemsize)
+    itemsize = int(dtype.itemsize)
+    block_bytes = int(block_size * itemsize)
 
-    # SEV channels are contiguous files and can be read directly.
+    # SEV channels are contiguous files and require one direct read per channel.
     for channel_index, source in enumerate(sources):
         if source[0] != "sev":
             continue
         _, path, sample_start, sample_count = source
-        byte_start = int(sample_start) * dtype.itemsize
-        byte_count = int(sample_count) * dtype.itemsize
+        byte_start = int(sample_start) * itemsize
+        byte_count = int(sample_count) * itemsize
         with open(path, "rb", buffering=0) as file:
             file.seek(byte_start)
             buffer = file.read(byte_count)
@@ -542,53 +536,68 @@ def _read_tdt_multichannel_chunk(tev_path, channel_sources, block_size, dtype):
     if not tev_channels:
         return output
 
+    block_counts = {int(offsets.size) for _, offsets in tev_channels}
+    if len(block_counts) != 1:
+        raise ValueError("All TEV channels in one task must have equal block counts.")
+
+    for _, offsets in tev_channels:
+        if offsets.size and np.any(offsets % itemsize):
+            raise IOError("TEV payload offsets are not aligned to the sample dtype.")
+
+    within_block = np.arange(block_size, dtype=np.int64)
+
+    def gather_from_samples(file_samples, base_byte_offset):
+        """Gather all TEV blocks using one NumPy operation per channel."""
+        base_byte_offset = int(base_byte_offset)
+        for channel_index, offsets in tev_channels:
+            relative_bytes = offsets - base_byte_offset
+            starts = relative_bytes // itemsize
+            sample_indices = starts[:, None] + within_block[None, :]
+            output[channel_index, :] = file_samples[sample_indices].reshape(-1)
+
+    minimum_offset = min(int(offsets.min()) for _, offsets in tev_channels)
+    maximum_end = max(int(offsets.max()) + block_bytes for _, offsets in tev_channels)
+    span_bytes = int(maximum_end - minimum_offset)
+    payload_bytes = int(
+        sum(offsets.size * block_bytes for _, offsets in tev_channels)
+    )
+
+    # Reading one compact span is typically faster than thousands of tiny block
+    # copies. The cap prevents excessive over-read when unrelated stores are
+    # sparsely interleaved between the selected channels.
+    if span_bytes <= payload_bytes * 4:
+        with open(tev_path, "rb", buffering=0) as file:
+            file.seek(minimum_offset)
+            buffer = file.read(span_bytes)
+        if len(buffer) != span_bytes:
+            raise IOError(
+                f"Short TEV span read: expected {span_bytes} bytes, "
+                f"received {len(buffer)}."
+            )
+        file_samples = np.frombuffer(
+            buffer,
+            dtype=dtype,
+            count=span_bytes // itemsize,
+        )
+        gather_from_samples(file_samples, minimum_offset)
+        return output
+
+    # Sparse fallback: map the file once and perform the same vectorized gather.
     binary_flag = getattr(os, "O_BINARY", 0)
-
-    # POSIX: pread avoids shared file-position state and does not map the full TEV.
-    if hasattr(os, "pread"):
-        descriptor = os.open(tev_path, os.O_RDONLY | binary_flag)
-        try:
-            blocks_in_chunk = len(tev_channels[0][1])
-            for block_index in range(blocks_in_chunk):
-                start = block_index * block_size
-                for channel_index, offsets in tev_channels:
-                    offset = int(offsets[block_index])
-                    buffer = os.pread(descriptor, block_bytes, offset)
-                    if len(buffer) != block_bytes:
-                        raise IOError(
-                            f"Short TEV read at byte offset {offset}: expected "
-                            f"{block_bytes} bytes, received {len(buffer)}."
-                        )
-                    output[channel_index, start:start + block_size] = np.frombuffer(
-                        buffer,
-                        dtype=dtype,
-                        count=block_size,
-                    )
-            return output
-        finally:
-            os.close(descriptor)
-
-    # Windows: map the TEV once for the entire multichannel task rather than once
-    # per channel. Assignment copies each view into the output before the map closes.
     descriptor = os.open(tev_path, os.O_RDONLY | binary_flag)
     try:
         with mmap.mmap(descriptor, length=0, access=mmap.ACCESS_READ) as mapped:
             mapped_size = len(mapped)
-            blocks_in_chunk = len(tev_channels[0][1])
-            for block_index in range(blocks_in_chunk):
-                start = block_index * block_size
-                for channel_index, offsets in tev_channels:
-                    offset = int(offsets[block_index])
-                    if offset < 0 or offset + block_bytes > mapped_size:
-                        raise IOError(
-                            f"TEV block at byte offset {offset} falls outside file bounds."
-                        )
-                    output[channel_index, start:start + block_size] = np.frombuffer(
-                        mapped,
-                        dtype=dtype,
-                        count=block_size,
-                        offset=offset,
-                    )
+            if minimum_offset < 0 or maximum_end > mapped_size:
+                raise IOError("TEV payload offsets fall outside file bounds.")
+            file_samples = np.frombuffer(
+                mapped,
+                dtype=dtype,
+                count=mapped_size // itemsize,
+            )
+            gather_from_samples(file_samples, 0)
+            # Release the NumPy export before mmap.__exit__ closes the mapping.
+            del file_samples
     finally:
         os.close(descriptor)
 
@@ -772,6 +781,15 @@ class TdtArray:
         blocks_per_task = max(1, int(int(chunk_size) // self.block_size))
         self.chunk_size = int(blocks_per_task * self.block_size)
 
+        # The arguments contain only ordinary Python/NumPy values. Disabling
+        # traversal prevents Dask from expanding every nested offset array into
+        # separate graph nodes.
+        delayed_reader = dask.delayed(
+            _read_tdt_multichannel_chunk,
+            pure=False,
+            traverse=False,
+        )
+
         array_chunks = []
         for block_start in range(0, n_blocks, blocks_per_task):
             block_stop = min(block_start + blocks_per_task, n_blocks)
@@ -790,10 +808,7 @@ class TdtArray:
                         ("sev", os.fspath(payload), sample_start, chunk_samples)
                     )
 
-            delayed_chunk = dask.delayed(
-                _read_tdt_multichannel_chunk,
-                pure=False,
-            )(
+            delayed_chunk = delayed_reader(
                 os.fspath(self.tev_file),
                 chunk_sources,
                 self.block_size,

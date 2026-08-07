@@ -1,313 +1,355 @@
-# neuro base class imports
-from .base.epoch_data import _EpochData
-from .base.utils.numeric import _to_numeric_array
+from __future__ import annotations
 
-# other imports
-
-import dask.array as da
-import numpy as np
+from pathlib import Path
+from collections.abc import Mapping
+import sys
 import warnings
+
+import dask
+import dask.array as da
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from scipy import ndimage
-from scipy.signal import medfilt, find_peaks, savgol_filter, welch
-import matplotlib.pyplot as plt
-import sys
+from scipy.signal import find_peaks, medfilt, savgol_filter
+
+from .base.epoch_data import _EpochData
+from .base.ts_data import _TsData
+from .base.utils.numeric import _to_numeric_array
+from .utilities.ancillary_functions import check_make_dir
 
 
-# TODO: edit docstrings
-class ECAP(_EpochData):
+ECAP_VERSION = "2026-08-06-compute-mean-traces-v5-channel-types"
+
+
+def _normalize_channel_type(value: object) -> str:
+    """Return a normalized recording-channel type label."""
+    if isinstance(value, bytes):
+        value = value.decode(errors="replace")
+    return str(value).strip().upper()
+
+
+def _resolve_recording_channel_types(
+    ephys_data: _TsData,
+    n_recording_channels: int,
+) -> list[str]:
+    """Resolve exactly one channel-type label per recording channel.
+
+    The legacy ``_TsData.types`` property contains only unique type names and
+    therefore cannot be used to map types back to channel indices. Prefer the
+    established ``_ch_num_mask_by_type`` mapping, then fall back to the
+    per-channel ``ch_types`` property and finally the underlying metadata.
     """
-    This class represents ECAP data
-    """
+    diagnostics: list[str] = []
 
-    def __init__(self, ephys_data, stim_data, distance_log=None, preload=False):
-        """
-        Constructor for the ECAP class.
+    # This is the same channel mapping used by the original ECAP constructor.
+    try:
+        masks_by_type = ephys_data._ch_num_mask_by_type
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        diagnostics.append(f"_ch_num_mask_by_type failed: {exc}")
+    else:
+        if isinstance(masks_by_type, Mapping):
+            resolved = np.full(n_recording_channels, "", dtype=object)
+            masks_valid = True
 
-        Parameters
-        ----------
-        ephys_data : _TsData or subclass instance
-            Ephys data object.
-        stim_data : Stim class instance
-            Stimulation data object.
-        distance_log : array of distances from recording electrode(s) to stimulating electrode [=] cm
-        """
-        # todo: differentiate recording channels
-        # todo: improve unit checking i.e. [2 cm, 1 mm]
-        # TODO: check len(distances) == len(rec_electrodes)
+            for channel_type, mask in masks_by_type.items():
+                mask_array = np.asarray(mask, dtype=bool).reshape(-1)
+                if mask_array.size != n_recording_channels:
+                    diagnostics.append(
+                        f"mask for {channel_type!r} contained "
+                        f"{mask_array.size} entries"
+                    )
+                    masks_valid = False
+                    break
+                resolved[mask_array] = _normalize_channel_type(channel_type)
 
-        super().__init__(ephys_data, stim_data, stim_data)
+            if masks_valid and np.all(resolved != ""):
+                return resolved.tolist()
 
-        if distance_log is not None:
-            self.distance_log = _to_numeric_array(distance_log)
+            if masks_valid:
+                missing = np.flatnonzero(resolved == "").tolist()
+                diagnostics.append(
+                    f"channel masks did not classify channel indices {missing}"
+                )
         else:
-            self.distance_log = [0]
+            diagnostics.append("_ch_num_mask_by_type was not a mapping")
 
-        # Lists to look through for ranges
-        self.neural_fiber_names = ['A-alpha', 'A-beta', 'A-gamma', 'A-delta', 'B']
-        self.emg_window = ["Total EMG"]
+    # Normal modern path: one label for every recording channel.
+    for source_name, source in (
+        ("ephys_data", ephys_data),
+        ("ephys_data.ts_data", getattr(ephys_data, "ts_data", None)),
+    ):
+        if source is None:
+            continue
+        try:
+            values = list(source.ch_types)
+        except (AttributeError, TypeError, ValueError) as exc:
+            diagnostics.append(f"{source_name}.ch_types failed: {exc}")
+            continue
+
+        if len(values) == n_recording_channels:
+            return [_normalize_channel_type(value) for value in values]
+
+        diagnostics.append(
+            f"{source_name}.ch_types contained {len(values)} entries"
+        )
+
+    # Last-resort metadata path for compatible _TsData objects.
+    metadata = getattr(ephys_data, "metadata", None)
+    if isinstance(metadata, Mapping):
+        metadata_items = [metadata]
+    elif isinstance(metadata, (list, tuple)):
+        metadata_items = list(metadata)
+    else:
+        metadata_items = []
+
+    for index, item in enumerate(metadata_items):
+        if not isinstance(item, Mapping):
+            continue
+        for key in ("types", "ch_types"):
+            if key not in item:
+                continue
+            values = list(item[key])
+            if len(values) == n_recording_channels:
+                return [_normalize_channel_type(value) for value in values]
+            diagnostics.append(
+                f"metadata[{index}][{key!r}] contained {len(values)} entries"
+            )
+
+    details = "; ".join(diagnostics) if diagnostics else "no type metadata found"
+    raise ValueError(
+        "Could not determine one recording-channel type per channel. "
+        f"Expected {n_recording_channels} labels. {details}. "
+        "Confirm that ephys_data.ch_types returns one value per channel."
+    )
+
+
+class ECAP(_EpochData):
+    """ECAP-specific analysis built on the generic :class:`_EpochData` API.
+
+    Generic epoch selection and pulse reductions are inherited from
+    ``_EpochData``. In particular:
+
+    - ``epoch(parameter, ...)`` returns ``(pulses, channels, samples)``.
+    - ``compute_mean_traces(parameter)`` returns a computed NumPy array
+      shaped ``(channels, samples)``.
+    - ``compute_mean_traces()`` computes all parameter means, stores them in
+      ``mean_traces``, and returns ``(parameters, channels, samples)``.
+    """
+
+    def __init__(
+        self,
+        ephys_data: _TsData,
+        stim_data,
+        distance_log=None,
+        preload: bool = False,
+        *,
+        epoch_window: tuple[float, float] | str | None = "auto",
+        epoch_cluster_gap: int = 500_000,
+    ) -> None:
+        super().__init__(
+            ephys_data,
+            stim_data,
+            stim_data,
+            epoch_window=epoch_window,
+            epoch_cluster_gap=epoch_cluster_gap,
+        )
 
         self.ephys = ephys_data
         self.stim = stim_data
-        self.fs = ephys_data.sample_rate
-        self.fiber_windows = None
-
-
-
-
-        if 'EMG' in self.ephys.types:
-            self.emg_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['EMG']]
-        if 'ENG' in self.ephys.types:
-            self.neural_channels = np.arange(0, self.ephys.shape[0])[self.ephys._ch_num_mask_by_type['ENG']]
-        else:
-            warnings.warn("Neural channels not implicitly stated. Assuming all channels are neural recordings")
-            self.ephys = self.ephys.set_ch_types(["ENG"]*self.ephys.shape[0])
-            self.neural_channels = np.arange(0, self.ephys.shape[0])
-
-        self.neural_window_indices = self.calculate_neural_window_lengths()
-        if 'EMG' in self.ephys.types:
-            self.EMG_window_indicies = self.calculate_emg_window_lengths()
-
-        if type(self.distance_log) == list and self.distance_log != [0]:
-            if type(self.neural_window_indices) == np.ndarray and len(self.neural_window_indices.shape) > 1:
-                if self.neural_window_indices.shape[0] != len(self.distance_log) and self.distance_log != [0]:
-                    raise ValueError("Recording lengths don't match recording channel lengths")
-
-            elif len(self.neural_window_indices) != len(self.distance_log):
-                raise ValueError("Recording lengths don't match recording channel lengths")
-
-        self.master_df = pd.DataFrame()
-
-
+        self.fs = float(ephys_data.sample_rate)
         self.log_path = distance_log
 
+        self.neural_fiber_names = [
+            "A-alpha",
+            "A-beta",
+            "A-gamma",
+            "A-delta",
+            "B",
+        ]
+        self.emg_window = ["Total EMG"]
+        self.fiber_windows = None
+        self.master_df = pd.DataFrame()
+
+        n_recording_channels = int(ephys_data.shape[0])
+        channel_types = _resolve_recording_channel_types(
+            ephys_data,
+            n_recording_channels,
+        )
+        self.recording_channel_types = tuple(channel_types)
+
+        normalized_types = np.asarray(channel_types, dtype=str)
+        self.neural_channels = np.flatnonzero(normalized_types == "ENG")
+        self.emg_channels = np.flatnonzero(normalized_types == "EMG")
+
+        if self.neural_channels.size == 0:
+            raise ValueError(
+                "No ENG recording channels were identified. "
+                f"Resolved channel types were {channel_types!r}. "
+                "Assign per-channel types with ephys_data.set_ch_types(...) "
+                "before constructing ECAP."
+            )
+
+        distances = (
+            np.asarray([0.0], dtype=float)
+            if distance_log is None
+            else np.asarray(_to_numeric_array(distance_log), dtype=float).reshape(-1)
+        )
+        if distances.size == 1 and self.neural_channels.size > 1:
+            distances = np.repeat(distances, self.neural_channels.size)
+        if distances.size != self.neural_channels.size:
+            raise ValueError(
+                "distance_log must contain one distance or one distance per "
+                f"neural recording channel ({self.neural_channels.size})."
+            )
+        self.distance_log = distances
+
+        self.neural_window_indices = self.calculate_neural_window_lengths()
+        if self.emg_channels.size:
+            self.emg_window_indices = np.asarray(
+                self.calculate_emg_window_lengths(),
+                dtype=int,
+            )
+            # Temporary spelling compatibility for existing plotting code.
+            self.EMG_window_indicies = self.emg_window_indices
+
         if preload:
-            self.preload()
-            # self._window_dict_for_all_neural_channels()
+            self.compute_mean_traces()
 
+    def preload_epoch_graphs(self, parameters=None) -> ECAP:
+        """Construct and cache each selected parameter's lazy epoch graph.
 
-
-
-    def _default_windows_for_channel(self, ch, parameter):
+        This does not compute the numerical arrays or create a second
+        pulse-mean cache. ``dask_array()`` remains the graph cache.
         """
-        Return the appropriate default neural window dictionary for one channel
-        and one stimulation parameter.
-
-        Neural channels get neural fiber windows.
-        EMG channels get the EMG window calculated for the current parameter.
-        """
-
-        fs = self.ts_data.sample_rate
-
-        def _to_seconds(wins):
-            wins = np.asarray(wins)
-
-            if np.issubdtype(wins.dtype, np.integer):
-                return wins.astype(float) / fs
-
-            return wins.astype(float)
-
-        neural_channels = np.asarray(getattr(self, "neural_channels", []), dtype=int)
-        emg_channels = np.asarray(getattr(self, "emg_channels", []), dtype=int)
-
-        ch = int(ch)
-
-        if ch in neural_channels:
-            neural_idx = np.where(neural_channels == ch)[0][0]
-
-            wins = _to_seconds(self.neural_window_indices[neural_idx])
-            names = list(self.neural_fiber_names)
-
-            return {
-                names[i]: tuple(wins[i])
-                for i in range(len(names))
-            }
-
-        elif ch in emg_channels:
-            emg_idx = np.where(emg_channels == ch)[0][0]
-
-            # Important: calculate EMG window for THIS parameter
-            emg_windows = self.calculate_emg_window_lengths(parameter=parameter)
-
-            wins = _to_seconds(emg_windows[emg_idx])
-            names = list(getattr(self, "emg_window", ["Total EMG"]))
-
-            return {
-                names[i]: tuple(wins[i])
-                for i in range(len(names))
-            }
-
-        else:
-            raise ValueError(
-                f"No default window is defined for channel {ch} "
-                f"({self.ephys.ch_names[ch]})."
-            )
-
-
-
-    def _time_window_to_indices(self, parameter, window_s):
-        """
-        Convert an epoch-relative time window to sample indices.
-
-        Parameters
-        ----------
-        parameter
-            Parameter key whose epoch dimensions should be used.
-        window_s
-            Two-element window in seconds relative to stimulation time.
-
-            For example, (0.001, 0.008) selects 1-8 ms after the
-            stimulation event.
-
-        Returns
-        -------
-        tuple[int, int]
-            Start and stop indices clipped to the epoch bounds.
-        """
-        if len(window_s) != 2:
-            raise ValueError(
-                "window_s must contain exactly two values: "
-                "(start_seconds, stop_seconds)."
-            )
-
-        window_start_s = float(window_s[0])
-        window_stop_s = float(window_s[1])
-
-        if window_stop_s <= window_start_s:
-            raise ValueError(
-                "window_s must satisfy stop > start. "
-                f"Received {window_s!r}."
-            )
-
-        sample_rate = float(self.ts_data.sample_rate)
-        n_samples = self.epoch_sample_length(parameter)
-
-        # Time represented by epoch index zero.
-        if self.epoch_window is None or self.epoch_window == "auto":
-            epoch_start_s = 0.0
-        else:
-            epoch_start_s = float(self.epoch_window[0])
-
-        i0 = int(
-            np.floor(
-                (window_start_s - epoch_start_s) * sample_rate
-            )
-        )
-        i1 = int(
-            np.ceil(
-                (window_stop_s - epoch_start_s) * sample_rate
-            )
-        )
-
-        i0 = max(0, min(n_samples, i0))
-        i1 = max(0, min(n_samples, i1))
-
-        return i0, i1
-
-    def _windows_dict_for_channel(self, neural_windows, ch_idx=None):
-        """
-        neural_windows: ndarray
-            Shape: (n_channels, n_fibers, 2)  # start/stop per fiber
-
-        ch_idx : int
-
-        Returns dict: {'Aalpha': (t0, t1), ...} in SECONDS for a single channel.
-
-        To have dict of all fibers for ALL channels, use:
-            _window_dict_for_all_neural_channels
-        """
-        fs = self.ts_data.sample_rate
-        fiber_names = list(self.neural_fiber_names)  # axis-1 order must match this
-        wins = neural_windows[ch_idx]  # (n_fibers, 2)
-
-        # If the array is in samples (ints), convert to seconds; if already float seconds, leave as-is.
-        if np.issubdtype(wins.dtype, np.integer):
-            wins_sec = wins.astype(float) / fs
-        else:
-            wins_sec = wins
-
-        return {fiber_names[i]: (float(wins_sec[i, 0]), float(wins_sec[i, 1]))
-                for i in range(wins_sec.shape[0])}
-
-    # def _window_dict_for_all_neural_channels(self, return_seconds=True):
-    #     """
-    #     return_seconds: bool
-    #         -True: return dictionary of start and stop TIMES
-    #         -False: return dictionary of start and stop INDICIES
-    #     Returns
-    #     -------
-    #     Returns dictionary of fibers of start and stop times or indicies
-    #     """
-    #     fws = {
-    #         fiber_name: self.neural_window_indices[:, i, :]
-    #         for i, fiber_name in enumerate(self.neural_fiber_names)
-    #     }
-    #
-    #     if(return_seconds is True):
-    #         fws = {
-    #             fiber_name: windows / self.fs
-    #             for fiber_name, windows in fws.items()
-    #         }
-    #
-    #     self.fiber_windows = fws
-    #
-    #
-    #     return fws
-
-    # def _subtract_artifact(self, signal, window_jitter=0.01, ):
-
-    def _calculate_AUC_single_param(self, parameter, windows, channels=None, method="RMS", baseline=None, absolute=False, artifact_subtraction=False):
-        out = {}
-        for name, w in windows.items():
-            if method.upper() == "RMS":
-                out[name] = self.rms_in_window(parameter, channels=channels, window_s=w, baseline_s=baseline)
-            elif method.upper() == "AUC":
-                out[name] = self.auc_in_window(parameter, channels=channels, window_s=w, baseline_s=baseline,
-                                               absolute=absolute, artifact_subtraction=artifact_subtraction)
-            else:
-                raise ValueError("method must be 'RMS', 'AUC', or 'Peaks'")
-        return out
-
-
-
-
-    def preload(
-            self,
-            parameters=None,
-            pulses=None,
-            channels=None,
-            samples=None,
-    ):
-        """
-        Preconstruct lazy epoch and mean-waveform graphs.
-
-        By default, this processes all parameters, all pulses, all
-        channels, and all samples.
-
-        Notes
-        -----
-        This builds lazy Dask graphs. It does not load all numerical data
-        into RAM or call compute().
-        """
-        parameter_keys = self._normalize_parameter_keys(parameters)
-
-        # Build raw epochs first. This populates the dask_array lru_cache.
-        self.build_epoch_array(
-            parameters=parameter_keys,
-            pulses=pulses,
-            channels=channels,
-            samples=samples,
-        )
-
-        # This can reuse the cached dask_array graphs.
-        self.build_mean_over_pulses(
-            parameters=parameter_keys,
-            channels=channels,
-            samples=samples,
-        )
-
+        for parameter_key in self._normalize_parameter_keys(parameters):
+            self.dask_array(parameter_key)
         return self
 
+    def _default_windows_for_channel(
+        self,
+        channel: int,
+        parameter: object,
+    ) -> dict[str, tuple[float, float]]:
+        """Return ECAP or EMG measurement windows for one recording channel."""
+        channel = int(channel)
+        sample_rate = float(self.ts_data.sample_rate)
+
+        if channel in self.neural_channels:
+            local_index = int(np.flatnonzero(self.neural_channels == channel)[0])
+            windows = np.asarray(self.neural_window_indices[local_index])
+            return {
+                name: tuple(np.asarray(window, dtype=float) / sample_rate)
+                for name, window in zip(self.neural_fiber_names, windows)
+            }
+
+        if channel in self.emg_channels:
+            local_index = int(np.flatnonzero(self.emg_channels == channel)[0])
+            windows = np.asarray(
+                self.calculate_emg_window_lengths(parameter=parameter)[local_index]
+            )
+            return {
+                name: tuple(np.asarray(window, dtype=float) / sample_rate)
+                for name, window in zip(self.emg_window, windows)
+            }
+
+        raise ValueError(
+            f"No default ECAP/EMG window is defined for channel {channel} "
+            f"({self.ephys.ch_names[channel]})."
+        )
+
+    def _windows_dict_for_channel(
+        self,
+        neural_windows: np.ndarray,
+        channel_index: int,
+    ) -> dict[str, tuple[float, float]]:
+        """Convert one neural channel's window array to seconds."""
+        windows = np.asarray(neural_windows)[int(channel_index)]
+        if windows.ndim != 2 or windows.shape[1] != 2:
+            raise ValueError(
+                "neural_windows must have shape (channels, windows, 2)."
+            )
+        if len(self.neural_fiber_names) != windows.shape[0]:
+            raise ValueError(
+                "The number of neural windows does not match "
+                "neural_fiber_names."
+            )
+
+        if np.issubdtype(windows.dtype, np.integer):
+            windows = windows.astype(float) / float(self.ts_data.sample_rate)
+        else:
+            windows = windows.astype(float)
+
+        return {
+            name: (float(window[0]), float(window[1]))
+            for name, window in zip(self.neural_fiber_names, windows)
+        }
+
+    def _calculate_AUC_single_param(
+        self,
+        parameter,
+        windows,
+        channels=None,
+        method="RMS",
+        baseline=None,
+        absolute=False,
+        artifact_subtraction=False,
+    ):
+        """Calculate one windowed measurement for one stimulation parameter."""
+        if artifact_subtraction:
+            raise NotImplementedError(
+                "artifact_subtraction is not yet implemented for windowed AUC."
+            )
+
+        output = {}
+        method = str(method).upper()
+        for name, window in windows.items():
+            if method == "RMS":
+                output[name] = self.rms_in_window(
+                    parameter,
+                    channels=channels,
+                    window_s=window,
+                    baseline_s=baseline,
+                )
+            elif method == "AUC":
+                output[name] = self.auc_in_window(
+                    parameter,
+                    channels=channels,
+                    window_s=window,
+                    baseline_s=baseline,
+                    absolute=absolute,
+                )
+            else:
+                raise ValueError("method must be 'RMS' or 'AUC'.")
+        return output
+
+    def gather_num_conditions(self):
+        all_indices = self.stim.parameters.index
+        if len(all_indices[0]) == 1:
+            return 1
+        elif len(all_indices[0]) == 2:
+            count = 1
+            previous_index = all_indices[0]
+            for i in all_indices[1:]:
+                if i[0] != previous_index[0]:
+                    count += 1
+                previous_index = i
+            return count
+        else:
+            sys.exit("Improper dimensions.")
+
+    def gather_num_amplitudes(self):
+        max_num_amps = 0
+        all_indices = self.stim.parameters.index
+        if len(all_indices[0]) == 1:
+            return len(all_indices)
+        elif len(all_indices[0]) == 2:
+            for i in all_indices:
+                if i[1] + 1 > max_num_amps:
+                    max_num_amps = i[1] + 1
+            return max_num_amps
+        else:
+            sys.exit("Improper Dimensions.")
 
     def calculate_neural_window_lengths(self):
         """
@@ -362,49 +404,45 @@ class ECAP(_EpochData):
         return time_windows
 
     def calculate_emg_window_lengths(self, parameter=None):
+        """Return parameter-aware EMG window indices.
+
+        The window begins six pulse widths after time zero and ends at the
+        shorter of one stimulation period, the next pulse, or the epoch end.
         """
-        Calculate EMG window indices.
-
-        Window starts after stimulation artifact/capacitive discharge:
-            onset = 6 * pulse_width
-
-        Window ends at the shorter of:
-            - one stimulation period
-            - available epoch length
-
-        Returns
-        -------
-        list
-            Shape: n_emg_channels x n_emg_windows x 2
-            Example: [[[onset, offset]], [[onset, offset]], ...]
-        """
-
         if parameter is None:
-            parameter = self.stim.parameters.index[0]
+            parameter = self._normalize_parameter_keys(None)[0]
+        parameter = self._normalize_parameter_key(parameter)
 
-        fs = self.ts_data.sample_rate
-        params = self.stim.parameters.loc[parameter]
+        parameter_row = self.parameters.parameters.loc[parameter]
+        pulse_width_s = float(parameter_row["pulse duration (ms)"]) / 1_000.0
+        frequency_hz = float(parameter_row["frequency (Hz)"])
+        if frequency_hz <= 0:
+            raise ValueError("frequency (Hz) must be positive.")
 
-        pw = params["pulse duration (ms)"] / 1000
-        freq = params["frequency (Hz)"]
+        time = self.time_axis(parameter)
+        if time.size == 0:
+            raise ValueError(f"Parameter {parameter!r} has an empty epoch.")
 
-        onset = int(np.ceil(pw * 6 * fs))
+        start_s = 6.0 * pulse_width_s
+        stop_s = 1.0 / frequency_hz
 
-        offset1 = int(np.floor(fs / freq)) - 1
+        event_times = self._event_times(parameter)
+        if event_times.size > 1:
+            positive_intervals = np.diff(event_times)
+            positive_intervals = positive_intervals[positive_intervals > 0]
+            if positive_intervals.size:
+                stop_s = min(stop_s, float(positive_intervals.min()))
 
-        event_times = self.parameter_event_times.get(tuple(parameter), None)
-        diffs = np.diff(event_times)
-        offset2 = int(diffs.min() * self.ts_data.sample_rate)
+        onset = int(np.searchsorted(time, start_s, side="left"))
+        offset = int(np.searchsorted(time, stop_s, side="left"))
+        onset = min(max(onset, 0), max(time.size - 1, 0))
+        offset = min(max(offset, onset + 1), time.size)
 
-        offset = min(offset1, offset2)
-
-        if offset <= onset:
-            offset = min(onset + 1, offset2)
-
-        return [
-            [[onset, offset]]
-            for _ in self.emg_channels
-        ]
+        return np.repeat(
+            np.asarray([[[onset, offset]]], dtype=int),
+            self.emg_channels.size,
+            axis=0,
+        )
 
     def calc_AUC_method(self, signal, recording_idx, window_type, calculation_type, metadata, plot_AUCs=False,
                         save_path=None):
@@ -926,363 +964,311 @@ class ECAP(_EpochData):
 
         return df
 
-    def filter_averages(self, filter_channels=None, filter_median_highpass=False, filter_median_lowpass=False,
-                        filter_gaussian_highpass=False, filter_powerline=False):
+    def filter_mean_waveforms(
+        self,
+        parameters=None,
+        *,
+        filter_channels=None,
+        filter_median_highpass=False,
+        filter_median_lowpass=False,
+        filter_gaussian_highpass=False,
+        filter_powerline=False,
+    ) -> np.ndarray:
+        """Compute and filter pulse-mean waveforms without mutating ECAP state.
 
-        # First step: get an separate channels to be filtered.
-        if ((filter_median_highpass is True) or
-                (filter_median_lowpass is True) or
-                (filter_gaussian_highpass is True) or
-                (filter_powerline is True)):
-            print("Begin filtering averages")
-        if type(filter_channels) == int:
-            filter_channels = [filter_channels]
+        Returns
+        -------
+        np.ndarray
+            Array shaped ``(parameters, channels, samples)``.
+        """
+        parameter_keys = self._normalize_parameter_keys(parameters)
+        if parameters is None:
+            waveforms = self.compute_mean_traces().copy()
+        elif parameter_keys:
+            waveforms = np.stack(
+                [
+                    self.compute_mean_traces(parameter_key)
+                    for parameter_key in parameter_keys
+                ],
+                axis=0,
+            ).copy()
+        else:
+            waveforms = np.empty(
+                (0, int(self.ts_data.shape[0]), 0),
+                dtype=self.ts_data.dtype,
+            )
+        n_channels = waveforms.shape[1]
 
         if filter_channels is None:
-            filter_channels = slice(None, None, None)
-            target_list = np.copy(self.mean_traces)
-            exclusion_list = None
-
+            channel_indices = np.arange(n_channels, dtype=int)
         else:
-            target_list = np.copy(self.mean_traces[:, filter_channels])
-            length_list = np.arange(0, len(self.mean_traces[0]))
-            exclusion_list = [value for value in length_list if value not in filter_channels]
+            selected = self._channel_index(filter_channels)
+            channel_indices = np.arange(n_channels, dtype=int)[selected]
+            channel_indices = np.asarray(channel_indices, dtype=int).reshape(-1)
 
-        # Second step: filter channels
-        if filter_median_highpass is True:
-            filtered_median_traces = np.apply_along_axis(lambda x: x - medfilt(x, 201), 2, target_list)
-            target_list = filtered_median_traces
+        target = waveforms[:, channel_indices, :]
 
-        if filter_median_lowpass is True:
-            filtered_median_traces = np.apply_along_axis(lambda x: medfilt(x, 11), 2, target_list)
-            target_list = filtered_median_traces
+        if filter_median_highpass:
+            target = np.apply_along_axis(
+                lambda trace: trace - medfilt(trace, 201),
+                2,
+                target,
+            )
+        if filter_median_lowpass:
+            target = np.apply_along_axis(
+                lambda trace: medfilt(trace, 11),
+                2,
+                target,
+            )
+        if filter_gaussian_highpass:
+            cutoff_hz = 4_000.0
+            sigma = (2 * np.pi * (cutoff_hz / self.fs)) / np.sqrt(2 * np.log(2))
+            target = np.apply_along_axis(
+                lambda trace: trace - ndimage.gaussian_filter1d(trace, sigma),
+                2,
+                target,
+            )
+        if filter_powerline:
+            warnings.warn(
+                "filter_powerline is not implemented for mean waveforms.",
+                stacklevel=2,
+            )
 
-        if filter_gaussian_highpass is True:
-            Wn = 4000
-            s_c = Wn / self.fs
-            sigma = (2 * np.pi * s_c) / np.sqrt(2 * np.log(2))
-            filtered_gauss_traces = np.apply_along_axis(lambda x: ndimage.filters.gaussian_filter1d(x, sigma), 2,
-                                                        target_list)
-            target_list = filtered_gauss_traces
+        waveforms[:, channel_indices, :] = target
+        return waveforms
 
-        # Second step: merge separated channels back into original list.
-        # only applicable if filter_channels were selected
-        if filter_channels != slice(None, None, None):
-            new_list = []
+    def plot_average_emg(
+        self,
+        condition,
+        amplitude,
+        recording_channels=None,
+        *,
+        display=True,
+    ):
+        """Plot pulse-mean EMG waveforms matching condition and amplitude."""
+        table = self.parameters.parameters
+        mask = (
+            (table["condition"] == condition)
+            & (table["pulse amplitude (μA)"] == amplitude)
+        )
+        parameter_keys = list(table.index[mask])
+        if not parameter_keys:
+            raise ValueError("No matching stimulation parameters were found.")
 
-            for first_idx in range(len(self.mean_traces)):
-                new_sublist = []
-                target_idx = 0
-                for i in length_list:
-                    if i in filter_channels:
-                        new_sublist.append(target_list[first_idx, target_idx])
-                        target_idx += 1
-                    elif i in exclusion_list:
-                        new_sublist.append(self.mean_traces[first_idx, i])
-                new_list.append(new_sublist)
+        channels = self.emg_channels if recording_channels is None else recording_channels
+        figure, axis = plt.subplots()
+        for parameter_key in parameter_keys:
+            waveform = self.compute_mean_traces(parameter_key)
+            selected = self._channel_index(channels)
+            channel_indices = np.arange(
+                int(self.ts_data.shape[0]),
+                dtype=int,
+            )[selected]
+            channel_indices = np.asarray(channel_indices, dtype=int).reshape(-1)
+            waveform = waveform[channel_indices]
+            time = self.time_axis(parameter_key)
+            for trace in np.asarray(waveform):
+                axis.plot(time, trace)
 
-            self.mean_traces = np.array(new_list)
+        axis.set_title(f"Condition: {condition}; amplitude: {amplitude}")
+        axis.set_xlabel("Time (s)")
+        axis.set_ylabel("Amplitude")
+        if display:
+            plt.show()
+        return figure, axis
 
-        else:
-            self.mean_traces = np.array(target_list)
-        if ((filter_median_highpass is True) or
-                (filter_median_lowpass is True) or
-                (filter_gaussian_highpass is True) or
-                (filter_powerline is True)):
-            print("Finished Filtering Averages")
+    def plot_recording_channels(
+        self,
+        parameter,
+        *,
+        relative_time_frame=None,
+        display=True,
+    ):
+        """Plot neural and EMG pulse-mean traces for one parameter."""
+        waveform = self.compute_mean_traces(parameter)
+        time = self.time_axis(parameter)
 
+        if relative_time_frame is not None:
+            start, stop = map(float, relative_time_frame)
+            mask = (time >= start) & (time < stop)
+            time = time[mask]
+            waveform = waveform[:, mask]
 
+        n_rows = max(
+            int(self.neural_channels.size),
+            int(self.emg_channels.size),
+            1,
+        )
+        figure, axes = plt.subplots(
+            n_rows,
+            2,
+            squeeze=False,
+            sharex=True,
+            figsize=(10, 3 * n_rows),
+        )
 
-    def plot_average_EMG(self, condition, amplitude, rec_channel):
-        ### under construction
-        df = self.stim.parameters
-        parameter_indicies = df.index[
-            (df['condition'] == condition) &
-            (df['pulse amplitude (μA)'] == amplitude)][rec_channel]
+        for row, channel in enumerate(self.neural_channels):
+            axes[row, 0].plot(time, waveform[int(channel)])
+            axes[row, 0].set_title(self.ephys.ch_names[int(channel)])
+            local_channel = int(np.flatnonzero(self.neural_channels == channel)[0])
+            for start, _ in self.neural_window_indices[local_channel]:
+                axes[row, 0].axvline(float(start) / self.fs)
 
-        if len(parameter_indicies) == 0:
-            raise ValueError("No such values specified found.")
+        for row, channel in enumerate(self.emg_channels):
+            axes[row, 1].plot(time, waveform[int(channel)])
+            axes[row, 1].set_title(self.ephys.ch_names[int(channel)])
+            local_channel = int(np.flatnonzero(self.emg_channels == channel)[0])
+            for start, stop in self.calculate_emg_window_lengths(parameter)[local_channel]:
+                axes[row, 1].axvline(float(start) / self.fs)
+                axes[row, 1].axvline(float(stop) / self.fs)
 
-        for p in parameter_indicies:
-            idx = self.parameters_dictionary[p]
-            fig, ax = plt.subplots()
-            fig_title = "Condition: " + condition + " Amplitude: " + str(amplitude)
-            fig.suptitle(fig_title)
-            fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-            ax.plot(self.mean_traces[idx])
+        for axis in axes[-1]:
+            axis.set_xlabel("Time (s)")
+        figure.tight_layout()
+        if display:
+            plt.show()
+        return figure, axes
 
+    def features_per_fiber(
+        self,
+        parameters=None,
+        *,
+        baseline_s=None,
+        methods=("RMS", "PEAKS"),
+    ) -> pd.DataFrame:
+        """Compute pulse-mean ECAP features for each neural fiber window."""
+        parameter_keys = self._normalize_parameter_keys(parameters)
+        methods = tuple(str(method).upper() for method in methods)
+        unknown = set(methods) - {"RMS", "PEAKS"}
+        if unknown:
+            raise ValueError(f"Unknown feature methods: {sorted(unknown)}")
 
-    def plot_recChannel_per_axes(self, condition, amplitude, stim_channel, relative_time_frame=None, display=False,
-                                 save=False):
-        """
-        Plots all recording channels for a given condition, stimulation channel and amplitude.
-        :param condition: Experimental Condition
-        :param amplitude: Stimulation Amplitude
-        :param stim_channel: Stimulation Channel
-        :param relative_time_frame: Time frame in (s) to visualize
-        :param display: Show figure
-        :param save: Save figure
-        """
-        df = self.stim.parameters
-        parameter_indicies = df.index[
-            (df['condition'] == condition) &
-            (df['pulse amplitude (μA)'] == amplitude) &
-            (df['channel'] == stim_channel)]
+        records = []
+        arrays = []
+        for parameter_key in parameter_keys:
+            waveform = da.asarray(
+                self.compute_mean_traces(parameter_key)[self.neural_channels]
+            )
 
-        if len(parameter_indicies) == 0:
-            raise ValueError("No such values specified found.")
+            if baseline_s is not None:
+                start, stop = self._time_window_to_indices(
+                    parameter_key,
+                    baseline_s,
+                )
+                waveform = waveform - waveform[:, start:stop].mean(
+                    axis=1,
+                    keepdims=True,
+                )
 
-        if relative_time_frame is None:
-            relative_time_frame = slice(None, None, None)
-            relative_time_ts = [i / self.fs for i in np.arange(0, self.mean_traces.shape[2])]
+            parameter_features = []
+            columns = []
+            for method in methods:
+                per_fiber = []
+                for fiber_index, fiber_name in enumerate(self.neural_fiber_names):
+                    channel_values = []
+                    for local_channel in range(self.neural_channels.size):
+                        start, stop = self.neural_window_indices[
+                            local_channel,
+                            fiber_index,
+                        ]
+                        segment = waveform[local_channel, int(start):int(stop)]
+                        if method == "RMS":
+                            value = da.sqrt(da.mean(segment**2))
+                        else:
+                            value = segment.max() - segment.min()
+                        channel_values.append(value)
+                    per_fiber.append(da.stack(channel_values))
+                    columns.append(f"{method}_{fiber_name}")
+                parameter_features.extend(per_fiber)
 
-        elif type(relative_time_frame) is list:
-            relative_time_ts = np.arange(relative_time_frame[0], relative_time_frame[1], 1 / self.fs)
-            relative_time_frame = slice(int(round(relative_time_frame[0] * self.ephys.sample_rate)),
-                                        int(round((relative_time_frame[-1] * self.ephys.sample_rate))))
-            if len(relative_time_ts) == (relative_time_frame.stop - relative_time_frame.start) + 1:
-                relative_time_ts = relative_time_ts[0:-1]
+            matrix = da.stack(parameter_features, axis=1)
+            arrays.append(matrix)
+            records.extend(
+                (parameter_key, self.ephys.ch_names[int(channel)])
+                for channel in self.neural_channels
+            )
 
-        for p in parameter_indicies:
-            idx = self.parameters_dictionary[p]
-            if self.stim.parameters.loc[p]['pulse amplitude (μA)'] < 0:
-                amplitude = -1 * self.stim.parameters.loc[p]['pulse amplitude (μA)']
-            else:
-                amplitude = self.stim.parameters.loc[p]['pulse amplitude (μA)']
+        if not arrays:
+            return pd.DataFrame()
 
-            fig, ax = plt.subplots(max(len(self.emg_channels), len(self.neural_channels)), 2, sharex=True, sharey='col',
-                                   figsize=(10, 5 * max(len(self.emg_channels), len(self.neural_channels))))
+        values = da.concatenate(arrays, axis=0).compute()
+        index = pd.MultiIndex.from_tuples(
+            records,
+            names=["parameter", "channel"],
+        )
+        return pd.DataFrame(values, index=index, columns=columns)
 
-            for rec_idx, channel in enumerate(self.neural_channels):
-                min_h = np.amin(self.mean_traces[idx, self.neural_channels, relative_time_frame])
-                max_h = np.amax(self.mean_traces[idx, self.neural_channels, relative_time_frame])
+    def plot_average_recordings(
+        self,
+        amplitude,
+        condition=None,
+        relative_time_frame=None,
+        *,
+        display=False,
+        save=False,
+        save_directory=None,
+    ):
+        """Plot neural and EMG pulse means for parameters at one amplitude."""
+        table = self.parameters.parameters
+        mask = table["pulse amplitude (μA)"] == amplitude
+        if condition is not None:
+            mask &= table["condition"] == condition
+        parameter_keys = list(table.index[mask])
+        if not parameter_keys:
+            raise ValueError("No matching stimulation parameters were found.")
 
-                ax[rec_idx, 0].plot(relative_time_ts, self.mean_traces[idx, channel, relative_time_frame].T)
-                ax[rec_idx, 0].set_title("Channel: " + str(channel))
-                if rec_idx < len(self.neural_channels):
-                    for fiber_onsets in self.neural_window_indices[rec_idx]:
-                        ax[rec_idx, 0].vlines(fiber_onsets[0] / self.fs, min_h, max_h)
+        figures = []
+        for parameter_key in parameter_keys:
+            waveform = self.compute_mean_traces(parameter_key)
+            time = self.time_axis(parameter_key)
+            if relative_time_frame is not None:
+                start, stop = map(float, relative_time_frame)
+                selection = (time >= start) & (time < stop)
+                time = time[selection]
+                waveform = waveform[:, selection]
 
-            for rec_idx, channel in enumerate(self.emg_channels):
-                min_h = np.amin(self.mean_traces[idx, self.emg_channels, relative_time_frame])
-                max_h = np.amax(self.mean_traces[idx, self.emg_channels, relative_time_frame])
-
-                ax[rec_idx, 1].plot(relative_time_ts, self.mean_traces[idx, channel, relative_time_frame].T)
-                ax[rec_idx, 1].set_title("Channel: " + str(channel))
-                if rec_idx < len(self.emg_channels):
-                    for fiber_onsets in self.EMG_window_indicies[rec_idx]:
-                        ax[rec_idx, 1].vlines(fiber_onsets[0] / self.fs, min_h, max_h)
-                        ax[rec_idx, 1].vlines(fiber_onsets[1] / self.fs, min_h, max_h)
-
-            fig_title = "Condition: " + condition + " Stim Channel:" + stim_channel + " Amplitude: " + str(amplitude)
-            fig.suptitle(fig_title)
-            fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-            if save:
-                plt.savefig(condition + " " + stim_channel + " " + str(amplitude) + ".jpg")
-            if display:
-                plt.show()
-
-    # def _ts(self):
-    #     """Return the time-series array, preferring a persisted cache if present."""
-    #     return getattr(self, "_persisted_ts_array", self.ts_data.array)
-    #
-    # def _autotune_time_chunk(self, *, k_window=6, target_block_mb=16, max_span_s=0.5):
-    #     fs = float(self.ts_data.sample_rate)
-    #     if self.epoch_window in (None, "auto"):
-    #         win_s = 0.010
-    #     else:
-    #         win_s = float(self.epoch_window[1] - self.epoch_window[0])
-    #     W = max(1, int(round(win_s * fs)))
-    #     C = len(self.ts_data.ch_names)
-    #     bytes_per_sample_all_ch = C * self.ts_data.array.dtype.itemsize
-    #     min_chunk = max(W * int(k_window), 1)
-    #     budget_samples = max(1, int((target_block_mb * 1024 ** 2) / bytes_per_sample_all_ch))
-    #     cap_samples = max(1, int(max_span_s * fs))
-    #     return int(max(min_chunk, min(budget_samples, cap_samples)))
-
-    # def _replace_array(self, new_array):
-    #     """Internal: replace the backing dask array."""
-    #     self._array = new_array
-    #     return self
-
-    # def persist_ts(self, time_chunk: int | None = None, **tuner):
-    #     """
-    #     Rechunk and persist the continuous time-series array.
-    #
-    #     Warning
-    #     -------
-    #     This computes and retains the complete time-series array in memory.
-    #     """
-    #     arr = self.ts_data.array
-    #
-    #     if time_chunk is None:
-    #         time_chunk = self._autotune_time_chunk(**tuner)
-    #
-    #     arr = arr.rechunk(
-    #         {
-    #             0: int(arr.shape[0]),
-    #             1: int(time_chunk),
-    #         }
-    #     )
-    #
-    #     # This is the attribute dask_array() actually checks.
-    #     self._persisted_array = arr.persist()
-    #
-    #     # Previously constructed epoch graphs point at the old source.
-    #     self.clear_all_epoch_caches()
-    #
-    #     return self
-
-    # def unpersist_ts(self):
-    #     """Remove the persisted source and invalidate dependent caches."""
-    #     if hasattr(self, "_persisted_array"):
-    #         del self._persisted_array
-    #
-    #     self.clear_all_epoch_caches()
-    #
-    #     return self
-
-    def features_per_fiber(self, parameters=None, baseline_s=None, methods=("RMS", "PEAKS"),
-                           batch_params: int | None = None):
-        """
-        Compute ECAP features per fiber window for each parameter & channel.
-        Returns a DataFrame (param, channel) x [RMS_Aα, ..., PEAKS_Aα, ...].
-        """
-        fs = float(self.ts_data.sample_rate)
-        if parameters is None:
-            parameters = list(self.parameters.parameters.index)
-
-        # ensure window indices exist
-        win = getattr(self, "neural_window_indices", None)
-        if not win:
-            raise ValueError("neural_window_indices missing; compute your fiber windows first.")
-        fibers = list(win.keys())
-
-        # optional baseline subtraction (common mean over a pre-stim window)
-        if self.epoch_window in (None, "auto"):
-            x0 = 0.0
-        else:
-            x0, _ = self.epoch_window
-        if baseline_s is not None:
-            b0 = int(np.floor((baseline_s[0] - x0) * fs))
-            b1 = int(np.ceil((baseline_s[1] - x0) * fs))
-
-        def _rms(seg):  # seg: (ch, W)
-            return da.sqrt(da.mean(seg ** 2, axis=-1))
-
-        def _peaks(seg):
-            return da.maximum(da.abs(seg.max(axis=-1) - seg.min(axis=-1)), 0)
-
-        cols = []
-        mats = []
-
-        # Optional batching to cap peak memory on huge param sets
-        if batch_params is None or batch_params <= 0:
-            batches = [parameters]
-        else:
-            batches = [parameters[i:i + batch_params] for i in range(0, len(parameters), batch_params)]
-
-        for batch in batches:
-            # Build per-param mean lazily and reduce immediately fiber-by-fiber
-            per_method = {m: [] for m in methods}
-            for p in batch:
-                wf = self.mean_waveform(p)  # (ch, T) lazy
-                if baseline_s is not None:
-                    T = int(wf.shape[-1])
-                    i0 = max(0, min(T - 2, b0))
-                    i1 = max(i0 + 1, min(T, b1))
-                    base = wf[..., i0:i1].mean(axis=-1, keepdims=True)
-                    wf = wf - base
-
-                # compute features for each fiber window
-                feats = {}
-                for f in fibers:
-                    i0, i1 = win[f]
-                    seg = wf[..., int(i0):int(i1)]
-                    if "RMS" in methods:
-                        feats.setdefault("RMS", []).append(_rms(seg))  # (ch,)
-                    if "PEAKS" in methods:
-                        feats.setdefault("PEAKS", []).append(_peaks(seg))  # (ch,)
-
-                # stack to (ch, n_fibers) per method
-                for m in feats:
-                    per_method[m].append(da.stack(feats[m], axis=-1))  # (ch, F)
-
-            # concat params in this batch → (P_batch, ch, F)
-            for m in per_method:
-                mats.append(da.stack(per_method[m], axis=0))  # (P_batch, ch, F)
-                cols.extend([f"{m}_{f}" for f in fibers])
-
-        # Combine all methods/batches along the last axis, compute once
-        feat = da.concatenate(mats, axis=-1).compute()  # shape: (P_total, ch, n_cols)
-
-        idx = pd.MultiIndex.from_product([parameters, list(self.ts_data.ch_names)],
-                                         names=["parameter", "channel"])
-        df = pd.DataFrame(feat.reshape(len(parameters) * len(self.ts_data.ch_names), -1),
-                          index=idx, columns=cols)
-        return df
-
-    def plot_average_recordings(self, amplitude, condition=None, relative_time_frame=None, display=False,
-                                save=False):
-        df = self.stim.parameters
-
-        if condition is None:
-            parameter_indicies = df.index[df['pulse amplitude (μA)'] == amplitude]
-
-        else:
-            parameter_indicies = df.index[
-                (df['condition'] == condition) &
-                (df['pulse amplitude (μA)'] == amplitude)
-                ]
-
-        if len(parameter_indicies) == 0:
-            raise ValueError("No such values specified found.")
-
-        if relative_time_frame is None:
-            relative_time_frame = slice(None, None, None)
-            relative_time_ts = [i / self.fs for i in np.arange(0, self.mean_traces.shape[2])]
-
-        elif type(relative_time_frame) is list:
-            relative_time_ts = np.arange(relative_time_frame[0], relative_time_frame[1], 1 / self.fs)
-            relative_time_frame = slice(int(round(relative_time_frame[0] * self.ephys.sample_rate)),
-                                        int(round((relative_time_frame[-1] * self.ephys.sample_rate))))
-            if len(relative_time_ts) == (relative_time_frame.stop - relative_time_frame.start) + 1:
-                relative_time_ts = relative_time_ts[0:-1]
-
-        fig, ax = plt.subplots(1, 2)
-        for p in parameter_indicies:
-            idx = self.parameters_dictionary[p]
-            if self.stim.parameters.loc[p]['pulse amplitude (μA)'] < 0:
-                amplitude = -1 * self.stim.parameters.loc[p]['pulse amplitude (μA)']
-            else:
-                amplitude = self.stim.parameters.loc[p]['pulse amplitude (μA)']
-
-            for rec_idx, channel in enumerate(self.neural_channels):
-                ax[0].plot(relative_time_ts, self.mean_traces[idx, channel, relative_time_frame].T)
-                ax[0].set_title("Neural Channels")
-
-            for rec_idx, channel in enumerate(self.emg_channels):
-                ax[1].plot(relative_time_ts, self.mean_traces[idx, channel, relative_time_frame].T)
-                ax[1].set_title("EMG Channels")
+            figure, axes = plt.subplots(1, 2, squeeze=False)
+            neural_axis, emg_axis = axes[0]
+            for channel in self.neural_channels:
+                neural_axis.plot(time, waveform[int(channel)])
+            neural_axis.set_title("Neural channels")
+            for channel in self.emg_channels:
+                emg_axis.plot(time, waveform[int(channel)])
+            emg_axis.set_title("EMG channels")
+            for axis in axes[0]:
+                axis.set_xlabel("Time (s)")
+                axis.set_ylabel("Amplitude")
+            figure.tight_layout()
 
             if save:
-                plt.savefig(condition + " " + self.stim.parameters.loc[p]['channel'] + " " + str(amplitude) + ".jpg")
+                directory = Path(save_directory or ".")
+                directory.mkdir(parents=True, exist_ok=True)
+                figure.savefig(directory / f"{parameter_key}_{amplitude}.png")
             if display:
                 plt.show()
+            figures.append((figure, axes))
 
+        return figures
+
+    @staticmethod
     def _moving_rms(x: np.ndarray, win: int) -> np.ndarray:
-        """x: (..., T) -> RMS-smoothed along last axis"""
+        """Return an RMS-smoothed array along the final axis."""
         if win <= 1:
-            return np.sqrt(x * x)
-        k = np.ones(win, dtype=float) / win
-        # apply along last axis
-        x2 = x * x
-        # pad reflect to avoid edge bias
-        pad = win // 2
-        x2p = np.pad(x2, [(0, 0)] * (x2.ndim - 1) + [(pad, pad)], mode="reflect")
-        # convolution along last axis
-        out = np.apply_along_axis(lambda v: np.convolve(v, k, mode="valid"), -1, x2p)
-        return np.sqrt(out)
+            return np.abs(x)
+        kernel = np.ones(int(win), dtype=float) / int(win)
+        squared = np.asarray(x) ** 2
+        pad = int(win) // 2
+        padded = np.pad(
+            squared,
+            [(0, 0)] * (squared.ndim - 1) + [(pad, pad)],
+            mode="reflect",
+        )
+        smoothed = np.apply_along_axis(
+            lambda values: np.convolve(values, kernel, mode="valid"),
+            -1,
+            padded,
+        )
+        return np.sqrt(smoothed)
 
     def _artifact_end_indices_block(self, block: np.ndarray,
                                     min_end: int,
@@ -1408,3 +1394,4 @@ class ECAP(_EpochData):
         )
 
         return (cleaned, t_end) if return_t_end else cleaned
+

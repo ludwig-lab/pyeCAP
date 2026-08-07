@@ -20,7 +20,7 @@ class TdtExperiment:
             self,
             experiment_name,
             experiment_storage_path,  # Name and path of exp
-            tdt_chunk_size=1_000_000,
+            tdt_chunk_size=2_000_000,
             create_storage_dictionary=True,
             time_difference=0,  # Accommodate for wrong times on recording devices
             num_recording_channels=None,

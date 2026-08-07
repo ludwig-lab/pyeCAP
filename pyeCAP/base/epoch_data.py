@@ -24,7 +24,7 @@ from .utils.visualization import (
 )
 
 
-EPOCH_DATA_VERSION = "2026-08-05-max-filter-v4"
+EPOCH_DATA_VERSION = "2026-08-06-compute-mean-traces-v6"
 
 def _assemble_and_extract_epoch_cluster(
     chunk_grid: list[list[np.ndarray]],
@@ -319,6 +319,13 @@ class _EpochData:
         self._event_index_cache: dict[object, np.ndarray] = {}
         self._persisted_array: da.Array | None = None
 
+        # Pulse-mean cache. ``mean_traces`` is populated only when
+        # compute_mean_traces() is called without a parameter.
+        self.mean_traces: np.ndarray | None = None
+        self.mean_trace_parameters: tuple[object, ...] = ()
+        self._mean_trace_parameter_index: dict[object, int] = {}
+        self._mean_trace_cache: dict[object, np.ndarray] = {}
+
         self._epoch_cluster_gap = self._validate_cluster_gap(epoch_cluster_gap)
         self._epoch_window = self._validate_epoch_window(epoch_window)
 
@@ -387,10 +394,18 @@ class _EpochData:
 
         return start, end
 
+    def _clear_mean_trace_cache(self) -> None:
+        """Clear computed pulse-mean traces."""
+        self.mean_traces = None
+        self.mean_trace_parameters = ()
+        self._mean_trace_parameter_index.clear()
+        self._mean_trace_cache.clear()
+
     def clear_epoch_cache(self) -> None:
-        """Clear cached epoch graphs and cached sample lengths."""
+        """Clear cached epoch graphs, sample lengths, and pulse means."""
         self._epoch_cache.clear()
         self._sample_length_cache.clear()
+        self._clear_mean_trace_cache()
 
     def refresh_event_times(self) -> None:
         """Rebuild event-time mappings after ``event_data`` changes."""
@@ -1340,14 +1355,23 @@ class _EpochData:
         self,
         parameter: object,
         *,
+        pulses: object = None,
         channels: object = None,
+        samples: object = None,
         method: str,
     ) -> da.Array:
-        array = self.epoch(parameter, channels=channels)
+        """Reduce the pulse axis of one selected epoch array."""
+        array = self.epoch(
+            parameter,
+            pulses=pulses,
+            channels=channels,
+            samples=samples,
+        )
 
-        if array.shape[0] == 0:
+        if int(array.shape[0]) == 0:
             raise ValueError(f"Parameter {parameter!r} contains no valid pulses.")
 
+        method = str(method).lower()
         if method == "mean":
             return array.mean(axis=0, split_every=8)
         if method == "median":
@@ -1357,54 +1381,179 @@ class _EpochData:
 
         raise ValueError("method must be 'mean', 'median', or 'std'.")
 
-    def mean_waveform(self, parameter: object, channels: object = None) -> da.Array:
-        """Return the pulse mean with shape ``(channels, samples)``."""
-        return self._reduce_pulses(parameter, channels=channels, method="mean")
-
-    def median_waveform(self, parameter: object, channels: object = None) -> da.Array:
-        """Return the pulse median with shape ``(channels, samples)``."""
-        return self._reduce_pulses(parameter, channels=channels, method="median")
-
-    def std_waveform(self, parameter: object, channels: object = None) -> da.Array:
-        """Return the pulse standard deviation with shape ``(channels, samples)``."""
-        return self._reduce_pulses(parameter, channels=channels, method="std")
-
-    def mean_waveforms(
+    def compute_mean_traces(
         self,
-        parameters: object = None,
+        parameter: object = None,
         *,
+        force: bool = False,
+    ) -> np.ndarray:
+        """Compute pulse-mean traces for one parameter or for all parameters.
+
+        Parameters
+        ----------
+        parameter
+            One parameter key from ``parameters.parameters.index``. When a
+            parameter is supplied, only that parameter is computed and an
+            array shaped ``(channels, samples)`` is returned.
+
+            When omitted, every parameter is computed, stacked in parameter
+            table order as ``(parameters, channels, samples)``, stored in
+            ``self.mean_traces``, and returned.
+        force
+            Recompute the requested mean trace or traces even when a cached
+            result is available.
+
+        Returns
+        -------
+        numpy.ndarray
+            One parameter: ``(channels, samples)``.
+
+            All parameters: ``(parameters, channels, samples)``.
+
+        Notes
+        -----
+        ``self.mean_trace_parameters`` records the parameter order used by
+        ``self.mean_traces``. Individual parameter means are also cached so a
+        later request for one parameter does not need to recompute it.
+        """
+        # --------------------------------------------------------------
+        # One parameter
+        # --------------------------------------------------------------
+        if parameter is not None:
+            parameter_key = self._normalize_parameter_key(parameter)
+
+            if not force:
+                if (
+                    self.mean_traces is not None
+                    and parameter_key in self._mean_trace_parameter_index
+                ):
+                    parameter_index = self._mean_trace_parameter_index[
+                        parameter_key
+                    ]
+                    return self.mean_traces[parameter_index]
+
+                cached = self._mean_trace_cache.get(parameter_key)
+                if cached is not None:
+                    return cached
+
+            mean_trace = np.asarray(
+                self._reduce_pulses(
+                    parameter_key,
+                    method="mean",
+                ).compute()
+            )
+            self._mean_trace_cache[parameter_key] = mean_trace
+
+            # Keep the all-parameter cache internally consistent when one row
+            # is explicitly recomputed.
+            if (
+                self.mean_traces is not None
+                and parameter_key in self._mean_trace_parameter_index
+            ):
+                parameter_index = self._mean_trace_parameter_index[
+                    parameter_key
+                ]
+                if self.mean_traces[parameter_index].shape != mean_trace.shape:
+                    self._clear_mean_trace_cache()
+                    self._mean_trace_cache[parameter_key] = mean_trace
+                else:
+                    self.mean_traces[parameter_index] = mean_trace
+
+            return mean_trace
+
+        # --------------------------------------------------------------
+        # All parameters
+        # --------------------------------------------------------------
+        if not force and self.mean_traces is not None:
+            return self.mean_traces
+
+        parameter_keys = tuple(self._normalize_parameter_keys(None))
+        if not parameter_keys:
+            n_channels = int(self.ts_data.shape[0])
+            self.mean_traces = np.empty(
+                (0, n_channels, 0),
+                dtype=self.ts_data.dtype,
+            )
+            self.mean_trace_parameters = ()
+            self._mean_trace_parameter_index = {}
+            self._mean_trace_cache = {}
+            return self.mean_traces
+
+        lazy_means: list[da.Array] = []
+        for parameter_key in parameter_keys:
+            cached = None if force else self._mean_trace_cache.get(parameter_key)
+            if cached is None:
+                lazy_mean = self._reduce_pulses(
+                    parameter_key,
+                    method="mean",
+                )
+            else:
+                lazy_mean = da.from_array(
+                    cached,
+                    chunks=cached.shape,
+                )
+            lazy_means.append(lazy_mean)
+
+        shapes = Counter(tuple(mean.shape) for mean in lazy_means)
+        if len(shapes) != 1:
+            summary = ", ".join(
+                f"{count} parameter(s) with shape {shape}"
+                for shape, count in sorted(shapes.items())
+            )
+            raise ValueError(
+                "Mean traces cannot be stacked because parameter shapes "
+                f"differ: {summary}. Compute individual parameters by "
+                "passing parameter=<key>."
+            )
+
+        computed = np.asarray(da.stack(lazy_means, axis=0).compute())
+
+        self.mean_traces = computed
+        self.mean_trace_parameters = parameter_keys
+        self._mean_trace_parameter_index = {
+            parameter_key: parameter_index
+            for parameter_index, parameter_key in enumerate(parameter_keys)
+        }
+        self._mean_trace_cache = {
+            parameter_key: self.mean_traces[parameter_index]
+            for parameter_index, parameter_key in enumerate(parameter_keys)
+        }
+
+        return self.mean_traces
+
+    def median_waveform(
+        self,
+        parameter: object,
+        *,
+        pulses: object = None,
         channels: object = None,
         samples: object = None,
     ) -> da.Array:
-        """Stack pulse means as ``(parameters, channels, samples)``."""
-        means: list[da.Array] = []
+        """Return one parameter's pulse-median waveform."""
+        return self._reduce_pulses(
+            parameter,
+            pulses=pulses,
+            channels=channels,
+            samples=samples,
+            method="median",
+        )
 
-        for key in self._normalize_parameter_keys(parameters):
-            mean = self.mean_waveform(key, channels=channels)
-            if samples is not None:
-                mean = mean[
-                    :,
-                    self._preserve_axis(samples, axis_size=int(mean.shape[1])),
-                ]
-            means.append(mean)
-
-        if not means:
-            channel_index = self._channel_index(channels)
-            selected_channels = np.arange(
-                int(self.ts_data.shape[0]),
-                dtype=np.int64,
-            )[channel_index]
-            n_channels = int(np.asarray(selected_channels).size)
-            return da.zeros((0, n_channels, 0), dtype=self.ts_data.dtype)
-
-        shapes = {tuple(mean.shape) for mean in means}
-        if len(shapes) != 1:
-            raise ValueError(
-                "Mean waveform shapes differ across parameters: "
-                f"{sorted(shapes)}"
-            )
-
-        return da.stack(means, axis=0)
+    def std_waveform(
+        self,
+        parameter: object,
+        *,
+        pulses: object = None,
+        channels: object = None,
+        samples: object = None,
+    ) -> da.Array:
+        """Return one parameter's pulse standard-deviation waveform."""
+        return self._reduce_pulses(
+            parameter,
+            pulses=pulses,
+            channels=channels,
+            samples=samples,
+            method="std",
+        )
 
     # ------------------------------------------------------------------
     # Windowed measurements
@@ -1418,7 +1567,11 @@ class _EpochData:
         window_s: tuple[float, float],
         baseline_s: tuple[float, float] | None,
     ) -> da.Array:
-        waveform = self.mean_waveform(parameter, channels=channels)
+        waveform = self._reduce_pulses(
+            parameter,
+            channels=channels,
+            method="mean",
+        )
 
         if baseline_s is not None:
             baseline_start, baseline_stop = self._time_window_to_indices(

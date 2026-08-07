@@ -26,7 +26,7 @@ class Mock(MagicMock):
 MOCK_MODULES = ['numpy', 'dask', 'dask.array', 'dask.bag', 'dask.diagnostics', 'dask.cache', 'dask.multiprocessing',
                 'matplotlib', 'matplotlib.pyplot', 'matplotlib.axes', 'matplotlib.collections', 'matplotlib.gridspec',
                 'matplotlib.transforms', 'matplotlib.ticker', 'matplotlib.artist', 'matplotlib.axis', 'scipy',
-                'scipy.signal', 'scipy.io', 'pandas', 'openxyl', 'seaborn', 'numba', 'mne', 'mpl_toolkits.axes_grid1']
+                'scipy.signal', 'scipy.acquisition_io', 'pandas', 'openxyl', 'seaborn', 'numba', 'mne', 'mpl_toolkits.axes_grid1']
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 # -- Project information -----------------------------------------------------
 
