@@ -54,3 +54,4 @@ class PhysResponse(_DioEpoch):
             search=search,
             **kwargs
         )
+        self.sample_rate = self.ts_data.sample_rate

@@ -242,6 +242,33 @@ class _EpochData:
         # Convert event times to indices.
         event_times = self.ts_data._time_to_index(event_times)
 
+        #Check if length of each sample in event_times is consistent
+        if len(np.unique(np.diff(event_times)) == 2):
+            sample_lengths = np.unique(np.diff(event_times), return_counts=True)
+            #Find length of short pulses
+            s_len = sample_lengths[0][np.argmin(sample_lengths[1])].item()
+            #Find short pulses
+            short_pulses = np.where(np.diff(event_times) == s_len)[0]
+
+            corrected_evt_idx = []
+
+            #Update event_times array to account for short sample length.
+            #Assumes sample lengths are only off by 1 and due to rounding error in ts_data._time_to_index
+            for idx in np.arange(len(short_pulses)):
+                if idx == 0:
+                    event_segment = event_times[0: short_pulses[idx] + 1]  # Before first short sample, no modification
+                else:
+                    event_segment = np.add(event_times[short_pulses[idx - 1] + 1: short_pulses[idx] + 1],  idx)  #Increase indices of each segment by segment #
+                corrected_evt_idx.extend(event_segment)
+
+            end_segment = np.add(event_times[short_pulses[idx] + 1:], len(short_pulses))  # Increase indices of last segment by number of segments
+
+            corrected_evt_idx.extend(end_segment)
+            event_times = np.array(corrected_evt_idx)
+
+        elif len(np.unique(np.diff(event_times)) > 2): #Above code only works if there are only 2 different sample lengths
+            raise Exception('Pulses do not have same number of samples. Pulse sample lengths: ' + str(np.unique(evt_indices_diff)))
+
         # Create a boolean mask to select relevant times from the time series data.
         indices = np.zeros(self.ts_data.shape[1], dtype=bool)
         for ts in event_times:
@@ -447,7 +474,9 @@ class _EpochData:
 
         return sorted_params.tolist()
 
-    def baseline_array(self, parameter, channel, baseline_start=-3, baseline_stop=-1):
+    def baseline_array(
+        self, parameter, channel, baseline_start=-3, baseline_stop=-1, period="pre"
+    ):
         """
         Returns a time series array of data from a channel from a user specified period before stimulation for a specified parameter.
 
@@ -459,10 +488,12 @@ class _EpochData:
             Channel name.
         first_onset : int, float
             Time to start measuring baseline before stimulation onset (Negative numbers reference times before
-            stimulation onset).
+            stimulation onset during 'pre' period or offset during 'post' period).
         second_onset : int, float
             Time to finish measuring baseline before stimulation onset (Negative numbers reference times before
-            stimulation onset).
+            stimulation onset during 'pre' period or offset during 'post' period).
+        period: str
+            Specify whether to take baseline data from before 'pre' or after 'post' stimulation
 
         Returns
         -------
@@ -475,9 +506,22 @@ class _EpochData:
         >>> baseline = ecap.baseline_array((0,0), channel=0, baseline_start=-5, baseline_stop=-1)       # doctest: +SKIP
         """
         # get array of data to compute baseline from, find and return the mean
-        stim_onset = self.parameters.parameters.loc[parameter, "onset time (s)"]
-        start_idx = self.ts_data._time_to_index(stim_onset + baseline_start)
-        stop_idx = self.ts_data._time_to_index(stim_onset + baseline_stop)
+        """Use the first element of the parameter Multi-Index to get the starting index of the specific tank that the"
+         "parameter came from"""
+        tank_start_idx = self.ts_data.start_indices[parameter[0]]
+
+        "Grab the specific parameter stim start time from within its tank"
+        if period == "pre":
+            stim_time = self.parameters.parameters.loc[parameter, "onset time (s)"]
+        elif period == "post":
+            stim_time = self.parameters.parameters.loc[parameter, "offset time (s)"]
+
+        start_idx = tank_start_idx + self.ts_data._time_to_index(
+            stim_time + baseline_start
+        )
+        stop_idx = tank_start_idx + self.ts_data._time_to_index(
+            stim_time + baseline_stop
+        )
 
         chan = self.ts_data._ch_to_index(channel)
 
@@ -530,7 +574,7 @@ class _EpochData:
                 )
 
             if method == "mean":
-                plot_data = self.mean(p, channels=channels)
+                plot_data = np.squeeze(self.mean(p, channels=channels)[p])
             elif method == "median":
                 plot_data = self.median(p, channels=channels)
             else:
@@ -929,6 +973,8 @@ class _EpochData:
         show=True,
         fig_title=None,
         vlines=None,
+        cbar=True,
+        c_label="amplitude (uV)",
         **kwargs,
     ):
         """
@@ -978,7 +1024,7 @@ class _EpochData:
 
         # Creates numpy array of binned traces for plotting
         bin_data = (
-            self.array(parameter, channel)[parameter][bin[0] : bin[1], :, :] * 1e6
+            self.array(parameter, channel)[parameter][bin[0] : (bin[1] + 1), :, :] * 1e6
         )
 
         if y_lim is None or y_lim == "auto":
@@ -992,10 +1038,11 @@ class _EpochData:
         else:
             calc_y_lim = _to_numeric_array(y_lim)
 
+        trace_range = np.arange(bin[0], (bin[1] + 1))
         if format == "trace":
 
-            for data in bin_data:
-                ax.plot(plot_time, data[0, :], alpha=opacity)
+            for idx, data in enumerate(bin_data):
+                ax.plot(plot_time, data[0, :], alpha=opacity, label=trace_range[idx])
 
             if show_mean == True:
                 if method == "median":
@@ -1029,9 +1076,10 @@ class _EpochData:
                     )
         elif format == "heatmap":
 
-            _plt_add_cbar_axis(
-                fig, ax, c_label="amplitude (uV)", c_lim=calc_y_lim, c_map=cmap
-            )
+            if cbar:
+                _plt_add_cbar_axis(
+                    fig, ax, c_label=c_label, c_lim=calc_y_lim, c_map=cmap
+                )
 
             im = ax.imshow(
                 np.squeeze(bin_data),
@@ -1058,6 +1106,7 @@ class _EpochData:
             ax.set_yticklabels(ticks)
             ax.set_xlabel("Time (ms)")
             ax.set_ylabel("Pulse #")
+            ax.grid(False)
         else:
             raise Exception('"format" argument must be either "trace" or "heatmap".')
         return _plt_show_fig(fig, ax, show)
@@ -1444,7 +1493,7 @@ class _EpochData:
     # @lru_cache(
     #     maxsize=None
     # )  # Caching this since results are small but computational cost high
-    def median(self, parameters, channels=None):
+    def median(self, parameters, channels=None, bin=None):
         """
         Computes an array of median values of the data from a parameter  for each pulse across given channels. The
         result is stored in a cache for faster computing.
@@ -1471,9 +1520,16 @@ class _EpochData:
         # if len(parameters) == 1:
         #     return np.median(self.array(parameters, channels=channels), axis=0)
         # else:
-        return {
-            p: np.median(v, axis=0) for p, v in self.array(parameters, channels).items()
-        }
+        if bin is not None:
+            return {
+                p: np.median(v[bin[0] : bin[1], :, :], axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
+        else:
+            return {
+                p: np.median(v, axis=0)
+                for p, v in self.array(parameters, channels).items()
+            }
 
     # @lru_cache(
     #     maxsize=None
@@ -1508,6 +1564,46 @@ class _EpochData:
         return {
             p: np.std(v, axis=0) for p, v in self.array(parameters, channels).items()
         }
+
+    def pulse_RMS(self, parameters, channels=None, window=None, pulses=None):
+        """
+        Computes the root mean square (RMS) of each individual pulse for the given parameter and channels. The
+        result is a dictionary where 'keys' are the parameter multindex and the 'values' is a numpy array with
+        the first dimension equal to the pulse # and second dimension equal to the channel index.
+
+        Parameters
+        ----------
+        parameters : tuple, list
+            Stimulation parameter or list of parameters. Composed of index for the data set and index for the stimulation.
+        channels : None, str, int, tuple, list
+            Channels or channel indices to include in the array.
+        window : None, tuple
+            WIP: Specifies the RMS calculation window
+        pulses: None, tuple
+            WIP: Specifies the pulses to include in the dictionary.
+
+        Returns
+        -------
+        dict
+
+        Examples
+        ________
+        """
+        if pulses is not None:
+            data = self.array(parameters=parameters, channels=channels)[
+                pulses[0] : pulses[1], :, :
+            ]
+        else:
+            data = self.array(parameters=parameters, channels=channels)
+
+        # Code that returns dictionary of pulse RMS values
+        if window is not None:
+            return {
+                p: np.sqrt(np.mean(v[:, :, window[0] : window[1]] ** 2, axis=2))
+                for p, v in data.items()
+            }
+        else:
+            return {p: np.sqrt(np.mean(v**2, axis=2)) for p, v in data.items()}
 
     def _time_to_index(self, time, units="seconds"):
         # TODO: calculate index accounting for

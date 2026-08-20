@@ -118,44 +118,50 @@ class TdtIO:
         metadata = {}
         gizmo_dict = {}
         obj_id = {}
+
         txt_path = os.path.join(self.file_path, "StoresListing.txt")
         try:
             with open(txt_path, "r") as f:
                 txt = f.read()
+            # Parse StoresListing file
+            # This parsing is not ideal and should be improved to better account for all possible variations
+            for n, txtblock in enumerate(txt.split("\n\n")):
+                # Read in experiment metadata text block
+                if (
+                        n == 0 and "Experiment" in txtblock
+                ):  # The first block of text should be the experiment information
+                    metadata.update(
+                        {
+                            line.split(":")[0]: line.split(":")[1].strip()
+                            for line in txtblock.split("\n")
+                        }
+                    )
+                    metadata.pop("Time")
+                # Read in storage data from each tdtgizmo
+                elif txtblock.startswith("Object ID") or txtblock.startswith("ObjectID"):
+                    store_ids = []
+                    for txt_line in txtblock.split("\n"):
+                        if txt_line.startswith("Object ID") or txt_line.startswith(
+                                "ObjectID"
+                        ):
+                            object_id = txt_line.split("-")[0].split(":")[1].strip()
+                            gizmo_name = txt_line.split("-")[1].strip()
+                        elif txt_line.startswith(" Store ID") or txt_line.startswith(
+                                " StoreID"
+                        ):
+                            store_ids.append(txt_line.split(":")[1].strip())
+                    gizmo_dict.update({store_id: gizmo_name for store_id in store_ids})
+                    obj_id.update({store_id: object_id for store_id in store_ids})
+
+            # Pull metadata directly from tank when StoresListing.txt file does not exist
+
+            metadata["Gizmo Name"] = gizmo_dict
+            metadata["Gizmo ID"] = obj_id
+
         except FileNotFoundError:
             warnings.warn(
                 "No StoresListing file found, pyeCAP will assume default store names"
             )
-
-        # Parse StoresListing file
-        # This parsing is not ideal and should be improved to better account for all possible variations
-        for n, txtblock in enumerate(txt.split("\n\n")):
-            # Read in experiment metadata text block
-            if (
-                n == 0 and "Experiment" in txtblock
-            ):  # The first block of text should be the experiment information
-                metadata.update(
-                    {
-                        line.split(":")[0]: line.split(":")[1].strip()
-                        for line in txtblock.split("\n")
-                    }
-                )
-                metadata.pop("Time")
-            # Read in storage data from each tdtgizmo
-            elif txtblock.startswith("Object ID") or txtblock.startswith("ObjectID"):
-                store_ids = []
-                for txt_line in txtblock.split("\n"):
-                    if txt_line.startswith("Object ID") or txt_line.startswith(
-                        "ObjectID"
-                    ):
-                        object_id = txt_line.split("-")[0].split(":")[1].strip()
-                        gizmo_name = txt_line.split("-")[1].strip()
-                    elif txt_line.startswith(" Store ID") or txt_line.startswith(
-                        " StoreID"
-                    ):
-                        store_ids.append(txt_line.split(":")[1].strip())
-                gizmo_dict.update({store_id: gizmo_name for store_id in store_ids})
-                obj_id.update({store_id: object_id for store_id in store_ids})
 
         metadata["Gizmo Name"] = gizmo_dict
         metadata["Gizmo ID"] = obj_id
@@ -196,37 +202,69 @@ class TdtStim:
         self.raw_stores = []
         self.parameter_stores = []
 
-        for key, value in self.tdt_io.metadata["Gizmo Name"].items():
-            if (
-                key in self.tdt_io.stores or "_" + key in self.tdt_io.stores
-            ) and value in (
-                "Electrical Stim Driver",
-                "Electrical Stimulation",
-            ):
-                # TODO: Use the data types instead of assumptions about defualt naming conventions to check if the keys are stim parameter or stream data.
-                # TODO: Fallback to searching based on default names and giving warning.
-                if key in self.tdt_io.stores:
-                    if "p" in key:
-                        self.parameter_stores.append(key)
-                    elif "r" in key:
-                        self.raw_stores.append(key)
-                    else:
-                        warnings.warn(
-                            "Parameter data stored by the electrical stim driver could not be found."
-                        )
-                if "_" + key in self.tdt_io.stores:
-                    if "p" in key:
-                        self.parameter_stores.append("_" + key)
-                    elif "r" in key:
-                        self.raw_stores.append("_" + key)
-                    else:
-                        warnings.warn(
-                            "Parameter data stored by the electrical stim driver could not be found."
-                        )
-            elif (
-                key == "MonA"
-            ):  # TODO: check if any other monitoring channels exist and for new data use the IV10 or other stimulator to check if monitoring data is there
-                self.raw_stores.append(key)
+        # Check if Gizmo Name dict is empty (e.g. StoresListing.txt file does not exist, fallback to search based on default names and give warning)
+        if len(self.tdt_io.metadata["Gizmo Name"]) == 0:
+
+            # Stores have a 4-5 character string identifier. Stimulation data is by default recorded in a pair of
+            # stores with the same starting characters followed by a 'p' or 'r'. Store ending with 'p' is for stimulation
+            # parameters and is 'scalar' data, 'r' is a raw recording of stimulation waveform and is a 'stream'
+
+            # Find paired store names where all but the last character match
+            truncated_stores = [store[:-1] for store in list(stores.keys())]
+            #print(truncated_stores)
+            # Get duplicates from truncated stores list
+            dbl_stores = [store for store in set(truncated_stores) if truncated_stores.count(store) > 1]
+            #print(dbl_stores)
+            # Check doubles against original stores list to find ones ending in 'p' and 'r'
+            for dbl in dbl_stores:
+                store_pair = [store for store in list(stores.keys()) if dbl in store]
+                #print(store_pair)
+                for store in store_pair:
+                    if store[-1] == 'p':
+                        #pass
+                        #print(store)
+                        p_store = store
+                        self.parameter_stores.append(p_store)
+                    elif store[-1] == 'r':
+                        #pass
+                        #print(store)
+                        r_store = store
+                        self.raw_stores.append(r_store)
+            warnings.warn(
+                "StoresListing.txt could not be found. Defaulting Stimulation data to parameter store: " + p_store + ", and raw stimulation store: " + r_store + ".")
+
+        else:
+            for key, value in self.tdt_io.metadata["Gizmo Name"].items():
+                if (
+                    key in self.tdt_io.stores or "_" + key in self.tdt_io.stores
+                ) and value in (
+                    "Electrical Stim Driver",
+                    "Electrical Stimulation",
+                ):
+                    # TODO: Use the data types instead of assumptions about defualt naming conventions to check if the keys are stim parameter or stream data.
+                    # TODO: Fallback to searching based on default names and giving warning.
+                    if key in self.tdt_io.stores:
+                        if "p" in key:
+                            self.parameter_stores.append(key)
+                        elif "r" in key:
+                            self.raw_stores.append(key)
+                        else:
+                            warnings.warn(
+                                "Parameter data stored by the electrical stim driver could not be found."
+                            )
+                    if "_" + key in self.tdt_io.stores:
+                        if "p" in key:
+                            self.parameter_stores.append("_" + key)
+                        elif "r" in key:
+                            self.raw_stores.append("_" + key)
+                        else:
+                            warnings.warn(
+                                "Parameter data stored by the electrical stim driver could not be found."
+                            )
+                elif (
+                    key == "MonA"
+                ):  # TODO: check if any other monitoring channels exist and for new data use the IV10 or other stimulator to check if monitoring data is there
+                    self.raw_stores.append(key)
 
         # raise errors/warnings for certain data
         if not self.parameter_stores and not self.raw_stores:
@@ -461,7 +499,10 @@ class TdtStim:
                         row["onset time (s)"]
                         + np.arange(0, row["pulse count"]) * row["period (ms)"] / 1000
                     )
-                    stim_events += row["delay (ms)"] / 1000
+                    # Added check, "delay (ms)" is not a valid data point for older TDT files
+                    if "delay (ms)" in row.keys():
+                        stim_events += row["delay (ms)"] / 1000
+
                     num_stim_events = len(stim_events)
                     ch_events[event_idx : event_idx + num_stim_events] = stim_events
                     event_idx += num_stim_events
