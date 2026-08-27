@@ -359,7 +359,12 @@ class TdtExperiment:
 
         # 5. Filtering
         if filter_powerline:
-            _apply("filter_powerline")
+            _apply(
+                "filter_powerline_iir",
+                frequencies=(60, 120, 180),
+                Q=35.0,
+                pad_seconds=0.5,
+            )
 
         if filter_median_low:
             _apply(

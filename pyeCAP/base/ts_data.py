@@ -1120,48 +1120,150 @@ class _TsData:
         metadata = self._update_metadata_list(self.metadata, op, len(filtered))
         return self._spawn(data=filtered, metadata=metadata)
 
-    def filter_median(self, kernel_size=201, btype="lowpass", *, boundary="reflect", persist_input=False):
+    def filter_median(
+            self,
+            kernel_size=201,
+            btype="lowpass",
+            *,
+            boundary="reflect",
+            persist_input=False,
+    ):
+        """
+        Apply a median filter along the time axis.
+
+        The median is computed independently for each channel using SciPy's
+        optimized 1-D median-filter path.
+
+        Parameters
+        ----------
+        kernel_size : int
+            Width of the median-filter window in samples. Even values are
+            increased by one so that the window is symmetric.
+        btype : {"lowpass", "low", "highpass", "high"}
+            ``lowpass`` returns the rolling median.
+            ``highpass`` subtracts the rolling median from the original data.
+        boundary : str
+            Boundary handling passed to Dask ``map_overlap``.
+        persist_input : bool
+            Persist the input Dask array before filtering.
+
+        Returns
+        -------
+        _TsData or subclass
+            New object containing the lazily filtered data.
+        """
 
         if not isinstance(kernel_size, int) or kernel_size < 3:
-            raise ValueError(f"kernel_size must be integer >=3, got {kernel_size}.")
+            raise ValueError(
+                f"kernel_size must be integer >= 3, got {kernel_size}."
+            )
+
         if kernel_size % 2 == 0:
             kernel_size += 1
 
         btype = str(btype).lower()
-        if btype not in ("low", "lowpass", "high", "highpass"):
-            raise ValueError("btype must be 'lowpass'/'low' or 'highpass'/'high'.")
+
+        if btype not in (
+                "low",
+                "lowpass",
+                "high",
+                "highpass",
+        ):
+            raise ValueError(
+                "btype must be 'lowpass'/'low' or "
+                "'highpass'/'high'."
+            )
 
         radius = kernel_size // 2
-        time_axis = -1
 
-        in_dtype = np.result_type(*(d.dtype for d in self.data))
-        out_dtype = np.result_type(np.float32, in_dtype) if btype in ("high", "highpass") else in_dtype
+        in_dtype = np.result_type(
+            *(d.dtype for d in self.data)
+        )
+
+        if btype in ("high", "highpass"):
+            out_dtype = np.result_type(
+                np.float32,
+                in_dtype,
+            )
+        else:
+            out_dtype = in_dtype
+
+        # --------------------------------------------------------
+        # Fast median implementation
+        # --------------------------------------------------------
 
         def _median(block):
-            size = [1] * block.ndim
-            size[time_axis] = kernel_size
-            return ndimage.median_filter(block, size=size, mode="nearest")
+            """
+            Median filter independently along the final axis.
+
+            Using scipy.ndimage.median_filter on each 1-D trace is
+            dramatically faster than calling the N-D implementation with
+            size=(1, kernel_size).
+            """
+
+            block = np.asarray(block)
+
+            original_shape = block.shape
+
+            # Flatten all non-time dimensions.
+            traces = block.reshape(
+                -1,
+                original_shape[-1],
+            )
+
+            filtered = np.empty_like(traces)
+
+            for index in range(traces.shape[0]):
+                filtered[index] = ndimage.median_filter(
+                    traces[index],
+                    size=kernel_size,
+                    mode="nearest",
+                )
+
+            return filtered.reshape(original_shape)
 
         def _median_high(block):
-            x = block.astype(out_dtype, copy=False)
-            med = _median(x)
-            return x - med
+            x = block.astype(
+                out_dtype,
+                copy=False,
+            )
 
-        op = _median_high if btype in ("high", "highpass") else _median
+            return x - _median(x)
+
+        if btype in ("high", "highpass"):
+            op = _median_high
+        else:
+            op = _median
+
+        # --------------------------------------------------------
+        # Construct lazy Dask arrays
+        # --------------------------------------------------------
 
         filtered = []
+
         for d in self.data:
-            x = d.persist() if persist_input else d
+            x = (
+                d.persist()
+                if persist_input
+                else d
+            )
 
             y = da.map_overlap(
                 op,
                 x,
-                depth={x.ndim - 1: radius},
+                depth={
+                    x.ndim - 1: radius
+                },
                 boundary=boundary,
                 trim=True,
                 dtype=out_dtype,
             )
+
             filtered.append(y)
+
+        # --------------------------------------------------------
+        # Metadata
+        # --------------------------------------------------------
 
         op_meta = {
             "op": "filter_median",
@@ -1169,9 +1271,17 @@ class _TsData:
             "btype": btype,
             "boundary": boundary,
         }
-        new_meta = self._update_metadata_list(self.metadata, op_meta, n_arrays=len(filtered))
 
-        return self._spawn(data=filtered, metadata=new_meta)
+        new_meta = self._update_metadata_list(
+            self.metadata,
+            op_meta,
+            n_arrays=len(filtered),
+        )
+
+        return self._spawn(
+            data=filtered,
+            metadata=new_meta,
+        )
 
     def filter_masked_gaussian_baseline(
             self,
