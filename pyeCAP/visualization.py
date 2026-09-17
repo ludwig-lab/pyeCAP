@@ -1,188 +1,642 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed for 3D)
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+from __future__ import annotations
+
 from numbers import Real
+from pathlib import Path
 import warnings
 
-def _find_amp_col(df):
-    cand = [
-        "pulse amplitude (μA)", "pulse amplitude (uA)",
-        "pulse amplitude A (μA)", "pulse amplitude A (uA)",
-        "pulse amplitude", "pulse_amplitude_uA"
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
+
+
+# =============================================================================
+# Shared helpers
+# =============================================================================
+
+def _parameter_table(epoch) -> pd.DataFrame:
+    """Return the stimulation-parameter table used by EpochData/ECAP."""
+    parameters = getattr(epoch, "parameters", None)
+    table = getattr(parameters, "parameters", None)
+
+    if not isinstance(table, pd.DataFrame):
+        raise TypeError(
+            "epoch.parameters.parameters must be a pandas DataFrame."
+        )
+    if not table.index.is_unique:
+        raise ValueError(
+            "epoch.parameters.parameters must have a unique index so each "
+            "row can be used directly as an epoch parameter key."
+        )
+
+    return table
+
+
+def _channel_names(epoch) -> list[str]:
+    """Return recording-channel names in EpochData channel order."""
+    source = getattr(epoch, "ts_data", None)
+    if source is None:
+        source = getattr(epoch, "ephys", None)
+
+    if source is None:
+        raise AttributeError("Could not find epoch.ts_data or epoch.ephys.")
+
+    names = getattr(source, "ch_names", None)
+    if names is None:
+        return [f"Channel {i}" for i in range(int(source.shape[0]))]
+
+    return [str(name) for name in names]
+
+
+def _find_amp_col(df: pd.DataFrame) -> str:
+    """Find the stimulation-amplitude column used by the parameter table."""
+    candidates = [
+        "pulse amplitude (μA)",
+        "pulse amplitude (uA)",
+        "pulse amplitude A (μA)",
+        "pulse amplitude A (uA)",
+        "pulse amplitude",
+        "pulse_amplitude_uA",
     ]
-    for c in cand:
-        if c in df.columns:
-            return c
-    raise KeyError("Could not find a pulse-amplitude column in stim.parameters")
 
-def plot_ecap_surface(ecap, channel="RawE 1", x_lim=None, constraints=None, wireframe=False):
+    for column in candidates:
+        if column in df.columns:
+            return column
+
+    # Last-resort case-insensitive search for common variants.
+    normalized = {
+        str(column).lower().replace("µ", "μ"): column
+        for column in df.columns
+    }
+    for normalized_name, original_name in normalized.items():
+        if "pulse" in normalized_name and "amp" in normalized_name:
+            return original_name
+
+    raise KeyError(
+        "Could not find a pulse-amplitude column in "
+        "epoch.parameters.parameters."
+    )
+
+
+def _resolve_channel_index(epoch, channel) -> int:
+    """Convert one recording-channel name/index to a global channel index."""
+    names = _channel_names(epoch)
+
+    if isinstance(channel, str):
+        try:
+            return names.index(channel)
+        except ValueError as exc:
+            raise KeyError(
+                f"Recording channel {channel!r} was not found. "
+                f"Available channels: {names}"
+            ) from exc
+
+    if isinstance(channel, (int, np.integer)):
+        channel_index = int(channel)
+        if channel_index < 0 or channel_index >= len(names):
+            raise IndexError(
+                f"Recording-channel index {channel_index} is out of range "
+                f"for {len(names)} channels."
+            )
+        return channel_index
+
+    raise TypeError("channel must be a recording-channel name or integer index.")
+
+
+def _resolve_neural_channels(epoch, rec_channels=None):
     """
-    ecap         : your ECAP object (Ephys+Stim already loaded)
-    channel      : recording channel name or index to plot (e.g., 'RawE 1')
-    x_lim        : tuple (t0, t1) seconds for the averaging window; overrides ecap.x_lim if given
-    constraints  : dict to filter a consistent subset of parameters (e.g., {'frequency (Hz)': 25, 'pulse duration (ms)': 0.2})
-    wireframe    : True for ax.plot_wireframe; False for ax.plot_surface
+    Resolve selected neural channels.
+
+    Returns
+    -------
+    window_positions : np.ndarray
+        Positions along neural_window_indices axis 0.
+    recording_indices : np.ndarray
+        Global recording-channel indices passed to epoch.epoch(...).
+    channel_names : np.ndarray
+        Display labels corresponding to recording_indices.
+
+    Notes
+    -----
+    In the current ECAP design, ``neural_window_indices`` is ordered by the
+    neural-channel list, while ``epoch(..., recording_channels=...)`` selects
+    from the full recording-channel axis. This helper keeps those two index
+    spaces explicit.
     """
-    if x_lim is not None:
-        ecap.epoch_window = x_lim  # set a fixed epoch window for all parameters
+    window_indices = np.asarray(epoch.neural_window_indices)
+    if window_indices.ndim != 3 or window_indices.shape[2] != 2:
+        raise ValueError(
+            "neural_window_indices must have shape "
+            "[neural_channel, fiber_window, 2]."
+        )
 
-    # Make epoching snappy if you’re iterating a lot
-    if not hasattr(ecap, "_persisted_array"):
-        fs = ecap.ts_data.sample_rate
-        win = (ecap.epoch_window[1] - ecap.epoch_window[0]) if ecap.epoch_window else 0.010
-        ecap.persist_ts(time_chunk=int(max(1, win*fs*6)))
+    n_window_channels = int(window_indices.shape[0])
+    names = np.asarray(_channel_names(epoch), dtype=object)
 
-    par_df = ecap.parameters.parameters  # DataFrame of stim parameter rows, indexed by the ECAP 'parameter' key
+    neural_channels = getattr(epoch, "neural_channels", None)
+    if neural_channels is None:
+        # Compatibility fallback for data sets where neural channels occupy
+        # the first N recording channels.
+        neural_channels = np.arange(n_window_channels, dtype=int)
+    else:
+        neural_channels = np.asarray(neural_channels, dtype=int).reshape(-1)
+
+    if len(neural_channels) != n_window_channels:
+        raise ValueError(
+            "epoch.neural_channels and epoch.neural_window_indices disagree "
+            "about the number of neural recording channels."
+        )
+
+    if np.any(neural_channels < 0) or np.any(neural_channels >= len(names)):
+        raise IndexError("epoch.neural_channels contains an invalid channel index.")
+
+    if rec_channels is None:
+        recording_indices = neural_channels.copy()
+
+    elif isinstance(rec_channels, str):
+        recording_indices = np.array(
+            [_resolve_channel_index(epoch, rec_channels)],
+            dtype=int,
+        )
+
+    elif isinstance(rec_channels, (int, np.integer)):
+        recording_indices = np.array([int(rec_channels)], dtype=int)
+
+    else:
+        values = list(rec_channels)
+        if not values:
+            raise ValueError("No recording channels were selected.")
+
+        resolved = []
+        for value in values:
+            if isinstance(value, str):
+                resolved.append(_resolve_channel_index(epoch, value))
+            elif isinstance(value, (int, np.integer)):
+                resolved.append(int(value))
+            else:
+                raise TypeError(
+                    "rec_channels entries must be recording-channel names "
+                    "or integer indices."
+                )
+        recording_indices = np.asarray(resolved, dtype=int)
+
+    if recording_indices.size == 0:
+        raise ValueError("No recording channels were selected.")
+
+    if np.any(recording_indices < 0) or np.any(recording_indices >= len(names)):
+        raise IndexError("A selected recording-channel index is out of range.")
+
+    window_positions = []
+    for recording_index in recording_indices:
+        matches = np.flatnonzero(neural_channels == recording_index)
+        if matches.size == 0:
+            raise ValueError(
+                f"Recording channel {names[recording_index]!r} is not an ENG "
+                "channel represented in neural_window_indices."
+            )
+        window_positions.append(int(matches[0]))
+
+    return (
+        np.asarray(window_positions, dtype=int),
+        recording_indices,
+        names[recording_indices],
+    )
+
+
+def _highest_amplitude_parameter(epoch):
+    """Return (parameter_key, amplitude, amplitude_column) for max amplitude."""
+    par_df = _parameter_table(epoch)
+    amp_col = _find_amp_col(par_df)
+    values = pd.to_numeric(par_df[amp_col], errors="coerce")
+
+    if not np.isfinite(values.to_numpy(dtype=float)).any():
+        raise ValueError(f"No valid amplitudes were found in {amp_col!r}.")
+
+    parameter_key = values.idxmax()
+    amplitude = float(values.loc[parameter_key])
+    return parameter_key, amplitude, amp_col
+
+
+def _nearest_amplitude_parameter(epoch, requested_amplitude: float):
+    """Return nearest parameter key and actual amplitude to a request."""
+    par_df = _parameter_table(epoch)
     amp_col = _find_amp_col(par_df)
 
-    # Optional constraints (keep frequency/pulse width constant, pick a voice/store, etc.)
-    if constraints:
-        for k, v in constraints.items():
-            if k in par_df.columns:
-                par_df = par_df.loc[par_df[k] == v]
-            else:
-                # ignore silently if constraint column not present
-                pass
+    values = pd.to_numeric(par_df[amp_col], errors="coerce").to_numpy(dtype=float)
+    valid_positions = np.flatnonzero(np.isfinite(values))
+    if valid_positions.size == 0:
+        raise ValueError(f"No valid amplitudes were found in {amp_col!r}.")
 
-    # Group by amplitude
+    distances = np.abs(values[valid_positions] - requested_amplitude)
+    nearest_position = int(valid_positions[np.argmin(distances)])
+
+    parameter_key = par_df.index[nearest_position]
+    selected_amplitude = float(values[nearest_position])
+    exact_match = bool(
+        np.isclose(
+            selected_amplitude,
+            requested_amplitude,
+            rtol=0.0,
+            atol=1e-9,
+        )
+    )
+
+    return parameter_key, selected_amplitude, exact_match, amp_col
+
+
+def _load_epoch_numpy(epoch, parameter_key, recording_channels=None) -> np.ndarray:
+    """Load one parameter as (pulses, recording_channels, samples)."""
+    data = epoch.epoch(
+        parameter_key,
+        recording_channels=recording_channels,
+    )
+
+    if hasattr(data, "compute"):
+        data = data.compute()
+
+    data = np.asarray(data)
+    if data.ndim != 3:
+        raise ValueError(
+            "epoch.epoch(parameter, ...) must return data with shape "
+            "[pulses, recording_channels, samples]."
+        )
+
+    return data
+
+
+def _resolve_time_axis(epoch, parameter_key, n_samples: int, time=None) -> np.ndarray:
+    """Return a validated time axis, preferring the current EpochData API."""
+    if time is None:
+        time = np.asarray(epoch.time_axis(parameter_key), dtype=float)
+    else:
+        time = np.asarray(time, dtype=float)
+
+    if time.ndim != 1:
+        raise ValueError("time must be one-dimensional.")
+    if len(time) != n_samples:
+        raise ValueError(
+            "time must have the same length as the epoch signal axis. "
+            f"Received {len(time)} values for {n_samples} samples."
+        )
+
+    return time
+
+
+def _time_window_mask(time: np.ndarray, window_s) -> np.ndarray:
+    """Return a half-open boolean mask for a relative-time window."""
+    try:
+        start_s, stop_s = map(float, window_s)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("A time window must contain exactly two values.") from exc
+
+    if stop_s <= start_s:
+        raise ValueError("A time window must satisfy stop > start.")
+
+    mask = (time >= start_s) & (time < stop_s)
+    if not np.any(mask):
+        raise ValueError(
+            f"Requested time window {window_s!r} contains no epoch samples."
+        )
+
+    return mask
+
+
+def _mean_trace_for_parameter(ecap, parameter_key, channel_index: int) -> np.ndarray:
+    """
+    Return one channel's pulse-mean waveform using compute_mean_traces().
+
+    ``compute_mean_traces(parameter)`` is the current public API for a
+    computed mean shaped (recording_channels, samples). It also reuses the
+    all-parameter mean cache when that cache already exists.
+    """
+    mean_trace = np.asarray(ecap.compute_mean_traces(parameter_key))
+
+    if mean_trace.ndim != 2:
+        raise ValueError(
+            "compute_mean_traces(parameter) must return "
+            "[recording_channels, samples]."
+        )
+    if channel_index < 0 or channel_index >= mean_trace.shape[0]:
+        raise IndexError("Selected recording channel is not present in mean trace.")
+
+    return np.asarray(mean_trace[channel_index], dtype=float)
+
+
+def _surface_data(ecap, channel, par_df: pd.DataFrame):
+    """Build amplitude-sorted mean waveforms and their shared time axis."""
+    amp_col = _find_amp_col(par_df)
+    channel_index = _resolve_channel_index(ecap, channel)
+
     groups = []
-    for amp, df_amp in par_df.groupby(amp_col):
-        # Pick one representative parameter key per amplitude (or average later if you have many)
-        key = df_amp.index[0]
-        groups.append((float(amp), key))
+    for amplitude, df_amp in par_df.groupby(amp_col, sort=False):
+        try:
+            amplitude_float = float(amplitude)
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(amplitude_float) or df_amp.empty:
+            continue
+        groups.append((amplitude_float, df_amp.index[0]))
 
     if not groups:
-        raise RuntimeError("No parameters found after applying constraints; cannot plot.")
+        raise RuntimeError(
+            "No valid parameter rows remained after applying constraints."
+        )
 
-    # Sort by amplitude
-    groups.sort(key=lambda t: t[0])
-    amps, keys = zip(*groups)
+    groups.sort(key=lambda item: item[0])
+    amplitudes = np.asarray([item[0] for item in groups], dtype=float)
+    parameter_keys = [item[1] for item in groups]
 
-    # Build Z: averaged waveform for the chosen channel at each amplitude
-    # Lazily compute mean waveforms, then pull to numpy once.
-    ch = [channel] if isinstance(channel, str) else channel
-    wf_list = []
-    for p in keys:
-        wf = ecap.mean_waveform(p, channels=ch)   # (ch, samples) as Dask
-        wf_list.append(wf)
+    traces = []
+    reference_time = None
 
-    # Compute all at once to minimize scheduler overhead
-    wf_stack = np.stack([w.compute() for w in wf_list], axis=0)  # (n_amp, ch, samples)
-    # Select first (and only) channel axis
-    Z = wf_stack[:, 0, :]  # (n_amp, samples)
+    for parameter_key in parameter_keys:
+        trace = _mean_trace_for_parameter(ecap, parameter_key, channel_index)
+        time = np.asarray(ecap.time_axis(parameter_key), dtype=float)
 
-    # Time axis (same length for all keys if x_lim is fixed)
-    # If you added a time_axis(param) helper, you can use it; otherwise build from x_lim/fs.
-    n_samples = Z.shape[1]
-    fs = ecap.ts_data.sample_rate
-    if ecap.epoch_window is None or ecap.epoch_window == 'auto':
-        t = np.arange(n_samples) / fs
+        if trace.ndim != 1:
+            raise ValueError("A selected mean waveform must be one-dimensional.")
+        if len(time) != len(trace):
+            raise ValueError(
+                f"Time-axis length for parameter {parameter_key!r} does not "
+                "match its mean waveform."
+            )
+
+        if reference_time is None:
+            reference_time = time
+        elif len(time) != len(reference_time) or not np.allclose(
+            time,
+            reference_time,
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError(
+                "Selected parameters do not share one epoch time axis. "
+                "Set x_lim to a fixed (start, stop) epoch window before "
+                "creating a surface plot."
+            )
+
+        traces.append(trace)
+
+    return amplitudes, parameter_keys, np.stack(traces, axis=0), reference_time
+
+
+def _finite_min_max(values):
+    values = np.asarray(values)
+    finite_values = values[np.isfinite(values)]
+    if finite_values.size == 0:
+        return None
+    return float(finite_values.min()), float(finite_values.max())
+
+
+def _padded_limits(values, padding_fraction: float):
+    result = _finite_min_max(values)
+    if result is None:
+        return None
+
+    lower, upper = result
+    data_range = upper - lower
+    if data_range == 0:
+        data_range = max(abs(lower), 1.0)
+
+    padding = data_range * padding_fraction
+    return lower - padding, upper + padding
+
+
+def _limited_shoulder_limits(
+    window_values,
+    displayed_values,
+    *,
+    ylim_padding: float,
+    shoulder_ylim_factor: float,
+):
+    window_limits = _padded_limits(window_values, ylim_padding)
+    if window_limits is None:
+        return _padded_limits(displayed_values, ylim_padding)
+
+    main_lower, main_upper = window_limits
+    displayed_extrema = _finite_min_max(displayed_values)
+    if displayed_extrema is None:
+        return window_limits
+
+    displayed_lower, displayed_upper = displayed_extrema
+    main_center = (main_lower + main_upper) / 2.0
+    main_half_range = (main_upper - main_lower) / 2.0
+    if main_half_range <= 0:
+        main_half_range = 1.0
+
+    allowed_lower = main_center - main_half_range * shoulder_ylim_factor
+    allowed_upper = main_center + main_half_range * shoulder_ylim_factor
+
+    shoulder_padding = (main_upper - main_lower) * ylim_padding
+    requested_lower = min(main_lower, displayed_lower - shoulder_padding)
+    requested_upper = max(main_upper, displayed_upper + shoulder_padding)
+
+    final_lower = max(requested_lower, allowed_lower)
+    final_upper = min(requested_upper, allowed_upper)
+
+    # Always retain the true neural-window range.
+    final_lower = min(final_lower, main_lower)
+    final_upper = max(final_upper, main_upper)
+    return final_lower, final_upper
+
+
+def _validate_ylim_settings(ylim, ylim_padding, shoulder_ylim_factor):
+    if not isinstance(ylim_padding, Real):
+        raise TypeError("ylim_padding must be numeric.")
+    ylim_padding = float(ylim_padding)
+    if not np.isfinite(ylim_padding) or ylim_padding < 0:
+        raise ValueError("ylim_padding must be finite and nonnegative.")
+
+    if not isinstance(shoulder_ylim_factor, Real):
+        raise TypeError("shoulder_ylim_factor must be numeric.")
+    shoulder_ylim_factor = float(shoulder_ylim_factor)
+    if not np.isfinite(shoulder_ylim_factor) or shoulder_ylim_factor < 1:
+        raise ValueError(
+            "shoulder_ylim_factor must be finite and greater than or equal to 1."
+        )
+
+    if ylim is True or ylim is False or ylim is None:
+        fixed_ylim = None
     else:
-        t0, _ = ecap.epoch_window
-        t = (np.arange(n_samples) / fs) + t0
+        if not isinstance(ylim, (tuple, list, np.ndarray)) or len(ylim) != 2:
+            raise ValueError(
+                "ylim must be True, False, None, or a two-value sequence."
+            )
+        fixed_ylim = (float(ylim[0]), float(ylim[1]))
 
-    # Meshgrid for surface
-    T, A = np.meshgrid(t, np.array(amps))
+    return fixed_ylim, ylim_padding, shoulder_ylim_factor
 
-    # 3D plot
+
+def _shoulder_percent(show_shoulders) -> float:
+    if isinstance(show_shoulders, (bool, np.bool_)):
+        return 100.0 if show_shoulders else 0.0
+
+    if isinstance(show_shoulders, Real):
+        value = float(show_shoulders)
+        if not np.isfinite(value) or value < 0:
+            raise ValueError(
+                "show_shoulders must be a finite, nonnegative percentage."
+            )
+        return value
+
+    raise TypeError(
+        "show_shoulders must be False, True, or a nonnegative percentage."
+    )
+
+
+def _fiber_selection(epoch, plot_idv_fibers, n_available_fibers: int):
+    if plot_idv_fibers is False or plot_idv_fibers is None:
+        plot_fibers = []
+    elif plot_idv_fibers is True:
+        plot_fibers = list(range(n_available_fibers))
+    elif isinstance(plot_idv_fibers, (int, np.integer)):
+        plot_fibers = [int(plot_idv_fibers)]
+    else:
+        plot_fibers = [int(index) for index in plot_idv_fibers]
+
+    if any(index < 0 or index >= n_available_fibers for index in plot_fibers):
+        raise IndexError("Fiber-window index out of range.")
+
+    names = np.asarray(epoch.neural_fiber_names, dtype=object)
+    if len(names) < n_available_fibers:
+        raise ValueError(
+            "neural_fiber_names does not contain enough labels for "
+            "neural_window_indices."
+        )
+
+    return plot_fibers, names[plot_fibers] if plot_fibers else np.array([])
+
+
+# =============================================================================
+# Surface plots
+# =============================================================================
+
+def plot_ecap_surface(
+    ecap,
+    channel="RawE 1",
+    x_lim=None,
+    constraints=None,
+    wireframe=False,
+):
+    """Plot mean ECAP waveforms across stimulation amplitudes in Matplotlib."""
+    if x_lim is not None:
+        ecap.epoch_window = x_lim
+
+    par_df = _parameter_table(ecap).copy()
+
+    if constraints:
+        for column, value in constraints.items():
+            if column in par_df.columns:
+                par_df = par_df.loc[par_df[column] == value]
+
+    amplitudes, _, Z, time = _surface_data(ecap, channel, par_df)
+    T, A = np.meshgrid(time, amplitudes)
+
     fig = plt.figure(figsize=(9, 6))
-    ax = fig.add_subplot(111, projection='3d')
+    ax = fig.add_subplot(111, projection="3d")
+
     if wireframe:
         ax.plot_wireframe(T, A, Z)
     else:
-        ax.plot_surface(T, A, Z, rstride=1, cstride=1, linewidth=0, antialiased=True)
+        ax.plot_surface(
+            T,
+            A,
+            Z,
+            rstride=1,
+            cstride=1,
+            linewidth=0,
+            antialiased=True,
+        )
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Stim amplitude (µA)")
     ax.set_zlabel("ECAP (a.u.)")
-    ax.set_title(f"Average ECAP vs time across amplitudes — channel: {channel}")
+    ax.set_title(f"Average ECAP vs time across amplitudes - channel: {channel}")
     plt.tight_layout()
     plt.show()
+
+    return fig, ax
+
 
 def plot_ecap_surface_plotly(
     ecap,
     channel,
     x_lim=None,
     y_lim=None,
-    baseline_s=None,          # e.g. (-0.003, -0.001) if x_lim starts negative
+    baseline_s=None,
     absolute=False,
-    downsample=1,             # e.g. 2 to halve the time resolution for snappier plots
-    renderer=None             # e.g. "browser", "vscode", "notebook_connected"
+    downsample=1,
+    renderer=None,
 ):
-    # Set shared epoch window (time axis)
+    """Create an interactive Plotly ECAP surface across amplitudes."""
     if x_lim is not None:
         ecap.epoch_window = x_lim
 
-    fs = ecap.ts_data.sample_rate
-    win = (ecap.epoch_window[1] - ecap.epoch_window[0]) if ecap.epoch_window else 0.010
-    if not hasattr(ecap, "_persisted_array"):
-        ecap.persist_ts(time_chunk=int(max(1, win*fs*6)))  # auto-persist for speed
+    if not isinstance(downsample, (int, np.integer)) or int(downsample) < 1:
+        raise ValueError("downsample must be an integer >= 1.")
+    downsample = int(downsample)
 
-    par_df = ecap.parameters.parameters.copy()
+    par_df = _parameter_table(ecap).copy()
+    amplitudes, _, Z, time = _surface_data(ecap, channel, par_df)
 
-    try:
-        amp_col = next(c for c in par_df.columns if c.startswith("pulse amp"))
-    except StopIteration:
-        raise KeyError("Couldn't find pulse amplitude column in stim.parameters")
+    if baseline_s is not None:
+        baseline_mask = _time_window_mask(time, baseline_s)
+        baseline = np.nanmean(Z[:, baseline_mask], axis=1, keepdims=True)
+        Z = Z - baseline
 
-    groups = []
-    for amp, df_amp in par_df.groupby(amp_col):
-        if len(df_amp) == 0: continue
-        groups.append((float(amp), df_amp.index[0]))  # one key per amplitude
-    if not groups:
-        raise RuntimeError("No parameter rows")
+    if absolute:
+        Z = np.abs(Z)
 
-    groups.sort(key=lambda t: t[0])
-    amps, keys = zip(*groups)
-
-    ch = [channel] if isinstance(channel, str) else channel
-    wf_list = []
-    for p in keys:
-        wf = ecap.mean_waveform(p, channels=ch)  # (ch, samples) dask
-        if baseline_s is not None:
-            b0 = int(np.floor(baseline_s[0] * fs)); b1 = int(np.ceil(baseline_s[1] * fs))
-            wf = wf - wf[:, b0:b1].mean(axis=1, keepdims=True)
-        if absolute:
-            wf = wf.map_blocks(np.abs)
-        wf_list.append(wf)
-
-    # Compute in one go
-    wf_stack = np.stack([w.compute() for w in wf_list], axis=0)  # (n_amp, ch, samples)
-    Z = wf_stack[:, 0, :]  # first (or only) channel
-
-    # Time axis
-    n_samples = Z.shape[1]
-    if ecap.epoch_window is None or ecap.epoch_window == "auto":
-        t = np.arange(n_samples) / fs
-    else:
-        t0, _ = ecap.epoch_window
-        t = (np.arange(n_samples) / fs) + t0
-
-    # Optional downsample for interactivity
     if downsample > 1:
         Z = Z[:, ::downsample]
-        t = t[::downsample]
+        time = time[::downsample]
 
-    T = np.tile(t, (len(amps), 1))
-    A = np.tile(np.array(amps)[:, None], (1, len(t)))
+    T = np.tile(time, (len(amplitudes), 1))
+    A = np.tile(amplitudes[:, None], (1, len(time)))
 
-    fig = go.Figure(data=[go.Surface(x=T, y=A, z=Z, colorscale="Viridis", showscale=True)])
+    fig = go.Figure(
+        data=[
+            go.Surface(
+                x=T,
+                y=A,
+                z=Z,
+                colorscale="Viridis",
+                showscale=True,
+            )
+        ]
+    )
+
+    scene = {
+        "xaxis_title": "Time (s)",
+        "yaxis_title": "Stim amplitude (µA)",
+        "zaxis_title": "ECAP (a.u.)",
+        "camera": {"eye": {"x": 1.6, "y": 1.6, "z": 0.9}},
+    }
+    if y_lim is not None:
+        if len(y_lim) != 2:
+            raise ValueError("y_lim must contain exactly two values.")
+        scene["yaxis"] = {
+            "title": "Stim amplitude (µA)",
+            "range": [float(y_lim[0]), float(y_lim[1])],
+        }
+
     fig.update_layout(
-        title=f"Interactive ECAP surface — ch: {channel}",
-        scene=dict(
-            xaxis_title="Time (s)",
-            yaxis_title="Stim amplitude (µA)",
-            zaxis_title="ECAP (a.u.)",
-            camera=dict(eye=dict(x=1.6, y=1.6, z=0.9)),
-        ),
-        margin=dict(l=0, r=0, b=0, t=40),
+        title=f"Interactive ECAP surface - ch: {channel}",
+        scene=scene,
+        margin={"l": 0, "r": 0, "b": 0, "t": 40},
     )
 
     if renderer is not None:
         fig.show(renderer=renderer)
+
     return fig
+
+
+# =============================================================================
+# Matplotlib pulse-level traces
+# =============================================================================
 
 def plot_highest_amp_traces(
     epoch,
@@ -196,569 +650,121 @@ def plot_highest_amp_traces(
     shoulder_ylim_factor=2.0,
 ):
     """
-    Plot individual traces and their average at the highest stimulation
-    amplitude.
+    Plot pulse-level traces and their mean at the highest stimulation amplitude.
 
-    Expected array shapes
-    ---------------------
-    epoch.epoch_array:
-        [stimulation_amplitude, pulse_train, channel, signal]
-
-    epoch.neural_window_indices:
-        [neural_channel, fiber_window, start/end]
-
-    Parameters
-    ----------
-    epoch
-        Epoch object containing the data and neural-window information.
-
-    rec_channels : int, sequence of int, or None
-        Neural recording-channel indices to plot.
-
-        If None, all channels represented in neural_window_indices are
-        plotted.
-
-    time : array-like or None
-        Time axis corresponding to the signal dimension. If None, sample
-        indices are used.
-
-    plot_v_lines : bool
-        Mark the true neural-window boundaries.
-
-    plot_idv_fibers : bool, int, sequence of int, or None
-        False or None:
-            Plot only full traces.
-        True:
-            Plot every neural/fiber window.
-        int:
-            Plot one fiber window.
-        sequence of int:
-            Plot selected fiber windows.
-
-    show_shoulders : bool or number
-        Amount of additional signal displayed on each side of each window.
-
-        False:
-            No shoulders.
-        True:
-            Add 100% of the original window length to each side.
-        number:
-            Percentage of the original window length added to each side.
-
-        Example:
-            show_shoulders=50 adds half a window length on each side.
-
-    ylim : bool, tuple, or None
-        None or False:
-            Use ordinary Matplotlib autoscaling.
-        True:
-            Calculate subplot-specific y-limits.
-        (lower, upper):
-            Apply fixed limits to every subplot.
-
-    ylim_padding : float
-        Fractional padding added above and below automatically calculated
-        limits.
-
-    shoulder_ylim_factor : float
-        Maximum amount that shoulder values may expand the y-axis relative
-        to the main neural-window limits.
-
-        1.0:
-            Ignore shoulder values when setting y-limits.
-        2.0:
-            Allow shoulders to expand each side of the y-axis up to twice
-            the main-window scale.
-        3.0:
-            Allow more shoulder variation.
-
-        Extreme shoulder artifacts beyond this limit will be clipped.
-
-    Returns
-    -------
-    fig, axes
-        Matplotlib figure and two-dimensional axes array.
+    The current EpochData API is parameter driven: the highest-amplitude
+    parameter key is selected from ``epoch.parameters.parameters`` and passed
+    directly to ``epoch.epoch(parameter, recording_channels=...)``.
     """
+    fixed_ylim, ylim_padding, shoulder_ylim_factor = _validate_ylim_settings(
+        ylim,
+        ylim_padding,
+        shoulder_ylim_factor,
+    )
+    shoulder_percent = _shoulder_percent(show_shoulders)
 
-    # ============================================================
-    # Y-limit helpers
-    # ============================================================
-    def finite_min_max(values):
-        values = np.asarray(values)
-        finite_values = values[np.isfinite(values)]
+    parameter_key, max_amp, _ = _highest_amplitude_parameter(epoch)
 
-        if finite_values.size == 0:
-            return None
-
-        return finite_values.min(), finite_values.max()
-
-    def padded_limits(values):
-        """
-        Calculate limits containing every finite value plus padding.
-        """
-        result = finite_min_max(values)
-
-        if result is None:
-            return None
-
-        y_min, y_max = result
-        y_range = y_max - y_min
-
-        if y_range == 0:
-            y_range = max(abs(y_min), 1.0)
-
-        padding = y_range * ylim_padding
-
-        return y_min - padding, y_max + padding
-
-    def limited_shoulder_limits(window_values, displayed_values):
-        """
-        Base limits on the true neural window.
-
-        Shoulder values may expand the limits, but only up to
-        shoulder_ylim_factor times the main-window scale.
-        """
-        window_limits = padded_limits(window_values)
-
-        if window_limits is None:
-            return padded_limits(displayed_values)
-
-        main_lower, main_upper = window_limits
-
-        displayed_result = finite_min_max(displayed_values)
-
-        if displayed_result is None:
-            return window_limits
-
-        displayed_min, displayed_max = displayed_result
-
-        main_center = (main_lower + main_upper) / 2
-
-        main_lower_span = main_center - main_lower
-        main_upper_span = main_upper - main_center
-
-        # Maximum permitted expansion caused by shoulder values.
-        allowed_lower = (
-            main_center
-            - main_lower_span * shoulder_ylim_factor
-        )
-
-        allowed_upper = (
-            main_center
-            + main_upper_span * shoulder_ylim_factor
-        )
-
-        # Add some padding around shoulder values when they are within
-        # the permitted range.
-        main_range = main_upper - main_lower
-        shoulder_padding = main_range * ylim_padding
-
-        requested_lower = min(
-            main_lower,
-            displayed_min - shoulder_padding,
-        )
-
-        requested_upper = max(
-            main_upper,
-            displayed_max + shoulder_padding,
-        )
-
-        final_lower = max(
-            requested_lower,
-            allowed_lower,
-        )
-
-        final_upper = min(
-            requested_upper,
-            allowed_upper,
-        )
-
-        # The true neural window must always remain fully visible.
-        final_lower = min(final_lower, main_lower)
-        final_upper = max(final_upper, main_upper)
-
-        return final_lower, final_upper
-
-    def apply_full_trace_ylim(ax, traces):
-        if ylim is True:
-            limits = padded_limits(traces)
-
-            if limits is not None:
-                ax.set_ylim(limits)
-
-        elif fixed_ylim is not None:
-            ax.set_ylim(fixed_ylim)
-
-    def apply_fiber_ylim(
-        ax,
-        window_traces,
-        displayed_traces,
-    ):
-        if ylim is True:
-            limits = limited_shoulder_limits(
-                window_values=window_traces,
-                displayed_values=displayed_traces,
-            )
-
-            if limits is not None:
-                ax.set_ylim(limits)
-
-        elif fixed_ylim is not None:
-            ax.set_ylim(fixed_ylim)
-
-    # ============================================================
-    # Validate y-limit parameters
-    # ============================================================
-    if not isinstance(ylim_padding, Real):
-        raise TypeError("ylim_padding must be numeric")
-
-    ylim_padding = float(ylim_padding)
-
-    if not np.isfinite(ylim_padding) or ylim_padding < 0:
-        raise ValueError(
-            "ylim_padding must be a finite, nonnegative number"
-        )
-
-    if not isinstance(shoulder_ylim_factor, Real):
-        raise TypeError("shoulder_ylim_factor must be numeric")
-
-    shoulder_ylim_factor = float(shoulder_ylim_factor)
-
-    if (
-        not np.isfinite(shoulder_ylim_factor)
-        or shoulder_ylim_factor < 1
-    ):
-        raise ValueError(
-            "shoulder_ylim_factor must be a finite number "
-            "greater than or equal to 1"
-        )
-
-    if ylim is None or ylim is False or ylim is True:
-        fixed_ylim = None
-
-    else:
-        if not isinstance(
-            ylim,
-            (tuple, list, np.ndarray),
-        ):
-            raise TypeError(
-                "ylim must be None, False, True, or a "
-                "two-value sequence"
-            )
-
-        if len(ylim) != 2:
-            raise ValueError(
-                "A fixed ylim must contain exactly two values"
-            )
-
-        fixed_ylim = tuple(ylim)
-
-    # ============================================================
-    # Interpret show_shoulders
-    # ============================================================
-    if isinstance(show_shoulders, (bool, np.bool_)):
-        shoulder_percent = 100.0 if show_shoulders else 0.0
-
-    elif isinstance(show_shoulders, Real):
-        shoulder_percent = float(show_shoulders)
-
-        if not np.isfinite(shoulder_percent):
-            raise ValueError("show_shoulders must be finite")
-
-        if shoulder_percent < 0:
-            raise ValueError(
-                "show_shoulders cannot be negative"
-            )
-
-    else:
-        raise TypeError(
-            "show_shoulders must be False, True, or a "
-            "nonnegative percentage"
-        )
-
-    # ============================================================
-    # Highest stimulation amplitude
-    # ============================================================
-    par_df = epoch.parameters.parameters
-    amp_col = _find_amp_col(par_df)
-
-    amp_label = par_df[amp_col].idxmax()
-    max_amp = par_df.loc[amp_label, amp_col]
-    amp_idx = epoch.parameters_dictionary[amp_label]
-
-    # ============================================================
-    # Neural-window indices
-    # ============================================================
-    window_indices = epoch.neural_window_indices
-
-    if hasattr(window_indices, "compute"):
-        window_indices = window_indices.compute()
-
-    window_indices = np.asarray(window_indices)
-
-    if (
-        window_indices.ndim != 3
-        or window_indices.shape[2] != 2
-    ):
+    window_indices = np.asarray(epoch.neural_window_indices)
+    if window_indices.ndim != 3 or window_indices.shape[2] != 2:
         raise ValueError(
             "neural_window_indices must have shape "
-            "[channel, fiber_window, 2]"
+            "[neural_channel, fiber_window, 2]."
         )
 
-    n_window_channels = window_indices.shape[0]
-    n_available_fibers = window_indices.shape[1]
+    window_positions, recording_indices, channel_names = _resolve_neural_channels(
+        epoch,
+        rec_channels,
+    )
 
-    # ============================================================
-    # Channel selection
-    # ============================================================
-    n_data_channels = epoch.epoch_array.shape[2]
+    data = _load_epoch_numpy(
+        epoch,
+        parameter_key,
+        recording_channels=recording_indices.tolist(),
+    )
 
-    if n_window_channels > n_data_channels:
-        raise ValueError(
-            "neural_window_indices contains more channels "
-            "than epoch_array"
-        )
+    n_pulses, n_plot_channels, n_samples = data.shape
+    time = _resolve_time_axis(epoch, parameter_key, n_samples, time=time)
 
-    if rec_channels is None:
-        plot_channels = np.arange(
-            n_window_channels,
-            dtype=int,
-        )
-
-    elif isinstance(rec_channels, (int, np.integer)):
-        plot_channels = np.array(
-            [int(rec_channels)],
-            dtype=int,
-        )
-
-    else:
-        plot_channels = np.asarray(
-            rec_channels,
-            dtype=int,
-        )
-
-        if plot_channels.ndim != 1:
-            raise ValueError(
-                "rec_channels must be an integer or a "
-                "one-dimensional sequence"
-            )
-
-    if plot_channels.size == 0:
-        raise ValueError(
-            "No recording channels were selected"
-        )
-
-    if np.any(plot_channels < 0):
-        raise IndexError(
-            "Channel indices cannot be negative"
-        )
-
-    if np.any(plot_channels >= n_window_channels):
-        raise IndexError(
-            "Every selected channel must have a corresponding "
-            "entry in neural_window_indices"
-        )
-
-    n_plot_channels = len(plot_channels)
-
-    channel_names = np.asarray(
-        epoch.ephys.ch_names
-    )[plot_channels]
-
-    # ============================================================
-    # Highest-amplitude data
-    # ============================================================
-    data = epoch.epoch_array[amp_idx, :, :, :]
-    data = data[:, plot_channels, :]
-
-    if hasattr(data, "compute"):
-        data = data.compute()
-
-    data = np.asarray(data)
-
-    if data.ndim != 3:
-        raise ValueError(
-            "Selected data must have shape "
-            "[pulse_train, channel, signal]"
-        )
-
-    _, selected_channel_count, n_samples = data.shape
-
-    if selected_channel_count != n_plot_channels:
-        raise ValueError(
-            "Selected data does not contain the expected "
-            "number of channels"
-        )
-
-    # ============================================================
-    # Time axis
-    # ============================================================
-    if time is None:
-        time = np.arange(n_samples)
-
-    else:
-        time = np.asarray(time)
-
-        if time.ndim != 1:
-            raise ValueError(
-                "time must be one-dimensional"
-            )
-
-        if len(time) != n_samples:
-            raise ValueError(
-                "time must have the same length as the signal axis"
-            )
-
-    # ============================================================
-    # Fiber-window selection
-    # ============================================================
-    if plot_idv_fibers is False or plot_idv_fibers is None:
-        plot_fibers = []
-
-    elif plot_idv_fibers is True:
-        plot_fibers = list(
-            range(n_available_fibers)
-        )
-
-    elif isinstance(
+    n_available_fibers = int(window_indices.shape[1])
+    plot_fibers, fiber_labels = _fiber_selection(
+        epoch,
         plot_idv_fibers,
-        (int, np.integer),
-    ):
-        plot_fibers = [
-            int(plot_idv_fibers)
-        ]
+        n_available_fibers,
+    )
 
-    else:
-        plot_fibers = [
-            int(fiber_idx)
-            for fiber_idx in plot_idv_fibers
-        ]
-
-    if any(
-        fiber_idx < 0
-        or fiber_idx >= n_available_fibers
-        for fiber_idx in plot_fibers
-    ):
-        raise IndexError(
-            "Fiber-window index out of range"
-        )
-
-    n_fibers = len(plot_fibers)
-
-    if n_fibers > 0:
-        fiber_names = np.asarray(
-            epoch.neural_fiber_names
-        )
-
-        if len(fiber_names) < n_available_fibers:
-            raise ValueError(
-                "neural_fiber_names does not contain "
-                "enough labels"
-            )
-
-        fiber_labels = fiber_names[plot_fibers]
-
-    else:
-        fiber_labels = []
-
-    # ============================================================
-    # Create figure
-    # ============================================================
-    n_rows = 1 + n_fibers
-
+    n_rows = 1 + len(plot_fibers)
     fig, axes = plt.subplots(
         nrows=n_rows,
         ncols=n_plot_channels,
-        figsize=(
-            4 * n_plot_channels,
-            2.8 * n_rows,
-        ),
+        figsize=(4 * n_plot_channels, 2.8 * n_rows),
         sharex=False,
         sharey=False,
         squeeze=False,
     )
 
-    # ============================================================
+    # -----------------------------------------------------------------
     # Full-trace row
-    # ============================================================
-    for col, channel_idx in enumerate(plot_channels):
+    # -----------------------------------------------------------------
+    for col in range(n_plot_channels):
         ax = axes[0, col]
-
         traces = data[:, col, :]
-        mean_trace = np.nanmean(
-            traces,
-            axis=0,
-        )
+        mean_trace = np.nanmean(traces, axis=0)
 
-        ax.plot(
-            time,
-            traces.T,
-            color="gray",
-            alpha=0.20,
-            linewidth=0.5,
-        )
-
-        ax.plot(
-            time,
-            mean_trace,
-            color="blue",
-            linewidth=2,
-        )
+        ax.plot(time, traces.T, color="gray", alpha=0.20, linewidth=0.5)
+        ax.plot(time, mean_trace, color="blue", linewidth=2)
 
         if plot_v_lines:
-            boundaries = np.unique(
-                window_indices[
-                    channel_idx,
-                    :,
-                    :,
-                ].astype(int).ravel()
-            )
-
+            boundaries = window_indices[window_positions[col]].reshape(-1)
+            boundaries = boundaries[np.isfinite(boundaries)]
+            boundaries = np.unique(np.rint(boundaries).astype(int))
             boundaries = boundaries[
-                (boundaries >= 0)
-                & (boundaries < n_samples)
+                (boundaries >= 0) & (boundaries < n_samples)
             ]
 
-            for boundary_idx in boundaries:
+            for boundary_index in boundaries:
                 ax.axvline(
-                    x=time[boundary_idx],
+                    x=time[boundary_index],
                     color="red",
                     linestyle="--",
                     linewidth=1,
                     alpha=0.7,
                 )
 
-        ax.set_title(
-            str(channel_names[col])
-        )
-
+        ax.set_title(str(channel_names[col]))
         if col == 0:
             ax.set_ylabel("Full trace")
 
-        apply_full_trace_ylim(
-            ax,
-            traces,
-        )
+        if ylim is True:
+            limits = _padded_limits(traces, ylim_padding)
+            if limits is not None:
+                ax.set_ylim(limits)
+        elif fixed_ylim is not None:
+            ax.set_ylim(fixed_ylim)
 
-    # ============================================================
+    # -----------------------------------------------------------------
     # Fiber-window rows
-    # ============================================================
-    for row, fiber_idx in enumerate(
-        plot_fibers,
-        start=1,
-    ):
-        for col, channel_idx in enumerate(plot_channels):
+    # -----------------------------------------------------------------
+    for row, fiber_index in enumerate(plot_fibers, start=1):
+        fiber_label = str(fiber_labels[row - 1])
+
+        for col in range(n_plot_channels):
             ax = axes[row, col]
+            bounds = window_indices[window_positions[col], fiber_index]
 
-            raw_start_idx, raw_end_idx = window_indices[
-                channel_idx,
-                fiber_idx,
-            ].astype(int)
+            if not np.all(np.isfinite(bounds)):
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Invalid window",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                continue
 
-            window_length = (
-                raw_end_idx - raw_start_idx
-            )
-
+            raw_start, raw_stop = np.rint(bounds).astype(int)
+            window_length = raw_stop - raw_start
             if window_length <= 0:
                 ax.text(
                     0.5,
@@ -768,48 +774,18 @@ def plot_highest_amp_traces(
                     va="center",
                     transform=ax.transAxes,
                 )
-
-                if col == 0:
-                    ax.set_ylabel(
-                        str(fiber_labels[row - 1])
-                    )
-
                 continue
 
             shoulder_samples = int(
-                round(
-                    window_length
-                    * shoulder_percent
-                    / 100.0
-                )
+                round(window_length * shoulder_percent / 100.0)
             )
 
-            # True neural window.
-            start_idx = max(
-                0,
-                raw_start_idx,
-            )
+            start = max(0, raw_start)
+            stop = min(n_samples, raw_stop)
+            display_start = max(0, raw_start - shoulder_samples)
+            display_stop = min(n_samples, raw_stop + shoulder_samples)
 
-            end_idx = min(
-                n_samples,
-                raw_end_idx,
-            )
-
-            # Expanded display window.
-            display_start_idx = max(
-                0,
-                raw_start_idx - shoulder_samples,
-            )
-
-            display_end_idx = min(
-                n_samples,
-                raw_end_idx + shoulder_samples,
-            )
-
-            if (
-                end_idx <= start_idx
-                or display_end_idx <= display_start_idx
-            ):
+            if stop <= start or display_stop <= display_start:
                 ax.text(
                     0.5,
                     0.5,
@@ -818,36 +794,13 @@ def plot_highest_amp_traces(
                     va="center",
                     transform=ax.transAxes,
                 )
-
-                if col == 0:
-                    ax.set_ylabel(
-                        str(fiber_labels[row - 1])
-                    )
-
                 continue
 
             traces = data[:, col, :]
-
-            # Data from the true analysis window.
-            window_traces = traces[
-                :,
-                start_idx:end_idx,
-            ]
-
-            # Data shown, including shoulders.
-            displayed_traces = traces[
-                :,
-                display_start_idx:display_end_idx,
-            ]
-
-            displayed_mean = np.nanmean(
-                displayed_traces,
-                axis=0,
-            )
-
-            displayed_time = time[
-                display_start_idx:display_end_idx
-            ]
+            window_traces = traces[:, start:stop]
+            displayed_traces = traces[:, display_start:display_stop]
+            displayed_time = time[display_start:display_stop]
+            displayed_mean = np.nanmean(displayed_traces, axis=0)
 
             ax.plot(
                 displayed_time,
@@ -856,36 +809,21 @@ def plot_highest_amp_traces(
                 alpha=0.20,
                 linewidth=0.5,
             )
-
-            ax.plot(
-                displayed_time,
-                displayed_mean,
-                color="blue",
-                linewidth=2,
-            )
+            ax.plot(displayed_time, displayed_mean, color="blue", linewidth=2)
 
             if plot_v_lines:
-                if (
-                    display_start_idx
-                    <= start_idx
-                    < display_end_idx
-                ):
+                if display_start <= start < display_stop:
                     ax.axvline(
-                        x=time[start_idx],
+                        x=time[start],
                         color="red",
                         linestyle="--",
                         linewidth=1,
                         alpha=0.7,
                     )
 
-                if (
-                    display_start_idx
-                    < end_idx
-                    < display_end_idx
-                    and end_idx < n_samples
-                ):
+                if display_start < stop < display_stop and stop < n_samples:
                     ax.axvline(
-                        x=time[end_idx],
+                        x=time[stop],
                         color="red",
                         linestyle="--",
                         linewidth=1,
@@ -893,34 +831,48 @@ def plot_highest_amp_traces(
                     )
 
             if col == 0:
-                ax.set_ylabel(
-                    str(fiber_labels[row - 1])
+                ax.set_ylabel(fiber_label)
+
+            if ylim is True:
+                limits = _limited_shoulder_limits(
+                    window_traces,
+                    displayed_traces,
+                    ylim_padding=ylim_padding,
+                    shoulder_ylim_factor=shoulder_ylim_factor,
                 )
+                if limits is not None:
+                    ax.set_ylim(limits)
+            elif fixed_ylim is not None:
+                ax.set_ylim(fixed_ylim)
 
-            apply_fiber_ylim(
-                ax=ax,
-                window_traces=window_traces,
-                displayed_traces=displayed_traces,
-            )
-
-    # ============================================================
-    # Labels and layout
-    # ============================================================
     for ax in axes[-1, :]:
-        ax.set_xlabel("Time")
+        ax.set_xlabel("Time (s)")
 
     fig.suptitle(
-        f"Highest Stimulation Amplitude: {max_amp} μA",
+        f"Highest Stimulation Amplitude: {max_amp:g} μA",
         y=0.995,
     )
-
-    fig.tight_layout(
-        rect=(0, 0, 1, 0.97)
-    )
-
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
     plt.show()
 
     return fig, axes
+
+
+# =============================================================================
+# Plotly pulse-level traces
+# =============================================================================
+
+def _add_window_line(fig, x_value, row, col):
+    fig.add_vline(
+        x=x_value,
+        line_width=1,
+        line_dash="dash",
+        line_color="red",
+        opacity=0.7,
+        row=row,
+        col=col,
+    )
+
 
 def plot_highest_amp_traces_plotly(
     epoch,
@@ -928,121 +880,117 @@ def plot_highest_amp_traces_plotly(
     time=None,
     plot_v_lines=False,
     ylim=None,
-    show_shoulders=True
+    show_shoulders=True,
 ):
-    from plotly.subplots import make_subplots
-    from pathlib import Path
-    import plotly.io as pio
-
     """
-    Plot only the first row in Plotly:
-    mean trace for each selected channel + optional vertical lines.
+    Plot only the full mean trace at the highest stimulation amplitude.
 
-    epoch.epoch_array shape: [amp, pulse_train, channel, signal]
+    This preserves the original one-row Plotly behavior while using the
+    current parameter-driven EpochData API.
     """
+    del show_shoulders  # retained for call compatibility; no fiber rows here
 
-    # --- highest amplitude ---
-    amp_label = epoch.parameters.parameters["pulse amplitude (μA)"].idxmax()
-    max_amp = epoch.parameters.parameters.loc[amp_label, "pulse amplitude (μA)"]
+    parameter_key, max_amp, _ = _highest_amplitude_parameter(epoch)
 
-    amp_idx = epoch.parameters_dictionary[amp_label]
-    data = epoch.epoch_array[amp_idx]   # [pulse_train, channel, signal]
+    window_positions, recording_indices, channel_names = _resolve_neural_channels(
+        epoch,
+        rec_channels,
+    )
 
-    if hasattr(data, "compute"):
-        data = data.compute()
+    data = _load_epoch_numpy(
+        epoch,
+        parameter_key,
+        recording_channels=recording_indices.tolist(),
+    )
 
-    n_pulses, n_channels_total, n_samples = data.shape
+    _, n_plot_channels, n_samples = data.shape
+    time = _resolve_time_axis(epoch, parameter_key, n_samples, time=time)
 
-    # --- channel selection ---
-    if rec_channels is None:
-        plot_channels = np.arange(n_channels_total)
-    else:
-        plot_channels = np.asarray(rec_channels)
-
-    n_plot_channels = len(plot_channels)
-    channel_names = np.array(epoch.ephys.ch_names)[plot_channels]
-
-    # --- time axis ---
-    if time is None:
-        time = np.arange(n_samples)
-    else:
-        time = np.asarray(time)
-        if len(time) != n_samples:
-            raise ValueError("time must have same length as the signal axis")
-
-    # --- ylim handling ---
     if ylim is True:
-        max_val = np.percentile(np.abs(data[:, plot_channels, :]), 95) * 1.25
-        computed_ylim = (-max_val, max_val)
+        max_value = np.nanpercentile(np.abs(data), 95) * 1.25
+        computed_ylim = (-max_value, max_value)
     elif ylim is None or ylim is False:
         computed_ylim = None
     else:
-        computed_ylim = ylim
+        if len(ylim) != 2:
+            raise ValueError("A fixed ylim must contain two values.")
+        computed_ylim = (float(ylim[0]), float(ylim[1]))
 
-    # --- make subplots ---
     fig = make_subplots(
         rows=1,
         cols=n_plot_channels,
         subplot_titles=list(channel_names),
         shared_yaxes=True,
-        shared_xaxes=True
+        shared_xaxes=True,
     )
 
-    for col, ch in enumerate(plot_channels, start=1):
-        mean_trace = data[:, ch, :].mean(axis=0)
+    window_indices = np.asarray(epoch.neural_window_indices)
+
+    for col in range(1, n_plot_channels + 1):
+        local_index = col - 1
+        mean_trace = np.nanmean(data[:, local_index, :], axis=0)
 
         fig.add_trace(
             go.Scatter(
                 x=time,
                 y=mean_trace,
                 mode="lines",
-                line=dict(width=2),
-                name=str(channel_names[col - 1]),
+                line={"width": 2},
+                name=str(channel_names[local_index]),
                 showlegend=False,
             ),
             row=1,
-            col=col
+            col=col,
         )
 
         if plot_v_lines:
-            window_ends = epoch.neural_window_indices[ch, :, 1].astype(int)
-            a_alpha_start = int(epoch.neural_window_indices[ch, 0, 0])
-            vlines = np.concatenate(([a_alpha_start], window_ends))
-            vlines = vlines[(vlines >= 0) & (vlines < len(time))]
+            boundaries = window_indices[window_positions[local_index]].reshape(-1)
+            boundaries = boundaries[np.isfinite(boundaries)]
+            boundaries = np.unique(np.rint(boundaries).astype(int))
+            boundaries = boundaries[
+                (boundaries >= 0) & (boundaries < n_samples)
+            ]
 
-            for v in vlines:
-                fig.add_vline(
-                    x=time[v],
-                    line_width=1,
-                    line_dash="dash",
-                    line_color="red",
+            for boundary_index in boundaries:
+                _add_window_line(
+                    fig,
+                    time[boundary_index],
                     row=1,
-                    col=col
+                    col=col,
                 )
 
         if computed_ylim is not None:
             fig.update_yaxes(range=list(computed_ylim), row=1, col=col)
 
     fig.update_layout(
-        title=f"Highest Stimulation Amplitude: {max_amp} μA",
+        title=f"Highest Stimulation Amplitude: {max_amp:g} μA",
         height=400,
         width=max(350 * n_plot_channels, 600),
-        template="plotly_white"
+        template="plotly_white",
+        autosize=True,
+        margin={"l": 20, "r": 20, "t": 40, "b": 20},
     )
-
-    fig.update_xaxes(title_text="Time")
+    fig.update_xaxes(title_text="Time (s)")
     fig.update_yaxes(title_text="Signal", row=1, col=1)
 
-    out = Path("plot_highest_amp_traces.html").resolve()
-    fig.update_layout(autosize=True, margin=dict(l=20, r=20, t=40, b=20))
-    pio.write_html(fig, file=str(out), auto_open=True, config={"responsive": True})
+    output = Path("plot_highest_amp_traces.html").resolve()
+    pio.write_html(
+        fig,
+        file=str(output),
+        auto_open=True,
+        config={"responsive": True},
+    )
 
-def a_alpha_range_max_right_bound(data, margin=.1):
+    return fig, max_amp, parameter_key
+
+
+def a_alpha_range_max_right_bound(data, margin=0.1):
+    data = np.asarray(data)
     max_val = data.max()
-    r_bound = data[-1]
-    ymax = max_val + (max_val - r_bound) * margin
-    ymin = r_bound - (max_val - r_bound) * margin
-    return (ymin, ymax)
+    right_bound = data[-1]
+    ymax = max_val + (max_val - right_bound) * margin
+    ymin = right_bound - (max_val - right_bound) * margin
+    return ymin, ymax
 
 
 def plot_stim_amp_traces_plotly(
@@ -1059,576 +1007,73 @@ def plot_stim_amp_traces_plotly(
     show=True,
 ):
     """
-    Plot traces at a requested stimulation amplitude using Plotly.
+    Plot pulse-level ECAP traces at a requested stimulation amplitude.
 
-    If the requested amplitude does not exist, the closest available
-    amplitude is selected.
-
-    Expected array shapes
-    ---------------------
-    epoch.epoch_array:
-        [stimulation_amplitude, pulse_train, channel, signal]
-
-    epoch.neural_window_indices:
-        [channel, fiber_window, start/end]
-
-    Parameters
-    ----------
-    epoch
-        Epoch object containing data, parameters, channel names, and
-        neural-window information.
-
-    stim_amplitude : float
-        Requested stimulation amplitude in microamps.
-
-    rec_channels : int, sequence of int, or None
-        Recording channels to plot.
-
-        If None, all channels represented in neural_window_indices
-        are plotted.
-
-    time : array-like or None
-        Time axis corresponding to the signal dimension.
-
-        If None, sample indices are used.
-
-    plot_v_lines : bool
-        If True, show the true neural-window boundaries.
-
-    plot_idv_fibers : bool, int, sequence of int, or None
-        False or None:
-            Show only the full traces.
-        True:
-            Show all neural/fiber windows.
-        int:
-            Show one fiber window.
-        sequence of int:
-            Show selected fiber windows.
-
-    show_shoulders : bool or float
-        Additional data shown on each side of the neural window.
-
-        False:
-            No shoulders.
-        True:
-            Add 100% of the window length to each side.
-        number:
-            Percentage of the window length added to each side.
-
-    ylim : bool, tuple, or None
-        True:
-            Calculate subplot-specific y-limits. Fiber limits are based
-            primarily on the true neural window, with limited expansion
-            for shoulder values.
-        False or None:
-            Let Plotly autoscale using all displayed data.
-        (lower, upper):
-            Apply fixed y-limits to all subplots.
-
-    ylim_padding : float
-        Fractional padding around automatically calculated y-limits.
-
-    shoulder_ylim_factor : float
-        Maximum amount by which shoulder values can expand the fiber
-        subplot limits relative to the true-window limits.
-
-        1.0:
-            Ignore shoulders when calculating y-limits.
-        2.0:
-            Allow up to twice the true-window scale.
-        3.0:
-            Allow more shoulder expansion.
-
-    show : bool
-        If True, display the figure immediately.
-
-    Returns
-    -------
-    fig : plotly.graph_objects.Figure
-        Plotly figure.
-
-    selected_amplitude : float
-        Actual amplitude selected.
-
-    amp_label
-        Parameter-table index label associated with the selected amplitude.
+    If the exact amplitude is absent, the closest available amplitude is
+    selected and a warning is emitted. The selected parameter key is passed
+    directly to ``epoch.epoch(...)``; there is no amplitude-index lookup.
     """
-
-    # ============================================================
-    # Helper functions
-    # ============================================================
-    def finite_min_max(values):
-        values = np.asarray(values)
-
-        finite_values = values[np.isfinite(values)]
-
-        if finite_values.size == 0:
-            return None
-
-        return (
-            float(finite_values.min()),
-            float(finite_values.max()),
-        )
-
-    def padded_limits(values):
-        result = finite_min_max(values)
-
-        if result is None:
-            return None
-
-        lower, upper = result
-        data_range = upper - lower
-
-        if data_range == 0:
-            data_range = max(abs(lower), 1.0)
-
-        padding = data_range * ylim_padding
-
-        return (
-            lower - padding,
-            upper + padding,
-        )
-
-    def limited_shoulder_limits(
-        window_values,
-        displayed_values,
-    ):
-        """
-        Base the y-limits on the true neural window.
-
-        Shoulder values can expand the limits only up to
-        shoulder_ylim_factor times the true-window scale.
-        """
-        window_limits = padded_limits(window_values)
-
-        if window_limits is None:
-            return padded_limits(displayed_values)
-
-        main_lower, main_upper = window_limits
-
-        displayed_extrema = finite_min_max(displayed_values)
-
-        if displayed_extrema is None:
-            return window_limits
-
-        displayed_lower, displayed_upper = displayed_extrema
-
-        main_center = (
-            main_lower + main_upper
-        ) / 2
-
-        main_half_range = (
-            main_upper - main_lower
-        ) / 2
-
-        if main_half_range <= 0:
-            main_half_range = 1.0
-
-        allowed_lower = (
-            main_center
-            - main_half_range * shoulder_ylim_factor
-        )
-
-        allowed_upper = (
-            main_center
-            + main_half_range * shoulder_ylim_factor
-        )
-
-        shoulder_padding = (
-            main_upper - main_lower
-        ) * ylim_padding
-
-        requested_lower = min(
-            main_lower,
-            displayed_lower - shoulder_padding,
-        )
-
-        requested_upper = max(
-            main_upper,
-            displayed_upper + shoulder_padding,
-        )
-
-        final_lower = max(
-            requested_lower,
-            allowed_lower,
-        )
-
-        final_upper = min(
-            requested_upper,
-            allowed_upper,
-        )
-
-        # The true neural window must always remain visible.
-        final_lower = min(
-            final_lower,
-            main_lower,
-        )
-
-        final_upper = max(
-            final_upper,
-            main_upper,
-        )
-
-        return final_lower, final_upper
-
-    def add_window_line(
-        figure,
-        x_value,
-        row,
-        col,
-    ):
-        figure.add_vline(
-            x=x_value,
-            line_width=1,
-            line_dash="dash",
-            line_color="red",
-            opacity=0.7,
-            row=row,
-            col=col,
-        )
-
-    # ============================================================
-    # Validate requested amplitude
-    # ============================================================
     if not isinstance(stim_amplitude, Real):
-        raise TypeError(
-            "stim_amplitude must be numeric"
-        )
+        raise TypeError("stim_amplitude must be numeric.")
 
     requested_amplitude = float(stim_amplitude)
-
     if not np.isfinite(requested_amplitude):
-        raise ValueError(
-            "stim_amplitude must be finite"
-        )
+        raise ValueError("stim_amplitude must be finite.")
 
-    # ============================================================
-    # Validate shoulder settings
-    # ============================================================
-    if isinstance(show_shoulders, (bool, np.bool_)):
-        shoulder_percent = (
-            100.0 if show_shoulders else 0.0
-        )
-
-    elif isinstance(show_shoulders, Real):
-        shoulder_percent = float(show_shoulders)
-
-        if (
-            not np.isfinite(shoulder_percent)
-            or shoulder_percent < 0
-        ):
-            raise ValueError(
-                "show_shoulders must be a finite, "
-                "nonnegative percentage"
-            )
-
-    else:
-        raise TypeError(
-            "show_shoulders must be False, True, "
-            "or a nonnegative percentage"
-        )
-
-    # ============================================================
-    # Validate y-limit settings
-    # ============================================================
-    if not isinstance(ylim_padding, Real):
-        raise TypeError(
-            "ylim_padding must be numeric"
-        )
-
-    ylim_padding = float(ylim_padding)
-
-    if (
-        not np.isfinite(ylim_padding)
-        or ylim_padding < 0
-    ):
-        raise ValueError(
-            "ylim_padding must be finite and nonnegative"
-        )
-
-    if not isinstance(shoulder_ylim_factor, Real):
-        raise TypeError(
-            "shoulder_ylim_factor must be numeric"
-        )
-
-    shoulder_ylim_factor = float(
-        shoulder_ylim_factor
+    fixed_ylim, ylim_padding, shoulder_ylim_factor = _validate_ylim_settings(
+        ylim,
+        ylim_padding,
+        shoulder_ylim_factor,
     )
+    shoulder_percent = _shoulder_percent(show_shoulders)
 
-    if (
-        not np.isfinite(shoulder_ylim_factor)
-        or shoulder_ylim_factor < 1
-    ):
-        raise ValueError(
-            "shoulder_ylim_factor must be finite "
-            "and greater than or equal to 1"
-        )
-
-    if ylim is True or ylim is False or ylim is None:
-        fixed_ylim = None
-
-    else:
-        if len(ylim) != 2:
-            raise ValueError(
-                "A fixed ylim must contain two values"
-            )
-
-        fixed_ylim = [
-            float(ylim[0]),
-            float(ylim[1]),
-        ]
-
-    # ============================================================
-    # Find the closest available stimulation amplitude
-    # ============================================================
-    par_df = epoch.parameters.parameters
-    amp_col = _find_amp_col(par_df)
-
-    amplitude_values = np.asarray(
-        par_df[amp_col],
-        dtype=float,
-    )
-
-    valid_positions = np.flatnonzero(
-        np.isfinite(amplitude_values)
-    )
-
-    if valid_positions.size == 0:
-        raise ValueError(
-            f"No valid amplitudes were found in {amp_col!r}"
-        )
-
-    amplitude_distances = np.abs(
-        amplitude_values[valid_positions]
-        - requested_amplitude
-    )
-
-    nearest_position = valid_positions[
-        np.argmin(amplitude_distances)
-    ]
-
-    selected_amplitude = float(
-        amplitude_values[nearest_position]
-    )
-
-    amp_label = par_df.index[nearest_position]
-    amp_idx = epoch.parameters_dictionary[amp_label]
-
-    exact_match = np.isclose(
-        selected_amplitude,
-        requested_amplitude,
-        rtol=0,
-        atol=1e-9,
+    parameter_key, selected_amplitude, exact_match, _ = (
+        _nearest_amplitude_parameter(epoch, requested_amplitude)
     )
 
     if not exact_match:
         warnings.warn(
-            f"Requested amplitude {requested_amplitude:g} μA "
-            f"was not found. Plotting the closest available "
-            f"amplitude: {selected_amplitude:g} μA.",
+            f"Requested amplitude {requested_amplitude:g} μA was not found. "
+            f"Plotting the closest available amplitude: "
+            f"{selected_amplitude:g} μA.",
             UserWarning,
             stacklevel=2,
         )
 
-    # ============================================================
-    # Neural-window information
-    # ============================================================
-    window_indices = epoch.neural_window_indices
-
-    if hasattr(window_indices, "compute"):
-        window_indices = window_indices.compute()
-
-    window_indices = np.asarray(
-        window_indices
-    )
-
-    if (
-        window_indices.ndim != 3
-        or window_indices.shape[2] != 2
-    ):
+    window_indices = np.asarray(epoch.neural_window_indices)
+    if window_indices.ndim != 3 or window_indices.shape[2] != 2:
         raise ValueError(
             "neural_window_indices must have shape "
-            "[channel, fiber_window, 2]"
+            "[neural_channel, fiber_window, 2]."
         )
 
-    n_window_channels = window_indices.shape[0]
-    n_available_fibers = window_indices.shape[1]
-
-    # ============================================================
-    # Channel selection
-    # ============================================================
-    if rec_channels is None:
-        plot_channels = np.arange(
-            n_window_channels,
-            dtype=int,
-        )
-
-    elif isinstance(rec_channels, (int, np.integer)):
-        plot_channels = np.array(
-            [int(rec_channels)],
-            dtype=int,
-        )
-
-    else:
-        plot_channels = np.asarray(
-            rec_channels,
-            dtype=int,
-        )
-
-        if plot_channels.ndim != 1:
-            raise ValueError(
-                "rec_channels must be an integer or "
-                "a one-dimensional sequence"
-            )
-
-    if plot_channels.size == 0:
-        raise ValueError(
-            "No recording channels were selected"
-        )
-
-    if np.any(plot_channels < 0):
-        raise IndexError(
-            "Channel indices cannot be negative"
-        )
-
-    if np.any(
-        plot_channels >= n_window_channels
-    ):
-        raise IndexError(
-            "Every selected channel must have an entry "
-            "in neural_window_indices"
-        )
-
-    n_plot_channels = len(plot_channels)
-
-    channel_names = np.asarray(
-        epoch.ephys.ch_names
-    )[plot_channels]
-
-    # ============================================================
-    # Load data at the selected amplitude
-    # ============================================================
-    data = epoch.epoch_array[
-        amp_idx,
-        :,
-        :,
-        :,
-    ]
-
-    data = data[
-        :,
-        plot_channels,
-        :,
-    ]
-
-    if hasattr(data, "compute"):
-        data = data.compute()
-
-    data = np.asarray(data)
-
-    if data.ndim != 3:
-        raise ValueError(
-            "Selected data must have shape "
-            "[pulse_train, channel, signal]"
-        )
-
-    n_pulses, selected_channel_count, n_samples = (
-        data.shape
+    window_positions, recording_indices, channel_names = _resolve_neural_channels(
+        epoch,
+        rec_channels,
     )
 
-    if selected_channel_count != n_plot_channels:
-        raise ValueError(
-            "Selected data does not contain the expected "
-            "number of channels"
-        )
+    data = _load_epoch_numpy(
+        epoch,
+        parameter_key,
+        recording_channels=recording_indices.tolist(),
+    )
 
-    # ============================================================
-    # Time axis
-    # ============================================================
-    if time is None:
-        time = np.arange(
-            n_samples
-        )
+    n_pulses, n_plot_channels, n_samples = data.shape
+    time = _resolve_time_axis(epoch, parameter_key, n_samples, time=time)
 
-    else:
-        time = np.asarray(time)
-
-        if time.ndim != 1:
-            raise ValueError(
-                "time must be one-dimensional"
-            )
-
-        if len(time) != n_samples:
-            raise ValueError(
-                "time must have the same length as "
-                "the signal axis"
-            )
-
-    # ============================================================
-    # Fiber-window selection
-    # ============================================================
-    if (
-        plot_idv_fibers is False
-        or plot_idv_fibers is None
-    ):
-        plot_fibers = []
-
-    elif plot_idv_fibers is True:
-        plot_fibers = list(
-            range(n_available_fibers)
-        )
-
-    elif isinstance(
+    n_available_fibers = int(window_indices.shape[1])
+    plot_fibers, fiber_labels = _fiber_selection(
+        epoch,
         plot_idv_fibers,
-        (int, np.integer),
-    ):
-        plot_fibers = [
-            int(plot_idv_fibers)
-        ]
-
-    else:
-        plot_fibers = [
-            int(fiber_idx)
-            for fiber_idx in plot_idv_fibers
-        ]
-
-    if any(
-        fiber_idx < 0
-        or fiber_idx >= n_available_fibers
-        for fiber_idx in plot_fibers
-    ):
-        raise IndexError(
-            "Fiber-window index out of range"
-        )
-
-    n_fibers = len(plot_fibers)
-
-    fiber_names = np.asarray(
-        epoch.neural_fiber_names
+        n_available_fibers,
     )
 
-    if n_fibers > 0:
-        fiber_labels = fiber_names[
-            plot_fibers
-        ]
-    else:
-        fiber_labels = []
-
-    # ============================================================
-    # Create Plotly subplot grid
-    # ============================================================
-    n_rows = 1 + n_fibers
+    n_rows = 1 + len(plot_fibers)
 
     subplot_titles = []
-
-    for row_idx in range(n_rows):
+    for row_index in range(n_rows):
         for channel_name in channel_names:
-            if row_idx == 0:
-                subplot_titles.append(
-                    str(channel_name)
-                )
-            else:
-                subplot_titles.append("")
+            subplot_titles.append(str(channel_name) if row_index == 0 else "")
 
     fig = make_subplots(
         rows=n_rows,
@@ -1636,56 +1081,33 @@ def plot_stim_amp_traces_plotly(
         shared_xaxes=False,
         shared_yaxes=False,
         subplot_titles=subplot_titles,
-        horizontal_spacing=(
-            0.04 if n_plot_channels > 1 else 0.08
-        ),
-        vertical_spacing=min(
-            0.08,
-            0.25 / n_rows,
-        ),
+        horizontal_spacing=0.04 if n_plot_channels > 1 else 0.08,
+        vertical_spacing=min(0.08, 0.25 / n_rows),
     )
 
-    # ============================================================
+    # -----------------------------------------------------------------
     # Full-trace row
-    # ============================================================
-    for col, channel_idx in enumerate(
-        plot_channels,
-        start=1,
-    ):
-        local_channel_idx = col - 1
+    # -----------------------------------------------------------------
+    for col in range(1, n_plot_channels + 1):
+        local_index = col - 1
+        traces = data[:, local_index, :]
+        mean_trace = np.nanmean(traces, axis=0)
 
-        traces = data[
-            :,
-            local_channel_idx,
-            :,
-        ]
-
-        mean_trace = np.nanmean(
-            traces,
-            axis=0,
-        )
-
-        for pulse_idx in range(n_pulses):
+        for pulse_index in range(n_pulses):
             fig.add_trace(
                 go.Scattergl(
                     x=time,
-                    y=traces[pulse_idx],
+                    y=traces[pulse_index],
                     mode="lines",
-                    line={
-                        "color": "rgba(120,120,120,0.25)",
-                        "width": 0.7,
-                    },
+                    line={"color": "rgba(120,120,120,0.25)", "width": 0.7},
                     name="Individual trace",
                     legendgroup="individual",
                     showlegend=False,
-                    customdata=np.full(
-                        len(time),
-                        pulse_idx,
-                    ),
+                    customdata=np.full(len(time), pulse_index),
                     hovertemplate=(
-                        f"Channel: {channel_names[local_channel_idx]}"
+                        f"Channel: {channel_names[local_index]}"
                         "<br>Pulse: %{customdata}"
-                        "<br>Time: %{x}"
+                        "<br>Time: %{x:.6g} s"
                         "<br>Signal: %{y:.5g}"
                         f"<br>Amplitude: {selected_amplitude:g} μA"
                         "<extra></extra>"
@@ -1700,17 +1122,14 @@ def plot_stim_amp_traces_plotly(
                 x=time,
                 y=mean_trace,
                 mode="lines",
-                line={
-                    "color": "blue",
-                    "width": 2.5,
-                },
+                line={"color": "blue", "width": 2.5},
                 name="Mean trace",
                 legendgroup="mean",
                 showlegend=(col == 1),
                 hovertemplate=(
-                    f"Channel: {channel_names[local_channel_idx]}"
+                    f"Channel: {channel_names[local_index]}"
                     "<br>Mean trace"
-                    "<br>Time: %{x}"
+                    "<br>Time: %{x:.6g} s"
                     "<br>Signal: %{y:.5g}"
                     f"<br>Amplitude: {selected_amplitude:g} μA"
                     "<extra></extra>"
@@ -1721,161 +1140,72 @@ def plot_stim_amp_traces_plotly(
         )
 
         if plot_v_lines:
-            channel_boundaries = window_indices[
-                channel_idx
-            ].reshape(-1)
-
-            channel_boundaries = channel_boundaries[
-                np.isfinite(channel_boundaries)
+            boundaries = window_indices[window_positions[local_index]].reshape(-1)
+            boundaries = boundaries[np.isfinite(boundaries)]
+            boundaries = np.unique(np.rint(boundaries).astype(int))
+            boundaries = boundaries[
+                (boundaries >= 0) & (boundaries < n_samples)
             ]
 
-            channel_boundaries = np.unique(
-                np.rint(
-                    channel_boundaries
-                ).astype(int)
-            )
-
-            channel_boundaries = channel_boundaries[
-                (channel_boundaries >= 0)
-                & (channel_boundaries < n_samples)
-            ]
-
-            for boundary_idx in channel_boundaries:
-                add_window_line(
-                    figure=fig,
-                    x_value=time[boundary_idx],
+            for boundary_index in boundaries:
+                _add_window_line(
+                    fig,
+                    time[boundary_index],
                     row=1,
                     col=col,
                 )
 
         if ylim is True:
-            full_limits = padded_limits(
-                traces
-            )
-
-            if full_limits is not None:
-                fig.update_yaxes(
-                    range=list(full_limits),
-                    row=1,
-                    col=col,
-                )
-
+            limits = _padded_limits(traces, ylim_padding)
+            if limits is not None:
+                fig.update_yaxes(range=list(limits), row=1, col=col)
         elif fixed_ylim is not None:
-            fig.update_yaxes(
-                range=fixed_ylim,
-                row=1,
-                col=col,
-            )
+            fig.update_yaxes(range=list(fixed_ylim), row=1, col=col)
 
         if col == 1:
-            fig.update_yaxes(
-                title_text="Full trace",
-                row=1,
-                col=col,
-            )
+            fig.update_yaxes(title_text="Full trace", row=1, col=col)
 
-    # ============================================================
+    # -----------------------------------------------------------------
     # Fiber-window rows
-    # ============================================================
-    for fiber_row, fiber_idx in enumerate(
-        plot_fibers,
-        start=2,
-    ):
-        fiber_label = str(
-            fiber_labels[fiber_row - 2]
-        )
+    # -----------------------------------------------------------------
+    for fiber_row, fiber_index in enumerate(plot_fibers, start=2):
+        fiber_label = str(fiber_labels[fiber_row - 2])
 
-        for col, channel_idx in enumerate(
-            plot_channels,
-            start=1,
-        ):
-            local_channel_idx = col - 1
+        for col in range(1, n_plot_channels + 1):
+            local_index = col - 1
+            bounds = window_indices[window_positions[local_index], fiber_index]
 
-            bounds = window_indices[
-                channel_idx,
-                fiber_idx,
-            ]
-
-            if not np.all(
-                np.isfinite(bounds)
-            ):
+            if not np.all(np.isfinite(bounds)):
                 continue
 
-            raw_start_idx, raw_end_idx = (
-                np.rint(bounds).astype(int)
-            )
-
-            window_length = (
-                raw_end_idx - raw_start_idx
-            )
-
+            raw_start, raw_stop = np.rint(bounds).astype(int)
+            window_length = raw_stop - raw_start
             if window_length <= 0:
                 continue
 
             shoulder_samples = int(
-                round(
-                    window_length
-                    * shoulder_percent
-                    / 100.0
-                )
+                round(window_length * shoulder_percent / 100.0)
             )
 
-            start_idx = max(
-                0,
-                raw_start_idx,
-            )
+            start = max(0, raw_start)
+            stop = min(n_samples, raw_stop)
+            display_start = max(0, raw_start - shoulder_samples)
+            display_stop = min(n_samples, raw_stop + shoulder_samples)
 
-            end_idx = min(
-                n_samples,
-                raw_end_idx,
-            )
-
-            display_start_idx = max(
-                0,
-                raw_start_idx - shoulder_samples,
-            )
-
-            display_end_idx = min(
-                n_samples,
-                raw_end_idx + shoulder_samples,
-            )
-
-            if (
-                end_idx <= start_idx
-                or display_end_idx <= display_start_idx
-            ):
+            if stop <= start or display_stop <= display_start:
                 continue
 
-            traces = data[
-                :,
-                local_channel_idx,
-                :,
-            ]
+            traces = data[:, local_index, :]
+            window_traces = traces[:, start:stop]
+            displayed_traces = traces[:, display_start:display_stop]
+            displayed_time = time[display_start:display_stop]
+            displayed_mean = np.nanmean(displayed_traces, axis=0)
 
-            window_traces = traces[
-                :,
-                start_idx:end_idx,
-            ]
-
-            displayed_traces = traces[
-                :,
-                display_start_idx:display_end_idx,
-            ]
-
-            displayed_time = time[
-                display_start_idx:display_end_idx
-            ]
-
-            displayed_mean = np.nanmean(
-                displayed_traces,
-                axis=0,
-            )
-
-            for pulse_idx in range(n_pulses):
+            for pulse_index in range(n_pulses):
                 fig.add_trace(
                     go.Scattergl(
                         x=displayed_time,
-                        y=displayed_traces[pulse_idx],
+                        y=displayed_traces[pulse_index],
                         mode="lines",
                         line={
                             "color": "rgba(120,120,120,0.25)",
@@ -1884,15 +1214,12 @@ def plot_stim_amp_traces_plotly(
                         name="Individual trace",
                         legendgroup="individual",
                         showlegend=False,
-                        customdata=np.full(
-                            len(displayed_time),
-                            pulse_idx,
-                        ),
+                        customdata=np.full(len(displayed_time), pulse_index),
                         hovertemplate=(
-                            f"Channel: {channel_names[local_channel_idx]}"
+                            f"Channel: {channel_names[local_index]}"
                             f"<br>Window: {fiber_label}"
                             "<br>Pulse: %{customdata}"
-                            "<br>Time: %{x}"
+                            "<br>Time: %{x:.6g} s"
                             "<br>Signal: %{y:.5g}"
                             f"<br>Amplitude: {selected_amplitude:g} μA"
                             "<extra></extra>"
@@ -1907,18 +1234,15 @@ def plot_stim_amp_traces_plotly(
                     x=displayed_time,
                     y=displayed_mean,
                     mode="lines",
-                    line={
-                        "color": "blue",
-                        "width": 2.5,
-                    },
+                    line={"color": "blue", "width": 2.5},
                     name="Mean trace",
                     legendgroup="mean",
                     showlegend=False,
                     hovertemplate=(
-                        f"Channel: {channel_names[local_channel_idx]}"
+                        f"Channel: {channel_names[local_index]}"
                         f"<br>Window: {fiber_label}"
                         "<br>Mean trace"
-                        "<br>Time: %{x}"
+                        "<br>Time: %{x:.6g} s"
                         "<br>Signal: %{y:.5g}"
                         f"<br>Amplitude: {selected_amplitude:g} μA"
                         "<extra></extra>"
@@ -1929,47 +1253,38 @@ def plot_stim_amp_traces_plotly(
             )
 
             if plot_v_lines:
-                if (
-                    display_start_idx
-                    <= start_idx
-                    < display_end_idx
-                ):
-                    add_window_line(
-                        figure=fig,
-                        x_value=time[start_idx],
+                if display_start <= start < display_stop:
+                    _add_window_line(
+                        fig,
+                        time[start],
                         row=fiber_row,
                         col=col,
                     )
 
-                if (
-                    display_start_idx
-                    < end_idx
-                    < display_end_idx
-                    and end_idx < n_samples
-                ):
-                    add_window_line(
-                        figure=fig,
-                        x_value=time[end_idx],
+                if display_start < stop < display_stop and stop < n_samples:
+                    _add_window_line(
+                        fig,
+                        time[stop],
                         row=fiber_row,
                         col=col,
                     )
 
             if ylim is True:
-                fiber_limits = limited_shoulder_limits(
-                    window_values=window_traces,
-                    displayed_values=displayed_traces,
+                limits = _limited_shoulder_limits(
+                    window_traces,
+                    displayed_traces,
+                    ylim_padding=ylim_padding,
+                    shoulder_ylim_factor=shoulder_ylim_factor,
                 )
-
-                if fiber_limits is not None:
+                if limits is not None:
                     fig.update_yaxes(
-                        range=list(fiber_limits),
+                        range=list(limits),
                         row=fiber_row,
                         col=col,
                     )
-
             elif fixed_ylim is not None:
                 fig.update_yaxes(
-                    range=fixed_ylim,
+                    range=list(fixed_ylim),
                     row=fiber_row,
                     col=col,
                 )
@@ -1981,53 +1296,27 @@ def plot_stim_amp_traces_plotly(
                     col=col,
                 )
 
-    # ============================================================
-    # Axis labels and figure layout
-    # ============================================================
-    for col in range(
-        1,
-        n_plot_channels + 1,
-    ):
-        fig.update_xaxes(
-            title_text="Time",
-            row=n_rows,
-            col=col,
-        )
+    # -----------------------------------------------------------------
+    # Layout and export
+    # -----------------------------------------------------------------
+    for col in range(1, n_plot_channels + 1):
+        fig.update_xaxes(title_text="Time (s)", row=n_rows, col=col)
 
     if exact_match:
-        title = (
-            f"Stimulation amplitude: "
-            f"{selected_amplitude:g} μA"
-        )
+        title = f"Stimulation amplitude: {selected_amplitude:g} μA"
     else:
         title = (
-            f"Requested {requested_amplitude:g} μA — "
-            f"showing closest available amplitude: "
-            f"{selected_amplitude:g} μA"
+            f"Requested {requested_amplitude:g} μA - showing closest "
+            f"available amplitude: {selected_amplitude:g} μA"
         )
 
     fig.update_layout(
-        title={
-            "text": title,
-            "x": 0.5,
-            "xanchor": "center",
-        },
+        title={"text": title, "x": 0.5, "xanchor": "center"},
         template="plotly_white",
         hovermode="closest",
-        height=max(
-            500,
-            280 * n_rows,
-        ),
-        width=max(
-            750,
-            400 * n_plot_channels,
-        ),
-        margin={
-            "l": 80,
-            "r": 30,
-            "t": 100,
-            "b": 70,
-        },
+        height=max(500, 280 * n_rows),
+        width=max(750, 400 * n_plot_channels),
+        margin={"l": 80, "r": 30, "t": 100, "b": 70},
     )
 
     fig.write_html(
@@ -2040,4 +1329,4 @@ def plot_stim_amp_traces_plotly(
     if show:
         fig.show()
 
-    return fig, selected_amplitude, amp_label
+    return fig, selected_amplitude, parameter_key

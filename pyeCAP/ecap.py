@@ -1129,6 +1129,1535 @@ class ECAP(_EpochData):
             plt.show()
         return figure, axes
 
+    def _resolve_plot_parameter(
+            self,
+            *,
+            parameter=None,
+            amplitude=None,
+            condition=None,
+            stimulation_contact=None,
+    ):
+        """
+        Resolve either an explicit parameter key or an amplitude to one
+        stimulation parameter.
+
+        When amplitude is used, optional condition and stimulation_contact
+        filters can disambiguate parameters.
+
+        If the requested amplitude does not exist, the nearest available
+        amplitude is selected and a warning is issued.
+        """
+
+        # ------------------------------------------------------------------
+        # Require exactly one selection method
+        # ------------------------------------------------------------------
+
+        if parameter is not None and amplitude is not None:
+            raise ValueError(
+                "Specify either parameter or amplitude, not both."
+            )
+
+        if parameter is None and amplitude is None:
+            raise ValueError(
+                "Either parameter or amplitude must be specified."
+            )
+
+        # ------------------------------------------------------------------
+        # Explicit parameter
+        # ------------------------------------------------------------------
+
+        if parameter is not None:
+            parameter = self._normalize_parameter_key(parameter)
+
+            return parameter
+
+        # ------------------------------------------------------------------
+        # Amplitude-based selection
+        # ------------------------------------------------------------------
+
+        table = self.parameters.parameters
+
+        # Locate amplitude column.
+        preferred_columns = [
+            "pulse amplitude (μA)",
+            "pulse amplitude A (μA)",
+        ]
+
+        amplitude_column = None
+
+        for column in preferred_columns:
+            if column in table.columns:
+                amplitude_column = column
+                break
+
+        if amplitude_column is None:
+            possible_columns = [
+                column
+                for column in table.columns
+                if "pulse amplitude" in str(column).casefold()
+            ]
+
+            if len(possible_columns) == 1:
+                amplitude_column = possible_columns[0]
+
+            elif len(possible_columns) > 1:
+                raise ValueError(
+                    "Multiple possible amplitude columns were found:\n"
+                    f"{possible_columns}"
+                )
+
+            else:
+                raise ValueError(
+                    "Could not identify a pulse-amplitude column "
+                    "in the stimulation parameter table."
+                )
+
+        # Start with the full parameter table.
+        candidates = table.copy()
+
+        # ------------------------------------------------------------------
+        # Optional condition filter
+        # ------------------------------------------------------------------
+
+        if condition is not None:
+
+            if "condition" not in candidates.columns:
+                raise ValueError(
+                    "condition was provided, but the parameter table "
+                    "does not contain a 'condition' column."
+                )
+
+            condition_mask = (
+                candidates["condition"]
+                .astype(str)
+                .str.casefold()
+                .eq(str(condition).casefold())
+            )
+
+            candidates = candidates[
+                condition_mask
+            ]
+
+        # ------------------------------------------------------------------
+        # Optional stimulation-contact filter
+        # ------------------------------------------------------------------
+
+        if stimulation_contact is not None:
+
+            if "channel" not in candidates.columns:
+                raise ValueError(
+                    "stimulation_contact was provided, but the parameter "
+                    "table does not contain a 'channel' column."
+                )
+
+            contact_mask = (
+                candidates["channel"]
+                .astype(str)
+                .str.casefold()
+                .eq(str(stimulation_contact).casefold())
+            )
+
+            candidates = candidates[
+                contact_mask
+            ]
+
+        if candidates.empty:
+            raise ValueError(
+                "No stimulation parameters matched the supplied filters."
+            )
+
+        # ------------------------------------------------------------------
+        # Find nearest amplitude
+        # ------------------------------------------------------------------
+
+        requested_amplitude = float(
+            amplitude
+        )
+
+        available_amplitudes = (
+            candidates[amplitude_column]
+            .astype(float)
+            .to_numpy()
+        )
+
+        unique_amplitudes = np.unique(
+            available_amplitudes
+        )
+
+        # First check for an exact match.
+        exact = np.isclose(
+            unique_amplitudes,
+            requested_amplitude,
+        )
+
+        if np.any(exact):
+
+            selected_amplitude = float(
+                unique_amplitudes[
+                    np.flatnonzero(exact)[0]
+                ]
+            )
+
+        else:
+
+            distances = np.abs(
+                unique_amplitudes
+                - requested_amplitude
+            )
+
+            minimum_distance = distances.min()
+
+            nearest = unique_amplitudes[
+                np.isclose(
+                    distances,
+                    minimum_distance,
+                )
+            ]
+
+            # In a perfect tie, choose the lower amplitude.
+            selected_amplitude = float(
+                nearest.min()
+            )
+
+            warnings.warn(
+                (
+                    f"Requested amplitude "
+                    f"{requested_amplitude:g} µA does not exist. "
+                    f"Using nearest available amplitude: "
+                    f"{selected_amplitude:g} µA."
+                ),
+                UserWarning,
+                stacklevel=2,
+            )
+
+        # ------------------------------------------------------------------
+        # Find parameter row at resolved amplitude
+        # ------------------------------------------------------------------
+
+        amplitude_mask = np.isclose(
+            candidates[amplitude_column]
+            .astype(float)
+            .to_numpy(),
+            selected_amplitude,
+        )
+
+        matches = candidates[
+            amplitude_mask
+        ]
+
+        # ------------------------------------------------------------------
+        # Amplitude alone may not uniquely identify a parameter
+        # ------------------------------------------------------------------
+
+        if len(matches) > 1:
+            columns_to_show = [
+                column
+                for column in [
+                    "condition",
+                    "channel",
+                    amplitude_column,
+                ]
+                if column in matches.columns
+            ]
+
+            raise ValueError(
+                (
+                    f"Amplitude {selected_amplitude:g} µA matches "
+                    f"{len(matches)} stimulation parameters.\n\n"
+                    f"{matches[columns_to_show].to_string()}\n\n"
+                    "Specify condition= and/or stimulation_contact= "
+                    "to select one parameter."
+                )
+            )
+
+        parameter = matches.index[0]
+
+        return self._normalize_parameter_key(
+            parameter
+        )
+
+    def plot_recording_channels_interactive(
+            self,
+            parameter=None,
+            *,
+            amplitude=None,
+            condition=None,
+            stimulation_contact=None,
+            plot_window=None,
+            relative_time_frame=None,
+            y_units="µV",
+            display=True,
+            block=True,
+    ):
+        """
+        Interactively plot pulse-mean ECAP recording traces using PyQtGraph.
+
+        A stimulation parameter can be selected either directly with `parameter`
+        or indirectly using `amplitude`. If the requested amplitude does not
+        exist, the nearest available amplitude is selected and a warning is issued.
+
+        Neural conduction windows can optionally be displayed as shaded regions.
+        Window timing is calculated independently for each neural recording
+        channel.
+
+        Moving the mouse over a trace displays a crosshair snapped to the nearest
+        actual waveform sample and reports its time and amplitude.
+
+        Parameters
+        ----------
+        parameter : object, optional
+            Explicit stimulation parameter key.
+
+            Example:
+                parameter=(0, 5)
+
+            Either `parameter` or `amplitude` must be supplied, but not both.
+
+        amplitude : float, optional
+            Requested stimulation amplitude in µA.
+
+            If the exact amplitude does not exist, the closest available
+            amplitude is selected.
+
+        condition : str, optional
+            Experimental condition used to disambiguate amplitude-based
+            selection.
+
+            Example:
+                condition="Intact"
+
+        stimulation_contact : str, optional
+            Stimulation contact/channel used to disambiguate amplitude-based
+            selection.
+
+            Example:
+                stimulation_contact="Channel 1"
+
+        plot_window : str, sequence of str, or None
+            Neural conduction window(s) to display.
+
+            Examples:
+                None
+                "alpha"
+                ["alpha", "abeta"]
+                "all"
+
+            Recognized aliases include:
+                alpha / aalpha / A-alpha
+                beta / abeta / A-beta
+                gamma / agamma / A-gamma
+                delta / adelta / A-delta
+                b / B
+
+        relative_time_frame : tuple(float, float), optional
+            Initial time range displayed, in seconds.
+
+            Example:
+                relative_time_frame=(0, 0.005)
+
+            If None, the entire epoch is displayed.
+
+        y_units : str
+            Units shown in the cursor readout and y-axis label.
+
+            Default:
+                "µV"
+
+            If compute_mean_traces() returns volts instead, use:
+                y_units="V"
+
+        display : bool
+            If True, show the PyQtGraph window.
+
+        block : bool
+            If True, start the Qt event loop and block the Python console until
+            the plotting window is closed.
+
+            This is recommended when running from PyCharm.
+
+        Returns
+        -------
+        window : pyqtgraph.GraphicsLayoutWidget
+            Interactive plotting window.
+
+        plots : list
+            List of PyQtGraph PlotItem objects.
+
+        resolved_parameter : object
+            Parameter actually used for the plot.
+        """
+
+        import warnings
+        import numpy as np
+
+        try:
+            import pyqtgraph as pg
+        except ImportError as exc:
+            raise ImportError(
+                "plot_recording_channels_interactive() requires PyQtGraph. "
+                "Install it with: pip install pyqtgraph"
+            ) from exc
+
+        # ==================================================================
+        # RESOLVE PARAMETER
+        # ==================================================================
+
+        if parameter is not None and amplitude is not None:
+            raise ValueError(
+                "Specify either parameter or amplitude, not both."
+            )
+
+        if parameter is None and amplitude is None:
+            raise ValueError(
+                "Either parameter or amplitude must be specified."
+            )
+
+        # ------------------------------------------------------------------
+        # Explicit parameter
+        # ------------------------------------------------------------------
+
+        if parameter is not None:
+
+            # Support newer EpochData implementations that normalize keys.
+            if hasattr(self, "_normalize_parameter_key"):
+                parameter = self._normalize_parameter_key(parameter)
+
+            resolved_parameter = parameter
+
+        # ------------------------------------------------------------------
+        # Amplitude-based parameter lookup
+        # ------------------------------------------------------------------
+
+        else:
+
+            # Current parameter table.
+            parameter_table = self.parameters.parameters
+
+            # --------------------------------------------------------------
+            # Locate amplitude column
+            # --------------------------------------------------------------
+
+            preferred_amplitude_columns = [
+                "pulse amplitude (μA)",
+                "pulse amplitude A (μA)",
+                "pulse amplitude (uA)",
+                "pulse amplitude A (uA)",
+            ]
+
+            amplitude_column = None
+
+            for column in preferred_amplitude_columns:
+                if column in parameter_table.columns:
+                    amplitude_column = column
+                    break
+
+            # Fall back to searching column names.
+            if amplitude_column is None:
+
+                possible_columns = [
+                    column
+                    for column in parameter_table.columns
+                    if "pulse amplitude" in str(column).casefold()
+                ]
+
+                if len(possible_columns) == 1:
+                    amplitude_column = possible_columns[0]
+
+                elif len(possible_columns) > 1:
+                    raise ValueError(
+                        "Multiple possible pulse-amplitude columns were found:\n"
+                        f"{possible_columns}"
+                    )
+
+                else:
+                    raise ValueError(
+                        "Could not identify the pulse-amplitude column in "
+                        "the stimulation parameter table."
+                    )
+
+            candidates = parameter_table.copy()
+
+            # --------------------------------------------------------------
+            # Optional condition filter
+            # --------------------------------------------------------------
+
+            if condition is not None:
+
+                if "condition" not in candidates.columns:
+                    raise ValueError(
+                        "condition= was supplied, but the parameter table "
+                        "does not contain a 'condition' column."
+                    )
+
+                condition_mask = (
+                    candidates["condition"]
+                    .astype(str)
+                    .str.strip()
+                    .str.casefold()
+                    .eq(
+                        str(condition)
+                        .strip()
+                        .casefold()
+                    )
+                )
+
+                candidates = candidates.loc[
+                    condition_mask
+                ]
+
+            # --------------------------------------------------------------
+            # Optional stimulation contact filter
+            # --------------------------------------------------------------
+
+            if stimulation_contact is not None:
+
+                if "channel" not in candidates.columns:
+                    raise ValueError(
+                        "stimulation_contact= was supplied, but the "
+                        "parameter table does not contain a 'channel' column."
+                    )
+
+                contact_mask = (
+                    candidates["channel"]
+                    .astype(str)
+                    .str.strip()
+                    .str.casefold()
+                    .eq(
+                        str(stimulation_contact)
+                        .strip()
+                        .casefold()
+                    )
+                )
+
+                candidates = candidates.loc[
+                    contact_mask
+                ]
+
+            if candidates.empty:
+                raise ValueError(
+                    "No stimulation parameters matched the supplied "
+                    "condition/stimulation-contact filters."
+                )
+
+            # --------------------------------------------------------------
+            # Determine nearest available amplitude
+            # --------------------------------------------------------------
+
+            requested_amplitude = float(
+                amplitude
+            )
+
+            amplitude_values = (
+                candidates[amplitude_column]
+                .astype(float)
+                .to_numpy()
+            )
+
+            available_amplitudes = np.unique(
+                amplitude_values
+            )
+
+            exact_match = np.isclose(
+                available_amplitudes,
+                requested_amplitude,
+            )
+
+            if np.any(exact_match):
+
+                selected_amplitude = float(
+                    available_amplitudes[
+                        np.flatnonzero(
+                            exact_match
+                        )[0]
+                    ]
+                )
+
+            else:
+
+                amplitude_distance = np.abs(
+                    available_amplitudes
+                    - requested_amplitude
+                )
+
+                minimum_distance = (
+                    amplitude_distance.min()
+                )
+
+                nearest_amplitudes = (
+                    available_amplitudes[
+                        np.isclose(
+                            amplitude_distance,
+                            minimum_distance,
+                        )
+                    ]
+                )
+
+                # If perfectly halfway between two available values,
+                # choose the lower amplitude.
+                selected_amplitude = float(
+                    nearest_amplitudes.min()
+                )
+
+                warnings.warn(
+                    (
+                        f"Requested amplitude "
+                        f"{requested_amplitude:g} µA does not exist. "
+                        f"Using nearest available amplitude: "
+                        f"{selected_amplitude:g} µA."
+                    ),
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            # --------------------------------------------------------------
+            # Get rows matching resolved amplitude
+            # --------------------------------------------------------------
+
+            amplitude_mask = np.isclose(
+                candidates[amplitude_column]
+                .astype(float)
+                .to_numpy(),
+                selected_amplitude,
+            )
+
+            matches = candidates.loc[
+                amplitude_mask
+            ]
+
+            # --------------------------------------------------------------
+            # Prevent ambiguous parameter selection
+            # --------------------------------------------------------------
+
+            if len(matches) > 1:
+                columns_to_show = [
+                    column
+                    for column in [
+                        "condition",
+                        "stimulation type",
+                        "channel",
+                        amplitude_column,
+                    ]
+                    if column in matches.columns
+                ]
+
+                raise ValueError(
+                    (
+                        f"Amplitude {selected_amplitude:g} µA matches "
+                        f"{len(matches)} stimulation parameters.\n\n"
+                        f"{matches[columns_to_show].to_string()}\n\n"
+                        "Specify condition= and/or stimulation_contact= "
+                        "to select a unique parameter."
+                    )
+                )
+
+            resolved_parameter = matches.index[0]
+
+            if hasattr(
+                    self,
+                    "_normalize_parameter_key",
+            ):
+                resolved_parameter = (
+                    self._normalize_parameter_key(
+                        resolved_parameter
+                    )
+                )
+
+        # Use resolved parameter throughout remainder of function.
+        parameter = resolved_parameter
+
+        # ==================================================================
+        # LOAD MEAN WAVEFORM
+        # ==================================================================
+
+        waveform = self.compute_mean_traces(
+            parameter
+        )
+
+        # Dask compatibility.
+        if hasattr(waveform, "compute"):
+            waveform = waveform.compute()
+
+        waveform = np.asarray(
+            waveform
+        )
+
+        # ------------------------------------------------------------------
+        # Time axis
+        # ------------------------------------------------------------------
+
+        time = self.time_axis(
+            parameter
+        )
+
+        if hasattr(time, "compute"):
+            time = time.compute()
+
+        time = np.asarray(
+            time,
+            dtype=float,
+        )
+
+        if waveform.ndim != 2:
+            raise ValueError(
+                "Expected compute_mean_traces(parameter) to return "
+                "(channels, samples). "
+                f"Received shape {waveform.shape}."
+            )
+
+        if waveform.shape[1] != time.size:
+            raise ValueError(
+                f"Waveform contains {waveform.shape[1]} samples, "
+                f"but time axis contains {time.size} samples."
+            )
+
+        # ==================================================================
+        # OPTIONAL DISPLAY TIME RANGE
+        # ==================================================================
+
+        if relative_time_frame is not None:
+
+            if len(relative_time_frame) != 2:
+                raise ValueError(
+                    "relative_time_frame must contain exactly two values: "
+                    "(start_time, stop_time)."
+                )
+
+            start_time, stop_time = map(
+                float,
+                relative_time_frame,
+            )
+
+            if stop_time <= start_time:
+                raise ValueError(
+                    "relative_time_frame stop time must be greater "
+                    "than start time."
+                )
+
+            time_mask = (
+                    (time >= start_time)
+                    & (time <= stop_time)
+            )
+
+            if not np.any(time_mask):
+                raise ValueError(
+                    "relative_time_frame does not overlap the epoch."
+                )
+
+            plot_time = time[
+                time_mask
+            ]
+
+            plot_waveform = waveform[
+                :,
+                time_mask,
+            ]
+
+        else:
+
+            plot_time = time
+            plot_waveform = waveform
+
+        # ==================================================================
+        # NORMALIZE WINDOW NAMES
+        # ==================================================================
+
+        def normalize_window_name(value):
+
+            value = (
+                str(value)
+                .strip()
+                .lower()
+            )
+
+            value = (
+                value
+                .replace("α", "alpha")
+                .replace("β", "beta")
+                .replace("γ", "gamma")
+                .replace("δ", "delta")
+            )
+
+            return "".join(
+                character
+                for character in value
+                if character.isalnum()
+            )
+
+        aliases = {
+            "alpha": "A-alpha",
+            "aalpha": "A-alpha",
+
+            "beta": "A-beta",
+            "abeta": "A-beta",
+
+            "gamma": "A-gamma",
+            "agamma": "A-gamma",
+
+            "delta": "A-delta",
+            "adelta": "A-delta",
+
+            "b": "B",
+        }
+
+        # Automatically add canonical ECAP names.
+        for fiber_name in self.neural_fiber_names:
+            aliases[
+                normalize_window_name(
+                    fiber_name
+                )
+            ] = fiber_name
+
+        # ------------------------------------------------------------------
+        # Parse plot_window
+        # ------------------------------------------------------------------
+
+        if plot_window is None:
+
+            selected_windows = []
+
+        elif isinstance(
+                plot_window,
+                str,
+        ):
+
+            if normalize_window_name(
+                    plot_window
+            ) == "all":
+
+                selected_windows = list(
+                    self.neural_fiber_names
+                )
+
+            else:
+
+                selected_windows = [
+                    plot_window
+                ]
+
+        else:
+
+            selected_windows = list(
+                plot_window
+            )
+
+        # ------------------------------------------------------------------
+        # Convert aliases to canonical fiber names
+        # ------------------------------------------------------------------
+
+        canonical_windows = []
+
+        for window_name in selected_windows:
+
+            normalized = normalize_window_name(
+                window_name
+            )
+
+            if normalized == "all":
+                canonical_windows.extend(
+                    self.neural_fiber_names
+                )
+
+                continue
+
+            if normalized not in aliases:
+                raise ValueError(
+                    f"Unknown neural window "
+                    f"{window_name!r}. "
+                    f"Available windows are: "
+                    f"{', '.join(self.neural_fiber_names)}"
+                )
+
+            canonical_windows.append(
+                aliases[normalized]
+            )
+
+        # Remove duplicates while preserving order.
+        canonical_windows = list(
+            dict.fromkeys(
+                canonical_windows
+            )
+        )
+
+        fiber_indices = {
+            fiber_name: fiber_index
+            for fiber_index, fiber_name
+            in enumerate(
+                self.neural_fiber_names
+            )
+        }
+
+        # ==================================================================
+        # CHANNELS
+        # ==================================================================
+
+        neural_channels = np.asarray(
+            self.neural_channels,
+            dtype=int,
+        )
+
+        emg_channels = np.asarray(
+            getattr(
+                self,
+                "emg_channels",
+                [],
+            ),
+            dtype=int,
+        )
+
+        n_rows = max(
+            neural_channels.size,
+            emg_channels.size,
+            1,
+        )
+
+        n_columns = (
+            2
+            if emg_channels.size
+            else 1
+        )
+
+        # ==================================================================
+        # QT APPLICATION
+        # ==================================================================
+
+        app = pg.mkQApp(
+            "pyeCAP ECAP Viewer"
+        )
+
+        window = pg.GraphicsLayoutWidget()
+
+        window.setWindowTitle(
+            "pyeCAP ECAP Viewer"
+        )
+
+        window.resize(
+            1300,
+            max(
+                600,
+                260 * n_rows,
+            ),
+        )
+
+        plots = []
+
+        first_plot = None
+
+        # Keep Python references to Qt callbacks/proxies.
+        label_callbacks = []
+        mouse_proxies = []
+        crosshair_items = []
+
+        # ------------------------------------------------------------------
+        # Plot styling
+        # ------------------------------------------------------------------
+
+        foreground = pg.getConfigOption(
+            "foreground"
+        )
+
+        trace_pen = pg.mkPen(
+            foreground,
+            width=1.5,
+        )
+
+        crosshair_pen = pg.mkPen(
+            foreground,
+            width=1,
+            style=pg.QtCore.Qt.PenStyle.DashLine,
+        )
+
+        # ==================================================================
+        # HELPER: SHADED NEURAL WINDOWS
+        # ==================================================================
+
+        def add_neural_windows(
+                plot_item,
+                local_channel,
+        ):
+
+            for fiber_name in canonical_windows:
+                fiber_index = fiber_indices[
+                    fiber_name
+                ]
+
+                start_sample, stop_sample = (
+                    self.neural_window_indices[
+                        local_channel,
+                        fiber_index,
+                    ]
+                )
+
+                window_start = (
+                        float(start_sample)
+                        / float(self.fs)
+                )
+
+                window_stop = (
+                        float(stop_sample)
+                        / float(self.fs)
+                )
+
+                # ----------------------------------------------------------
+                # Consistent color for each fiber type
+                # ----------------------------------------------------------
+
+                region_color = pg.intColor(
+                    fiber_index,
+                    hues=max(
+                        len(
+                            self.neural_fiber_names
+                        ),
+                        1,
+                    ),
+                    alpha=45,
+                )
+
+                label_color = pg.intColor(
+                    fiber_index,
+                    hues=max(
+                        len(
+                            self.neural_fiber_names
+                        ),
+                        1,
+                    ),
+                    alpha=230,
+                )
+
+                # ----------------------------------------------------------
+                # Shaded region
+                # ----------------------------------------------------------
+
+                region = pg.LinearRegionItem(
+                    values=(
+                        window_start,
+                        window_stop,
+                    ),
+                    movable=False,
+                    brush=pg.mkBrush(
+                        region_color
+                    ),
+                    pen=pg.mkPen(
+                        (0, 0, 0, 0)
+                    ),
+                )
+
+                region.setZValue(
+                    -10
+                )
+
+                plot_item.addItem(
+                    region,
+                    ignoreBounds=True,
+                )
+
+                # ----------------------------------------------------------
+                # Fiber label
+                # ----------------------------------------------------------
+
+                midpoint = (
+                                   window_start
+                                   + window_stop
+                           ) / 2.0
+
+                label = pg.TextItem(
+                    text=fiber_name,
+                    color=label_color,
+                    anchor=(
+                        0.5,
+                        0.0,
+                    ),
+                )
+
+                label.setZValue(
+                    20
+                )
+
+                plot_item.addItem(
+                    label,
+                    ignoreBounds=True,
+                )
+
+                # Keep label at top of visible y-range.
+                def update_label_position(
+                        *_,
+                        plot_item=plot_item,
+                        label=label,
+                        midpoint=midpoint,
+                ):
+                    _, y_range = (
+                        plot_item
+                        .vb
+                        .viewRange()
+                    )
+
+                    y_min, y_max = y_range
+
+                    label.setPos(
+                        midpoint,
+                        y_max,
+                    )
+
+                update_label_position()
+
+                plot_item.vb.sigYRangeChanged.connect(
+                    update_label_position
+                )
+
+                label_callbacks.append(
+                    update_label_position
+                )
+
+        # ==================================================================
+        # HELPER: INTERACTIVE CROSSHAIR
+        # ==================================================================
+
+        def add_crosshair(
+                plot_item,
+                trace_x,
+                trace_y,
+                channel_name,
+        ):
+            """
+            Add an interactive cursor that snaps to the nearest waveform sample.
+
+            Coordinates are displayed in the plot title, so the readout remains
+            visible regardless of zooming or panning.
+            """
+
+            trace_x = np.asarray(
+                trace_x,
+                dtype=float,
+            )
+
+            trace_y = np.asarray(
+                trace_y,
+                dtype=float,
+            )
+
+            # ==============================================================
+            # CROSSHAIR LINES
+            # ==============================================================
+
+            vertical_line = pg.InfiniteLine(
+                angle=90,
+                movable=False,
+                pen=crosshair_pen,
+            )
+
+            horizontal_line = pg.InfiniteLine(
+                angle=0,
+                movable=False,
+                pen=crosshair_pen,
+            )
+
+            vertical_line.setZValue(100)
+            horizontal_line.setZValue(100)
+
+            plot_item.addItem(
+                vertical_line,
+                ignoreBounds=True,
+            )
+
+            plot_item.addItem(
+                horizontal_line,
+                ignoreBounds=True,
+            )
+
+            # Hide until mouse enters plot.
+            vertical_line.hide()
+            horizontal_line.hide()
+
+            # ==============================================================
+            # INITIAL TITLE
+            # ==============================================================
+
+            plot_item.setTitle(
+                channel_name
+            )
+
+            # ==============================================================
+            # MOUSE HANDLER
+            # ==============================================================
+
+            def mouse_moved(
+                    event,
+                    plot_item=plot_item,
+                    vertical_line=vertical_line,
+                    horizontal_line=horizontal_line,
+                    trace_x=trace_x,
+                    trace_y=trace_y,
+                    channel_name=channel_name,
+            ):
+
+                scene_position = event[0]
+
+                # ----------------------------------------------------------
+                # Only update if mouse is over this plot
+                # ----------------------------------------------------------
+
+                if not (
+                        plot_item
+                                .sceneBoundingRect()
+                                .contains(scene_position)
+                ):
+                    return
+
+                # Convert scene position to graph coordinates.
+                mouse_point = (
+                    plot_item
+                    .vb
+                    .mapSceneToView(
+                        scene_position
+                    )
+                )
+
+                cursor_x = float(
+                    mouse_point.x()
+                )
+
+                # ==========================================================
+                # FIND NEAREST ACTUAL SAMPLE
+                # ==========================================================
+
+                sample_index = np.searchsorted(
+                    trace_x,
+                    cursor_x,
+                )
+
+                sample_index = int(
+                    np.clip(
+                        sample_index,
+                        0,
+                        len(trace_x) - 1,
+                    )
+                )
+
+                # searchsorted gives the insertion point.
+                # Compare with the previous sample to determine
+                # which actual data point is closest.
+                if sample_index > 0:
+
+                    right_distance = abs(
+                        trace_x[sample_index]
+                        - cursor_x
+                    )
+
+                    left_distance = abs(
+                        trace_x[sample_index - 1]
+                        - cursor_x
+                    )
+
+                    if left_distance < right_distance:
+                        sample_index -= 1
+
+                x_value = float(
+                    trace_x[sample_index]
+                )
+
+                y_value = float(
+                    trace_y[sample_index]
+                )
+
+                # ==========================================================
+                # UPDATE CROSSHAIR
+                # ==========================================================
+
+                vertical_line.setPos(
+                    x_value
+                )
+
+                horizontal_line.setPos(
+                    y_value
+                )
+
+                vertical_line.show()
+                horizontal_line.show()
+
+                # ==========================================================
+                # UPDATE FIXED COORDINATE DISPLAY
+                # ==========================================================
+
+                plot_item.setTitle(
+                    (
+                        f"{channel_name}"
+                        f"    |    "
+                        f"Time: {x_value * 1000:.4f} ms"
+                        f"    |    "
+                        f"Amplitude: {y_value:.3f} {y_units}"
+                    )
+                )
+
+            # ==============================================================
+            # CONNECT MOUSE SIGNAL
+            # ==============================================================
+
+            proxy = pg.SignalProxy(
+                plot_item.scene().sigMouseMoved,
+                rateLimit=60,
+                slot=mouse_moved,
+            )
+
+            # Keep references alive.
+            mouse_proxies.append(
+                proxy
+            )
+
+            crosshair_items.append(
+                (
+                    vertical_line,
+                    horizontal_line,
+                )
+            )
+
+        # ==================================================================
+        # BUILD PLOTS
+        # ==================================================================
+
+        for row in range(
+                n_rows
+        ):
+
+            # ==============================================================
+            # NEURAL / ENG COLUMN
+            # ==============================================================
+
+            if row < neural_channels.size:
+
+                channel = int(
+                    neural_channels[
+                        row
+                    ]
+                )
+
+                plot_item = window.addPlot(
+                    row=row,
+                    col=0,
+                )
+
+                plots.append(
+                    plot_item
+                )
+
+                # Link x-axis between plots.
+                if first_plot is None:
+
+                    first_plot = plot_item
+
+                else:
+
+                    plot_item.setXLink(
+                        first_plot
+                    )
+
+                channel_name = (
+                    self.ephys.ch_names[
+                        channel
+                    ]
+                )
+
+                plot_item.setTitle(
+                    channel_name
+                )
+
+                plot_item.setLabel(
+                    "left",
+                    "Amplitude",
+                    units=y_units,
+                )
+
+                plot_item.showGrid(
+                    x=True,
+                    y=True,
+                    alpha=0.15,
+                )
+
+                # ----------------------------------------------------------
+                # Waveform
+                # ----------------------------------------------------------
+
+                channel_trace = np.asarray(
+                    plot_waveform[
+                        channel
+                    ],
+                    dtype=float,
+                )
+
+                plot_item.plot(
+                    x=plot_time,
+                    y=channel_trace,
+                    pen=trace_pen,
+                    antialias=False,
+                )
+
+                # ----------------------------------------------------------
+                # Neural windows
+                # ----------------------------------------------------------
+
+                local_channel = int(
+                    np.flatnonzero(
+                        neural_channels
+                        == channel
+                    )[0]
+                )
+
+                add_neural_windows(
+                    plot_item,
+                    local_channel,
+                )
+
+                # ----------------------------------------------------------
+                # Interactive cursor
+                # ----------------------------------------------------------
+
+                add_crosshair(
+                    plot_item,
+                    plot_time,
+                    channel_trace,
+                    channel_name,
+                )
+
+                if row == (
+                        n_rows - 1
+                ):
+                    plot_item.setLabel(
+                        "bottom",
+                        "Time",
+                        units="s",
+                    )
+
+            # ==============================================================
+            # EMG COLUMN
+            # ==============================================================
+
+            if (
+                    n_columns == 2
+                    and row < emg_channels.size
+            ):
+
+                channel = int(
+                    emg_channels[
+                        row
+                    ]
+                )
+
+                plot_item = window.addPlot(
+                    row=row,
+                    col=1,
+                )
+
+                plots.append(
+                    plot_item
+                )
+
+                if first_plot is None:
+
+                    first_plot = plot_item
+
+                else:
+
+                    plot_item.setXLink(
+                        first_plot
+                    )
+
+                channel_name = (
+                    self.ephys.ch_names[
+                        channel
+                    ]
+                )
+
+                plot_item.setTitle(
+                    channel_name
+                )
+
+                plot_item.setLabel(
+                    "left",
+                    "Amplitude",
+                    units=y_units,
+                )
+
+                plot_item.showGrid(
+                    x=True,
+                    y=True,
+                    alpha=0.15,
+                )
+
+                channel_trace = np.asarray(
+                    plot_waveform[
+                        channel
+                    ],
+                    dtype=float,
+                )
+
+                plot_item.plot(
+                    x=plot_time,
+                    y=channel_trace,
+                    pen=trace_pen,
+                    antialias=False,
+                )
+
+                # Interactive cursor also works on EMG traces.
+                add_crosshair(
+                    plot_item,
+                    plot_time,
+                    channel_trace,
+                    channel_name,
+                )
+
+                if row == (
+                        n_rows - 1
+                ):
+                    plot_item.setLabel(
+                        "bottom",
+                        "Time",
+                        units="s",
+                    )
+
+        # ==================================================================
+        # INITIAL X RANGE
+        # ==================================================================
+
+        if plot_time.size > 1:
+
+            for plot_item in plots:
+                plot_item.setXRange(
+                    float(
+                        plot_time[0]
+                    ),
+                    float(
+                        plot_time[-1]
+                    ),
+                    padding=0,
+                )
+
+        # ==================================================================
+        # RETAIN QT / CALLBACK REFERENCES
+        # ==================================================================
+
+        window._ecap_qt_app = app
+        window._ecap_label_callbacks = label_callbacks
+        window._ecap_mouse_proxies = mouse_proxies
+        window._ecap_crosshair_items = crosshair_items
+
+        # ==================================================================
+        # DISPLAY
+        # ==================================================================
+
+        if display:
+
+            window.show()
+
+            # Allow Qt to draw the window before entering its event loop.
+            app.processEvents()
+
+            if block:
+                pg.exec()
+
+        return (
+            window,
+            plots,
+            resolved_parameter,
+        )
+
     def features_per_fiber(
         self,
         parameters=None,

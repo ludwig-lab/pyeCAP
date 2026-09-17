@@ -848,91 +848,45 @@ class _TsData:
             Wn,
             rp=None,
             rs=None,
-            btype="band",
-            order=1,
+            btype="bandpass",
+            order=2,
             ftype="butter",
-            *,
-            overlap=None,
-            transient_tol=1e-6,
+            overlap_s=0.050,
     ):
         """
-        Apply a zero-phase IIR filter lazily along the time axis.
-
-        Filtering uses :func:`scipy.signal.sosfiltfilt` inside
-        :func:`dask.array.map_overlap`. The Dask overlap is estimated from the
-        slowest-decaying filter pole rather than from ``sosfiltfilt``'s
-        ``padlen``. ``padlen`` only controls endpoint padding and is generally
-        too short to suppress transients at internal Dask chunk boundaries.
+        Apply a zero-phase IIR filter to continuous time-series data.
 
         Parameters
         ----------
-        Wn : float or array-like
-            Critical frequency or frequencies in Hz.
+        Wn : float or tuple
+            Critical frequency/frequencies in Hz.
+
         rp : float, optional
-            Maximum passband ripple in decibels for applicable filter types.
+            Maximum passband ripple for filters that require it.
+
         rs : float, optional
-            Minimum stopband attenuation in decibels for applicable filters.
-        btype : {'band', 'bandpass', 'bandstop', 'lowpass', 'highpass'}
-            Filter type.
+            Minimum stopband attenuation for filters that require it.
+
+        btype : str
+            Filter type, e.g. 'bandpass', 'lowpass', 'highpass',
+            or 'bandstop'.
+
         order : int
-            Filter order.
+            IIR filter order.
+
         ftype : str
-            IIR design family accepted by :func:`scipy.signal.iirfilter`.
-        overlap : int, optional
-            Number of neighboring samples supplied on each side of every Dask
-            block. By default it is estimated from the maximum pole radius and
-            ``transient_tol``.
-        transient_tol : float
-            Target pole-decay magnitude used for automatic overlap estimation.
-            Must lie strictly between 0 and 1. Smaller values use more overlap
-            and more closely reproduce whole-array filtering.
+            IIR filter family. Default is 'butter'.
+
+        overlap_s : float
+            Amount of neighboring data, in seconds, supplied to each
+            Dask chunk during filtering. This reduces chunk-boundary
+            transients.
 
         Returns
         -------
         _TsData or subclass
-            New object containing the lazily filtered data.
+            New object containing lazily filtered data.
         """
-        btype_map = {
-            "band": "bandpass",
-            "bandpass": "bandpass",
-            "bandstop": "bandstop",
-            "low": "lowpass",
-            "lowpass": "lowpass",
-            "high": "highpass",
-            "highpass": "highpass",
-        }
-        try:
-            btype = btype_map[str(btype).lower()]
-        except KeyError as exc:
-            raise ValueError(
-                "btype must be 'band'/'bandpass', 'bandstop', "
-                "'low'/'lowpass', or 'high'/'highpass'."
-            ) from exc
-
-        Wn = np.atleast_1d(np.asarray(Wn, dtype=float))
-        fs = float(self.sample_rate)
-
-        if np.any(~np.isfinite(Wn)) or np.any(Wn <= 0) or np.any(Wn >= fs / 2):
-            raise ValueError(
-                f"Wn must contain finite frequencies in (0, fs/2). "
-                f"Got Wn={Wn}, fs/2={fs / 2:.3f} Hz."
-            )
-        if btype in {"bandpass", "bandstop"} and Wn.size != 2:
-            raise ValueError(f"{btype} requires two critical frequencies; got {Wn.size}.")
-        if btype in {"lowpass", "highpass"} and Wn.size != 1:
-            raise ValueError(f"{btype} requires one critical frequency; got {Wn.size}.")
-        if Wn.size == 2 and Wn[0] >= Wn[1]:
-            raise ValueError(f"Band edges must be strictly increasing; got Wn={Wn}.")
-
-        order = int(order)
-        if order < 1:
-            raise ValueError(f"order must be a positive integer; got {order}.")
-
-        transient_tol = float(transient_tol)
-        if not 0.0 < transient_tol < 1.0:
-            raise ValueError(
-                f"transient_tol must lie strictly between 0 and 1; got {transient_tol}."
-            )
 
         sos = signal.iirfilter(
             order,
@@ -942,113 +896,34 @@ class _TsData:
             btype=btype,
             ftype=ftype,
             output="sos",
-            fs=fs,
+            fs=self.sample_rate,
         )
 
-        # Match scipy.signal.sosfiltfilt's default pad-length calculation.
-        n_sections = sos.shape[0]
-        ntaps = 2 * n_sections + 1
-        ntaps -= min(
-            int(np.count_nonzero(sos[:, 2] == 0.0)),
-            int(np.count_nonzero(sos[:, 5] == 0.0)),
-        )
-        padlen = max(3 * ntaps, 1)
+        overlap = int(round(overlap_s * self.sample_rate))
 
-        # A stable IIR has poles strictly inside the unit circle. The slowest
-        # pole determines how much neighboring data is needed before a block
-        # edge transient decays below transient_tol.
-        _, poles, _ = signal.sos2zpk(sos)
-        max_pole_radius = float(np.max(np.abs(poles))) if poles.size else 0.0
-        if not np.isfinite(max_pole_radius) or max_pole_radius >= 1.0:
-            raise ValueError(
-                "The designed IIR filter is unstable or numerically invalid: "
-                f"maximum pole radius={max_pole_radius!r}."
-            )
-
-        if overlap is None:
-            if max_pole_radius <= 0.0:
-                estimated_overlap = padlen
-            else:
-                estimated_overlap = int(
-                    np.ceil(np.log(transient_tol) / np.log(max_pole_radius))
-                )
-            overlap = max(padlen, estimated_overlap)
-        else:
-            if isinstance(overlap, bool):
-                raise TypeError("overlap must be an integer number of samples, not bool.")
-            overlap = int(overlap)
-            if overlap < padlen:
-                raise ValueError(
-                    f"overlap must be at least padlen ({padlen}) samples; got {overlap}."
-                )
-
-        out_dtype = np.result_type(np.float32, *(d.dtype for d in self.data))
-
-        def _filt_last_axis(block):
-            x = block.astype(out_dtype, copy=False)
-            if x.shape[-1] <= padlen:
-                raise ValueError(
-                    "An overlapped IIR block must contain more samples than "
-                    f"padlen={padlen}; got {x.shape[-1]}."
-                )
+        def apply_filter(x):
             return signal.sosfiltfilt(
                 sos,
                 x,
                 axis=-1,
-                padlen=padlen,
-            ).astype(out_dtype, copy=False)
-
-        filtered = []
-        for d in self.data:
-            time_axis = d.ndim - 1
-            n_time = int(d.shape[time_axis])
-            if n_time <= padlen:
-                raise ValueError(
-                    f"Dataset length ({n_time}) must exceed IIR padlen ({padlen})."
-                )
-
-            # Avoid relying on map_overlap's implicit rechunk when the requested
-            # overlap is larger than one or more existing time chunks.
-            if min(d.chunks[time_axis]) <= overlap:
-                target_time_chunk = min(
-                    n_time,
-                    max(65_536, 4 * overlap + 1),
-                )
-                d = d.rechunk({time_axis: target_time_chunk})
-
-            depth = {time_axis: overlap}
-            f = da.map_overlap(
-                _filt_last_axis,
-                d,
-                depth=depth,
-                boundary="none",
-                trim=True,
-                dtype=out_dtype,
-                allow_rechunk=True,
             )
-            filtered.append(f)
 
-        op = {
-            "op": "filter_iir",
-            "order": order,
-            "ftype": ftype,
-            "btype": btype,
-            "Wn": Wn.tolist(),
-            "rp": rp,
-            "rs": rs,
-            "fs": fs,
-            "padlen": int(padlen),
-            "overlap": int(overlap),
-            "transient_tol": transient_tol,
-            "max_pole_radius": max_pole_radius,
-        }
-        new_meta = self._update_metadata_list(
+        data = [
+            da.map_overlap(
+                lambda x: signal.sosfiltfilt(sos, x),
+                d,
+                depth=(0, overlap),
+                dtype=d.dtype,
+            )
+            for d in self.data
+        ]
+
+        return type(self)(
+            data,
             self.metadata,
-            op,
-            n_arrays=len(filtered),
+            chunks=self.chunks,
+            daskify=False,
         )
-
-        return self._spawn(data=filtered, metadata=new_meta)
 
     def filter_fir(self, cutoff, width=None, filter_length="auto", window="hamming",
                    pass_zero=True, tap_limit=None):

@@ -168,14 +168,15 @@ class TdtExperiment:
 
     def curate_data(
             self,
-            keep_channels=None,  # Existing channel names/indices to retain
-            ch_names=None,  # Optional replacement names
-            ch_types=None,  # Optional replacement channel types
-            remove_channels=None,  # Existing channel names/indices to remove
+            keep_channels=None,
+            ch_names=None,
+            ch_types=None,
+            remove_channels=None,
             filter_median_low=False,
             filter_median=False,
-            filter_gaussian_highpass=False,
+            filter_gaussian=False,
             filter_powerline=False,
+            filter_iir=None,
     ):
         """
         Curate electrophysiology channels.
@@ -379,11 +380,23 @@ class TdtExperiment:
                 btype="highpass",
             )
 
-        if filter_gaussian_highpass:
+        if filter_gaussian:
             _apply(
                 "filter_gaussian",
-                Wn=2000,
+                Wn=4000,
                 btype="lowpass",
+            )
+
+        if filter_iir is not None:
+            if not isinstance(filter_iir, dict):
+                raise TypeError(
+                    "filter_iir must be None or a dictionary of arguments "
+                    "passed to data_ephys.filter_iir()."
+                )
+
+            _apply(
+                "filter_iir",
+                **filter_iir,
             )
 
         return self
@@ -466,7 +479,7 @@ if __name__ == '__main__':
             remove_channels=remove_channels,
             filter_median_low=bool_filt_median_low,
             filter_median=bool_filt_median,
-            filter_gaussian_highpass=bool_filt_gauss,
+            filter_gaussian=bool_filt_gauss,
             filter_powerline=bool_filt_powerline,
         )
 
