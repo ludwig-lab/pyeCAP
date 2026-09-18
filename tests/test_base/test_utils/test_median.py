@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from scipy.ndimage import median_filter
 
-from pyeCAP.base.utils.median import *
+from pyecap.base.utils.median import *
 
 
 def simple_median(arr):

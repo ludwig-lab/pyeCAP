@@ -2,20 +2,19 @@
 name = "pyecap"
 description = "pyeCAP is a python package for the analysis of evoked compound action potentials (CAPs) in electrophysiology data sets."
 readme = "README.md"
-requires-python = ">=3.9,<3.12"
+requires-python = ">=3.11,<3.15"
 license = { text = "LGPL-2.1" }
 version = "0.0.11"
+
 authors = [
   { name = "James Trevathan", email = "jtrevathan@wisc.edu" }
 ]
-
-packages = [{include = "*", from="src"}]
 
 # ───── Runtime dependencies ─────
 dependencies = [
   "numpy",
   "dask",
-  "pandas",
+  "pandas>=2.3.3,<3",
   "scipy",
   "seaborn",
   "ipywidgets",
@@ -23,46 +22,34 @@ dependencies = [
   "numba",
   "cached-property",
   "cachey",
-  "zarr",
-  "xarray",
   "matplotlib",
   "tdt",
   "h5py",
-  "ipympl",
   "xlrd",
   "openpyxl",
-  "cycler",
-  "Pillow",
-  "tqdm",
-  "opencv-python",
   "plotly",
-  "notebook<=6.5",
-  # caret (^) becomes the compatible‑release operator (~=)
-  "adi-reader",
-  "pyvisa"
+  "pyvisa",
+  "requests",
+  "python-dateutil"
 ]
 
 # ───── Dev / docs / test extras ─────
-[tool.pdm.dev-dependencies]
-dev = [
-  "sphinx-rtd-theme",
-  "black",
-  "jupyterlab",
-  "devpi-client",
-  "pytest",
-  "tox",
-  "jupyter-contrib-nbextensions",
-  "pre-commit",
-  "isort"
+[dependency-groups]
+test = [
+  "pytest>=9,<10",
 ]
 
-# ───── Dynamic version from Git, Poetry‑style ─────
-# (hatch‑vcs gives the same semantics as poetry‑dynamic‑versioning)
-dynamic = ["version"]
+lint = [
+  "ruff>=0.16,<0.17",
+]
 
-[tool.hatch.version]
-source = "vcs"
-scheme = "semver"
+dev = [
+  { include-group = "test" },
+  { include-group = "lint" },
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyecap"]
 
 [[tool.uv.index]]
 name = "devpi"

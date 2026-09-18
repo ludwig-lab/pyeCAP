@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 import pytest
 
-from pyeCAP.base.utils.base import _generate_state_identifier, _is_iterable, _to_array
+from pyecap.base.utils.base import _generate_state_identifier, _is_iterable, _to_array
 
 # Tests for is_homogeneous_iterable
 

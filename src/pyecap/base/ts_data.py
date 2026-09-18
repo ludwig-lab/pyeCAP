@@ -13,9 +13,6 @@ try:
 except ImportError:
     from collections import Iterable  # For python <3.10
 
-from distutils.version import LooseVersion
-from multiprocessing.pool import ThreadPool
-
 # scientific computing library imports
 import dask.array as da
 import dask.multiprocessing
@@ -31,7 +28,7 @@ from dask.diagnostics import ProgressBar
 from ipywidgets import AppLayout, Button, FloatSlider, Output, VBox, interact
 
 # plotting and figure generation
-from matplotlib import __version__ as mpl_version
+from matplotlib import __version_info__ as mpl_version_info
 from matplotlib import get_backend as plt_get_backend
 from matplotlib.collections import LineCollection
 from scipy import signal
@@ -54,7 +51,7 @@ from .utils.visualization import (
     _plt_show_fig,
 )
 
-dask.config.set(scheduler="threads", pool=ThreadPool(8))
+dask.config.set(scheduler="threads", num_workers=8)
 
 sns.set_context(
     "paper", font_scale=1.4, rc={"lines.linewidth": 2.5, "axes.linewidth": 2.0}
@@ -1387,7 +1384,7 @@ class _TsData:
             x_lim, channels, px_width, down_sample=down_sample, remove_gaps=remove_gaps
         )
         for data in plot_data:
-            if LooseVersion(mpl_version) > LooseVersion("3.5.0"):
+            if mpl_version_info > (3, 5, 0):
                 # Matplotlib version > 3.5.0: Apply transforms using offsets
                 lines = LineCollection(
                     [

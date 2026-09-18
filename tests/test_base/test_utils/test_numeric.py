@@ -2,7 +2,7 @@ import dask.array as da
 import numpy as np
 import pytest
 
-from pyeCAP.base.utils.numeric import (
+from pyecap.base.utils.numeric import (
     _get_size,
     _to_numeric_array,
     find_first,
