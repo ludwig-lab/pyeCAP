@@ -1589,6 +1589,7 @@ class _EpochData:
         Examples
         ________
         """
+        #TODO: Check why function not working when channel names are passed in string form
         if pulses is not None:
             data = self.array(parameters=parameters, channels=channels)[
                 pulses[0] : pulses[1], :, :
