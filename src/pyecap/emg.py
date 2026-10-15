@@ -73,12 +73,12 @@ class EMG(_EpochData):
             stop_idx = self._time_to_index(window[1])
         elif window_units == "ms":
             # print("Window units defined in milliseconds (ms).")
-            start_idx = self._time_to_index(window[0], units="milliseconds")
-            stop_idx = self._time_to_index(window[1], units="milliseconds")
+            start_idx = self._time_to_index(window[0], units="ms")
+            stop_idx = self._time_to_index(window[1], units="ms")
         elif window_units == "us":
             # print("Window units defined in microseconds (us)")
-            start_idx = self._time_to_index(window[0], units="microseconds")
-            stop_idx = self._time_to_index(window[1], units="microseconds")
+            start_idx = self._time_to_index(window[0], units="us")
+            stop_idx = self._time_to_index(window[1], units="us")
         else:
             raise ValueError(
                 "Unit type of AUC window not recognized. Acceptable units are 'sec', 'ms', 'us' or 'samples'."

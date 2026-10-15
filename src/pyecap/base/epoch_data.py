@@ -1565,7 +1565,7 @@ class _EpochData:
             p: np.std(v, axis=0) for p, v in self.array(parameters, channels).items()
         }
 
-    def pulse_RMS(self, parameters, channels=None, window=None, pulses=None):
+    def pulse_RMS(self, parameters, channels=None, window=None, window_units = None, pulses=None):
         """
         Computes the root mean square (RMS) of each individual pulse for the given parameter and channels. The
         result is a dictionary where 'keys' are the parameter multindex and the 'values' is a numpy array with
@@ -1598,8 +1598,34 @@ class _EpochData:
 
         # Code that returns dictionary of pulse RMS values
         if window is not None:
+
+            if window_units is None:
+                    raise ValueError(
+                        "When 'window is defined, pulse_RMS() requires defined 'window_units'. Specify window_units in 'sec', 'ms','us' or 'samples'."
+                    )
+            elif window_units == "samples":
+                # print("Window units defined by sample #")
+                start_idx = window[0]
+                stop_idx = window[1]
+            elif window_units == "sec":
+                # print("Window units defined in seconds (sec).")
+                start_idx = self._time_to_index(window[0])
+                stop_idx = self._time_to_index(window[1])
+            elif window_units == "ms":
+                # print("Window units defined in milliseconds (ms).")
+                start_idx = self._time_to_index(window[0], units="ms")
+                stop_idx = self._time_to_index(window[1], units="ms")
+            elif window_units == "us":
+                # print("Window units defined in microseconds (us)")
+                start_idx = self._time_to_index(window[0], units="us")
+                stop_idx = self._time_to_index(window[1], units="us")
+            else:
+                raise ValueError(
+                    "window_units type not recognized, units must be 'sec', 'ms', 'us' or 'samples'."
+                )
+
             return {
-                p: np.sqrt(np.mean(v[:, :, window[0] : window[1]] ** 2, axis=2))
+                p: np.sqrt(np.mean(v[:, :, start_idx : stop_idx] ** 2, axis=2))
                 for p, v in data.items()
             }
         else:
@@ -1616,7 +1642,7 @@ class _EpochData:
         time : int, str
             Elapsed time.
         units : str
-            Units of the 'time' parameter. Enter 'seconds', 'milliseconds', or 'microseconds'.
+            Units of the 'time' parameter. Enter 'sec', 'ms', or 'us'.
 
 
         Returns
@@ -1631,10 +1657,14 @@ class _EpochData:
 
         """
         # Convert time units once at the beginning.
-        if units == "milliseconds":
+        if units == "ms":
             time = time / 1e3
-        elif units == "microseconds":
+        elif units == "us":
             time = time / 1e6
+        else:
+            raise ValueError(
+                            "Unit type of _time_to_index not recognized. Units must be in 'sec', 'ms', or 'us' (default = 'sec')."
+                        )
 
         return np.round(np.multiply(time, self.sample_rate)).astype(int)
 
