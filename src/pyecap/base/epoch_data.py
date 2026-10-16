@@ -1671,14 +1671,16 @@ class _EpochData:
 
         # Group parameters based off the first index of the stimulation parameter table multi-index. 
         # Assumes all parameters sharing a multi-index level 0 are from the same stimulation configuration
-        for key,pulse_rms in rms_data.items():
-            idx = key[0]
-            grouped_params[idx][key] = pulse_rms
+        for param,pulse_rms in rms_data.items():
+            idx = param[0]
+            grouped_params[idx][param] = pulse_rms
 
         for group, grouped_rms in grouped_params.items():
 
             if normalize:
                 rms_max = np.max([np.max(grouped_rms[param]) for param in grouped_rms.keys()])
+                for param, rms in grouped_rms.items():
+                    grouped_rms[param] = rms / rms_max
         
             for param, pulse_rms in grouped_rms.items():
 
@@ -1709,38 +1711,47 @@ class _EpochData:
 
                 else:
                     rms_d = pulse_rms
+
+                grouped_rms[param] = rms_d
                 
-                # Construct long format data array where one dim is pulse amplitude and the other is the Y values
-                data = []
-                for param in rms_data.keys():
-                    amp = np.abs(self.stim.parameters.loc[param, 'pulse amplitude (μA)'])
-                    amp_array = np.ones((rms_d.shape[0],1)) * amp
+            # Construct long format data array where one dim is pulse amplitude and the other is the Y values
+            fit_data = []
+            for param, rms in grouped_rms.items():
+                amp = np.abs(self.stim.parameters.loc[param, 'pulse amplitude (μA)'])
+                amp_array = np.ones((rms.shape[0],1)) * amp
 
-                    if normalize:
-                        data.append( np.column_stack([amp_array, rms_d/rms_max]))
-                    else:
-                        data.append( np.column_stack([amp_array, rms_d]))
-                    
-                data = np.vstack(data)
-
-                if init_params is not None:
-                    popt, pcov = sigmoid_fit(x_data = data[:,0], y_data = data[:,1], init_params = init_params, log_transform = log_transform, pad_min = True)
+                if normalize:
+                    fit_data.append( np.column_stack([amp_array, rms]))
                 else:
-                    popt, pcov = sigmoid_fit(x_data = data[:,0], y_data = data[:,1], log_transform = log_transform, pad_min = True)
+                    fit_data.append( np.column_stack([amp_array, rms]))
+                    
+            fit_data = np.vstack(fit_data)
 
-                if log_transform:
-                    popt[2] = 10**popt[2]
-                
-                dataLIST.append([group, list(grouped_rms.keys()), *popt])
+            if init_params is not None:
+                popt, pcov = sigmoid_fit(x_data = fit_data[:,0], y_data = fit_data[:,1], init_params = init_params, log_transform = log_transform, pad_min = True)
+            else:
+                popt, pcov = sigmoid_fit(x_data = fit_data[:,0], y_data = fit_data[:,1], log_transform = log_transform, pad_min = True)
 
-                # Nested Dictionary
-                sigDCT[group]['rms'] = grouped_rms
-                sigDCT[group]['sigmoid coeffs.'] = popt
-                sigDCT[group]['ED50 (uA)'] = popt[2]
+            # if log_transform:
+            #     popt[2] = 10**popt[2]
             
+            dataLIST.append([group, list(grouped_rms.keys()), *popt])
+
+            # Nested Dictionary
+            sigDCT[group]['rms'] = grouped_rms
+            sigDCT[group]['sigmoid coeffs.'] = popt
+            if log_transform:
+                sigDCT[group]['ED50 (uA)'] = 10**popt[2]
+            else:
+                sigDCT[group]['ED50 (uA)'] = popt[2]
+
         # DataFrame
-        columns = ['Multi-Index Level', 'Parameters', 'SigFit y-max', 'SigFit slope', 'SigFit ED50 (uA)', 'SigFit y-min']
+        columns = ['Multi-Index Level', 'Parameters', 'SigFit y-max', 'SigFit slope', 'SigFit Inf. Pt', 'SigFit y-min']
         sigDF = pd.DataFrame(data = dataLIST, columns = columns)
+        if log_transform:
+            sigDF['ED50 (uA)'] = 10**sigDF['SigFit Inf. Pt']
+        else:
+            sigDF['ED50 (uA)'] = sigDF['SigFit Inf. Pt']
 
         return sigDF, sigDCT
 
