@@ -4,7 +4,7 @@ import math
 import sys
 import time
 import warnings
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from functools import cached_property, lru_cache
 
 import dask
@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import seaborn as sns
+from scipy import stats
+from scipy.optimize import curve_fit
 from cached_property import threaded_cached_property
 from dask import delayed
 
@@ -1631,6 +1633,116 @@ class _EpochData:
             }
         else:
             return {p: np.sqrt(np.mean(v**2, axis=2)) for p, v in data.items()}
+
+    def drc(self, channel, parameters, window, window_units, init_params = None, normalize = False, outlier_rejection = None, log_transform = True):
+
+        def sigmoid(x, y_max, slope, inf_pt, y_min):
+            return y_max / (1 + np.exp(-slope * (x - inf_pt))) + y_min
+
+        def sigmoid_log10(x, y_max, slope, inf_pt, y_min):
+            return y_max / (1 + 10**(-slope * (x - inf_pt))) + y_min
+
+        def sigmoid_fit(x_data, y_data, init_params = [1,1,100,0], bounds = ([0, 0, 0, -np.inf], [np.inf, np.inf, np.inf, np.inf]), log_transform = False, pad_min=False):
+            y_max, slope, inf_pt, y_min = init_params
+            
+            if pad_min:
+                x_data = np.insert(x_data, 0,10)
+                y_data = np.insert(y_data, 0,0)
+
+            if log_transform:
+                x_data = np.log10(x_data)
+                inf_pt = np.log10(inf_pt)
+                popt,pcov = curve_fit(sigmoid_log10, xdata = x_data, ydata = y_data, p0 = [y_max, slope, inf_pt, y_min], bounds = bounds, max_nfev=10000)
+            else:
+                popt,pcov = curve_fit(sigmoid, xdata = x_data, ydata = y_data, p0 = [y_max, slope, inf_pt, y_min], bounds = bounds, max_nfev=10000)
+            return popt,pcov
+
+        if isinstance(channel, (list, tuple)):
+            raise ValueError("Multiple channels passed. drc() channel only accepts a single recording channel argument.")
+
+        rms_data = self.pulse_RMS(parameters = parameters, channels = channel, window = window, window_units = window_units)
+
+        # Program checks on passed parameters?
+        # May need to implement if someone passes parameters that had multiple stim channels corresponding to different stim configurations.
+
+        dataLIST = []
+        sigDCT = defaultdict(dict)
+        grouped_params = defaultdict(dict)
+
+        # Group parameters based off the first index of the stimulation parameter table multi-index. 
+        # Assumes all parameters sharing a multi-index level 0 are from the same stimulation configuration
+        for key,pulse_rms in rms_data.items():
+            idx = key[0]
+            grouped_params[idx][key] = pulse_rms
+
+        for group, grouped_rms in grouped_params.items():
+
+            if normalize:
+                rms_max = np.max([np.max(grouped_rms[param]) for param in grouped_rms.keys()])
+        
+            for param, pulse_rms in grouped_rms.items():
+
+                if outlier_rejection == 'iqr':
+                        # Interquartile rejection
+
+                        q1,q3 = np.percentile(pulse_rms, [25,75])
+                        iqr = q3 - q1
+
+                        lower_bound = q1 - 1.5 * iqr
+                        upper_bound = q3 + 1.5 * iqr
+
+                        outlier_mask = (pulse_rms < lower_bound) | (pulse_rms > upper_bound)
+                        clean_mask = (pulse_rms >= lower_bound) & (pulse_rms <= upper_bound)
+
+                        outliers = pulse_rms[outlier_mask]
+                        rms_d = pulse_rms[clean_mask]
+
+                elif outlier_rejection == 'z':
+                        #Z-Score Method
+                        z_score = np.abs(stats.zscore(pulse_rms))
+
+                        outlier_mask = (z_score >= 3)
+                        clean_mask = (z_score < 3)
+
+                        outliers = (pulse_rms[outlier_mask])
+                        rms_d = (pulse_rms[clean_mask])
+
+                else:
+                    rms_d = pulse_rms
+                
+                # Construct long format data array where one dim is pulse amplitude and the other is the Y values
+                data = []
+                for param in rms_data.keys():
+                    amp = np.abs(self.stim.parameters.loc[param, 'pulse amplitude (μA)'])
+                    amp_array = np.ones((rms_d.shape[0],1)) * amp
+
+                    if normalize:
+                        data.append( np.column_stack([amp_array, rms_d/rms_max]))
+                    else:
+                        data.append( np.column_stack([amp_array, rms_d]))
+                    
+                data = np.vstack(data)
+
+                if init_params is not None:
+                    popt, pcov = sigmoid_fit(x_data = data[:,0], y_data = data[:,1], init_params = init_params, log_transform = log_transform, pad_min = True)
+                else:
+                    popt, pcov = sigmoid_fit(x_data = data[:,0], y_data = data[:,1], log_transform = log_transform, pad_min = True)
+
+                if log_transform:
+                    popt[2] = 10**popt[2]
+                
+                dataLIST.append([group, list(grouped_rms.keys()), *popt])
+
+                # Nested Dictionary
+                sigDCT[group]['rms'] = grouped_rms
+                sigDCT[group]['sigmoid coeffs.'] = popt
+                sigDCT[group]['ED50 (uA)'] = popt[2]
+            
+        # DataFrame
+        columns = ['Multi-Index Level', 'Parameters', 'SigFit y-max', 'SigFit slope', 'SigFit ED50 (uA)', 'SigFit y-min']
+        sigDF = pd.DataFrame(data = dataLIST, columns = columns)
+
+        return sigDF, sigDCT
 
     def _time_to_index(self, time, units="seconds"):
         # TODO: calculate index accounting for
