@@ -1593,9 +1593,7 @@ class _EpochData:
         """
         #TODO: Check why function not working when channel names are passed in string form
         if pulses is not None:
-            data = self.array(parameters=parameters, channels=channels)[
-                pulses[0] : pulses[1], :, :
-            ]
+            data = {p: v[pulses[0] : pulses[1], :, :] for p,v in self.array(parameters=parameters, channels=channels).items()}
         else:
             data = self.array(parameters=parameters, channels=channels)
 
