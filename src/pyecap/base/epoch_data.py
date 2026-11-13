@@ -1675,10 +1675,10 @@ class _EpochData:
 
         for group, grouped_rms in grouped_params.items():
 
-            if normalize:
-                rms_max = np.max([np.max(grouped_rms[param]) for param in grouped_rms.keys()])
-                for param, rms in grouped_rms.items():
-                    grouped_rms[param] = rms / rms_max
+            # if normalize:
+            #     rms_max = np.max([np.max(grouped_rms[param]) for param in grouped_rms.keys()])
+            #     for param, rms in grouped_rms.items():
+            #         grouped_rms[param] = rms / rms_max
         
             for param, pulse_rms in grouped_rms.items():
 
@@ -1711,18 +1711,19 @@ class _EpochData:
                     rms_d = pulse_rms
 
                 grouped_rms[param] = rms_d
+
+            if normalize:
+                rms_max = np.max([np.max(grouped_rms[param]) for param in grouped_rms.keys()])
+                for param, rms in grouped_rms.items():
+                    grouped_rms[param] = rms / rms_max
                 
             # Construct long format data array where one dim is pulse amplitude and the other is the Y values
             fit_data = []
             for param, rms in grouped_rms.items():
                 amp = np.abs(self.stim.parameters.loc[param, 'pulse amplitude (μA)'])
                 amp_array = np.ones((rms.shape[0],1)) * amp
-
-                if normalize:
-                    fit_data.append( np.column_stack([amp_array, rms]))
-                else:
-                    fit_data.append( np.column_stack([amp_array, rms]))
-                    
+                fit_data.append( np.column_stack([amp_array, rms]))
+    
             fit_data = np.vstack(fit_data)
 
             if init_params is not None:
